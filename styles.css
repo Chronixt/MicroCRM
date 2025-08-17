@@ -1,0 +1,1329 @@
+/* Month view header: match List view day/date header background */
+.fc .fc-scrollgrid-section-header,
+.fc .fc-col-header,
+.fc .fc-col-header th,
+.fc .fc-col-header .fc-scrollgrid-sync-inner {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+}
+
+/* Subtle divider under month header */
+.fc .fc-scrollgrid-section-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+/* Month view: remove pillbox styles and force white text for day headers and numbers */
+.fc .fc-col-header-cell-cushion,
+.fc a.fc-col-header-cell-cushion {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  color: var(--text) !important;
+  text-decoration: none !important;
+  display: inline !important;
+}
+
+.fc .fc-col-header-cell-cushion:hover,
+.fc a.fc-col-header-cell-cushion:hover,
+.fc .fc-col-header-cell-cushion:focus,
+.fc a.fc-col-header-cell-cushion:focus {
+  background: transparent !important;
+  color: var(--text) !important;
+  outline: none !important;
+}
+
+.fc .fc-scrollgrid-section-header,
+.fc .fc-col-header,
+.fc .fc-col-header thead,
+.fc .fc-col-header tr,
+.fc .fc-col-header th,
+.fc .fc-col-header-cell,
+.fc .fc-scrollgrid-sync-inner {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  color: var(--text) !important;
+}
+
+.fc .fc-col-header, 
+.fc .fc-col-header-cell {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.fc .fc-daygrid-day-number,
+.fc a.fc-daygrid-day-number {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  color: var(--text) !important;
+  text-decoration: none !important;
+  display: inline !important;
+}
+
+.fc .fc-daygrid-day-number:hover,
+.fc a.fc-daygrid-day-number:hover,
+.fc .fc-daygrid-day-number:focus,
+.fc a.fc-daygrid-day-number:focus {
+  background: transparent !important;
+  color: var(--text) !important;
+  outline: none !important;
+}
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --panel-2: #0b1220;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --brand: #22d3ee;
+  --brand-2: #60a5fa;
+  --danger: #ef4444;
+  --ok: #34d399;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background-color: #0b1220;
+}
+/* Background image with heavy blur for frosted effect */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('assets/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  filter: blur(18px) brightness(0.6) saturate(1.2);
+  transform: scale(1.05);
+  z-index: -2;
+}
+/* Subtle gradient haze overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(1200px 800px at 12% 10%, rgba(255,255,255,0.06), rgba(255,255,255,0) 45%),
+              linear-gradient(180deg, rgba(2,6,23,0.45), rgba(2,6,23,0.85));
+  z-index: -1;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 12px 16px;
+}
+.app-header h1 { margin: 0; font-size: 20px; letter-spacing: 0.5px; }
+
+.app-container {
+  padding: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.layout { display: grid; grid-template-columns: 104px 1fr; gap: 16px; align-items: start; }
+.sidebar { position: sticky; top: 0; height: 100dvh; }
+.sidebar-tiles { display: grid; gap: 12px; }
+.menu-tile.small { padding: 14px 10px; border-radius: 14px; }
+.menu-tile.small .tile-icon { font-size: 26px; }
+.content { min-height: 60dvh; }
+.content-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
+.content-toolbar .lang-btn { margin-left: auto; }
+
+.menu-container { position: relative; min-height: 100vh; }
+.menu-toolbar { 
+  position: absolute; 
+  top: 0; 
+  right: 0; 
+  padding: 16px; 
+  z-index: 10; 
+}
+
+.menu-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 40px;
+  padding: 80px 20px 20px;
+}
+
+.todays-appointments {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 20px;
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  min-width: 300px;
+  max-width: 500px;
+}
+
+.todays-appointments h3 {
+  margin: 0 0 16px;
+  text-align: center;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.appointment-list {
+  display: grid;
+  gap: 12px;
+}
+
+.appointment-item {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.appointment-item:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+  transform: translateX(2px);
+}
+
+.apt-time {
+  font-weight: 600;
+  color: var(--brand);
+  font-size: 14px;
+  text-align: center;
+}
+
+.apt-details {
+  display: grid;
+  gap: 4px;
+}
+
+.apt-customer {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.apt-title {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.no-appointments {
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+  padding: 20px;
+}
+.lang-btn { padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.5); color: var(--text); cursor: pointer; }
+
+.fullscreen-center {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+.menu-tiles {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(140px, 1fr);
+  gap: 16px;
+}
+
+.menu-tile {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  text-decoration: none;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px;
+  padding: 24px 18px;
+  color: var(--text);
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+}
+.menu-tile:active { transform: scale(0.98); }
+.menu-tile:hover { background: rgba(15,23,42,0.62); border-color: rgba(255,255,255,0.18); }
+.tile-icon { font-size: 40px; line-height: 1; }
+
+/* Small tiles with exact dimensions */
+.menu-tile.small {
+  width: 104px;
+  height: 99.59px;
+}
+.tile-label { 
+  font-weight: 700; 
+  letter-spacing: 0.3px; 
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+@media (max-width: 700px) {
+  .menu-tiles { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 16px;
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+}
+.card h2 { margin: 0 0 8px; font-size: 18px; }
+.card p { margin: 0; color: var(--muted); }
+.card a, .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: black;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  font-weight: 600;
+  margin-top: 10px;
+}
+.button.secondary { background: rgba(255,255,255,0.08); color: var(--text); }
+.button.danger { background: var(--danger); color: white; }
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+.grid-2 { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+.grid-3 { display: grid; gap: 12px; grid-template-columns: 1fr 1fr 1fr; }
+
+label { font-size: 13px; color: var(--muted); }
+input[type="text"], input[type="tel"], input[type="datetime-local"], select, .textarea, .ql-container {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(15, 23, 42, 0.45);
+  color: var(--text);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+}
+/* Make calendar/time picker icons visible on dark bg (WebKit) */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.1) contrast(1.1);
+  opacity: 0.9;
+}
+.select-wrap { position: relative; }
+.select-wrap select { appearance: none; -webkit-appearance: none; -moz-appearance: none; padding-right: 36px; }
+.select-wrap::after {
+  content: '▾';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-52%);
+  color: #cbd5e1;
+  pointer-events: none;
+}
+.dropdown { position: relative; }
+.multi-select { position: relative; }
+.multi-select-display {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+}
+.multi-select::after {
+  content: '▾';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-52%);
+  color: #cbd5e1;
+  pointer-events: none;
+}
+.multi-select.open::after { content: '▴'; }
+.multi-select-display.placeholder { color: #94a3b8; }
+
+/* Appointment details modal specific styles */
+#apt-type-dropdown .multi-select-display {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#apt-type-dropdown .multi-select-display:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+}
+
+#apt-type-dropdown .dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 4px;
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  width: 100%;
+}
+
+#apt-type-dropdown .check {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+#apt-type-dropdown .check:hover {
+  background: rgba(255,255,255,0.05);
+}
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  z-index: 20;
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+}
+.check { display: flex; align-items: center; gap: 8px; }
+.small { font-size: 12px; }
+.textarea { min-height: 120px; }
+input::placeholder { color: #94a3b8; }
+select option { color: black; }
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.list { display: grid; gap: 8px; }
+.list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+}
+
+.list-item:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.12); }
+
+.brand { color: var(--brand); font-weight: 700; }
+
+.next-apt-inline { text-align: right; min-width: 120px; }
+.list-item strong { color: #ffffff; }
+.muted { color: var(--muted); }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.space-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Calendar overrides */
+.fc { background: rgba(15, 23, 42, 0.45); border-radius: 12px; padding: 8px; backdrop-filter: saturate(140%) blur(14px); -webkit-backdrop-filter: saturate(140%) blur(14px); }
+.fc .fc-toolbar-title { font-size: 16px; }
+
+/* Modernize FullCalendar toolbar and buttons */
+/* Revert toolbar/buttons to previous style */
+.fc .fc-toolbar { align-items: center; }
+.fc .fc-toolbar-chunk { display: initial; }
+.fc .fc-button { border-radius: 10px; }
+
+/* Make Month and List buttons same width */
+.fc .fc-toolbar-chunk .fc-button-group .fc-button {
+  min-width: 90px;
+}
+
+/* FullCalendar grid and day box sizing - Force fixed heights */
+.fc-daygrid-day,
+.fc .fc-daygrid-day,
+.fc-daygrid-day-frame,
+.fc .fc-daygrid-day-frame {
+  height: 120px !important;
+  min-height: 120px !important;
+  max-height: 120px !important;
+  overflow: hidden !important;
+}
+
+.fc-daygrid-day-events,
+.fc .fc-daygrid-day-events {
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Force table cell heights */
+.fc-daygrid-day td,
+.fc .fc-daygrid-day td,
+.fc-daygrid-day-frame td,
+.fc .fc-daygrid-day-frame td {
+  height: 120px !important;
+  min-height: 120px !important;
+  max-height: 120px !important;
+  overflow: hidden !important;
+}
+
+/* Force month grid row heights */
+.fc-daygrid-body .fc-daygrid-day-row,
+.fc .fc-daygrid-body .fc-daygrid-day-row {
+  height: 120px !important;
+  min-height: 120px !important;
+  max-height: 120px !important;
+}
+
+/* Position appointments at the top of day cells */
+.fc-daygrid-day-events,
+.fc .fc-daygrid-day-events {
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  position: relative !important;
+  top: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* Force appointments to start at the very top */
+.fc-daygrid-day-events {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* Target the specific FullCalendar positioning issue */
+.fc-daygrid-day-events .fc-daygrid-event-harness {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+.fc-daygrid-day-events .fc-daygrid-event-harness-abs {
+  top: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* Reduce spacing between appointments */
+.fc-event {
+  margin-bottom: 0 !important;
+}
+
+/* Ensure day number doesn't push appointments down */
+.fc-daygrid-day-top,
+.fc .fc-daygrid-day-top {
+  height: auto !important;
+  min-height: auto !important;
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Force day number to minimal height */
+.fc-daygrid-day-top .fc-daygrid-day-number {
+  height: auto !important;
+  min-height: auto !important;
+  margin: 0 !important;
+  padding: 2px 4px !important;
+  line-height: 1 !important;
+}
+
+/* Force the entire month grid to maintain height */
+.fc-daygrid-body,
+.fc .fc-daygrid-body {
+  height: auto !important;
+}
+
+.fc-daygrid-body table,
+.fc .fc-daygrid-body table {
+  table-layout: fixed !important;
+}
+
+/* FullCalendar appointment styles - Compact sizing for month (daygrid) only */
+.fc .fc-daygrid-event,
+.fc .fc-daygrid-dot-event {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  margin-bottom: 0 !important;
+  height: auto !important;
+  min-height: 12px !important;
+  max-height: 16px !important;
+  line-height: 1 !important;
+}
+
+/* Month view events: use list-like styling and allow natural height */
+.fc .fc-dayGridMonth-view .fc-daygrid-event,
+.fc .fc-daygrid-event {
+  min-height: 18px !important;
+  max-height: none !important;
+  height: auto !important;
+  padding: 2px 4px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+}
+
+/* Remove dot/pill formatting in month view */
+.fc .fc-daygrid-dot-event .fc-event-dot { display: none !important; }
+.fc .fc-daygrid-dot-event { padding: 0 !important; }
+.fc .fc-daygrid-dot-event .fc-event-title { padding: 0 !important; }
+
+/* Ensure our custom content lays out correctly */
+.fc .fc-daygrid-event .fc-event-main {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* Compact inline layout inside month cells */
+.fc .fc-daygrid-event .fc-list-event-content {
+  display: grid !important;
+  grid-template-columns: max-content max-content 1fr !important;
+  grid-auto-rows: min-content !important;
+  column-gap: 10px !important;
+  row-gap: 2px !important;
+  align-items: baseline !important;
+  overflow: hidden !important;
+}
+
+.fc .fc-daygrid-event .custom-start-time {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  min-width: 36px !important;
+  color: var(--brand) !important;
+  grid-row: 1;
+  grid-column: 1;
+  white-space: nowrap !important;
+}
+
+.fc .fc-daygrid-event .custom-duration {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: var(--muted) !important;
+  grid-row: 1;
+  grid-column: 2;
+  margin-left: 0 !important;
+  white-space: nowrap !important;
+}
+
+.fc .fc-daygrid-event .fc-list-event-customer {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  grid-row: 2;
+  grid-column: 1 / -1;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.fc .fc-daygrid-event .fc-list-event-type {
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  color: var(--muted) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  grid-row: 3;
+  grid-column: 1 / -1;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Style for "+ n" more-link in month view */
+.fc .fc-more-link, .fc .fc-daygrid-more-link {
+  display: inline-block !important;
+  margin-left: 6px !important;
+  padding: 0 4px !important;
+  color: var(--brand) !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  text-decoration: none !important;
+  background: transparent !important;
+  border: none !important;
+}
+/* Dark theme for daygrid popover */
+.fc .fc-popover.fc-more-popover {
+  background: rgba(17, 24, 39, 0.95) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  color: var(--text) !important;
+  border-radius: 10px !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.fc .fc-popover .fc-popover-header {
+  background: rgba(31, 41, 55, 0.7) !important;
+  color: var(--text) !important;
+  border-bottom: 1px solid rgba(255,255,255,0.12) !important;
+}
+
+.fc .fc-popover .fc-popover-body {
+  background: transparent !important;
+}
+
+.fc .fc-popover .fc-event {
+  background: rgba(255,255,255,0.04) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 8px !important;
+  padding: 8px !important;
+}
+
+.fc .fc-more-link:hover, .fc .fc-daygrid-more-link:hover {
+  color: #7dd3fc !important;
+}
+
+/* Compact view (default) */
+.fc-event-compact {
+  display: block;
+  text-align: center;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.fc-event-compact .fc-event-time {
+  font-size: 8px;
+  font-weight: 600;
+  color: inherit;
+  margin-bottom: 1px;
+  line-height: 1;
+}
+
+.fc-event-compact .fc-event-initials {
+  font-size: 9px;
+  font-weight: 700;
+  color: inherit;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* Full view (hidden by default) */
+.fc-event-full {
+  display: none;
+  padding: 4px 6px;
+}
+
+.fc-event-full .fc-event-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fc-event-full .fc-event-time-full {
+  font-size: 10px;
+  color: inherit;
+  opacity: 0.8;
+}
+
+/* Hover state - show full view, hide compact */
+.fc-event:hover .fc-event-compact {
+  display: none;
+}
+
+.fc-event:hover .fc-event-full {
+  display: block;
+}
+
+.fc-event:hover {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  opacity: 1 !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.3) !important;
+  z-index: 1000 !important;
+  position: relative !important;
+}
+
+/* Nuclear option - override any FullCalendar styles */
+.fc .fc-event:hover {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  opacity: 1 !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.3) !important;
+  z-index: 1000 !important;
+  position: relative !important;
+}
+
+/* Keep event appearance on hover (no white bg), just add subtle bottom shadow */
+.fc a.fc-daygrid-event:hover,
+.fc a.fc-timegrid-event:hover,
+.fc a.fc-h-event:hover,
+.fc .fc-daygrid-event:hover,
+.fc .fc-timegrid-event:hover,
+.fc .fc-h-event:hover {
+  background: inherit !important;
+  background-color: inherit !important;
+  color: inherit !important;
+  border-color: inherit !important;
+  opacity: 1 !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.35) !important;
+  z-index: 1000 !important;
+  position: relative !important;
+}
+
+/* Ensure the inner text container doesn't flip background on hover */
+.fc .fc-daygrid-event:hover .fc-event-main,
+.fc .fc-timegrid-event:hover .fc-event-main,
+.fc .fc-h-event:hover .fc-event-main {
+  background: inherit !important;
+  background-color: inherit !important;
+  color: inherit !important;
+}
+
+/* Week/day timegrid: reset to default content but keep month-like card styling */
+.fc .fc-timegrid-event,
+.fc .fc-v-event,
+.fc .fc-h-event {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.35) !important;
+  overflow: hidden !important;
+}
+
+/* Allow FullCalendar to show its default time/title in timegrid */
+.fc .fc-timegrid-event .fc-event-time,
+.fc .fc-timegrid-event .fc-event-title,
+.fc .fc-timegrid-event .fc-event-main-frame {
+  display: initial !important;
+}
+
+/* Keep hover behavior consistent */
+.fc .fc-timegrid-event:hover,
+.fc a.fc-timegrid-event:hover,
+.fc .fc-v-event:hover,
+.fc .fc-h-event:hover {
+  background: inherit !important;
+  background-color: inherit !important;
+  color: inherit !important;
+  border-color: inherit !important;
+}
+
+/* FullCalendar theme defaults sometimes set white backgrounds on inner containers.
+   Force transparent background for event main containers at all times. */
+.fc-theme-standard .fc-h-event .fc-event-main,
+.fc-theme-standard .fc-daygrid-event .fc-event-main,
+.fc .fc-daygrid-event .fc-event-main,
+.fc .fc-daygrid-dot-event .fc-event-main,
+.fc .fc-timegrid-event .fc-event-main {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Cover hover and focus states on anchor wrappers to avoid white bg */
+.fc a.fc-daygrid-event:hover,
+.fc a.fc-daygrid-event:focus,
+.fc a.fc-daygrid-dot-event:hover,
+.fc a.fc-daygrid-dot-event:focus,
+.fc a.fc-h-event:hover,
+.fc a.fc-h-event:focus,
+.fc a.fc-timegrid-event:hover,
+.fc a.fc-timegrid-event:focus {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: inherit !important;
+  border-color: inherit !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Also cover non-anchor event wrappers */
+.fc .fc-daygrid-event:hover,
+.fc .fc-daygrid-event:focus,
+.fc .fc-daygrid-dot-event:hover,
+.fc .fc-daygrid-dot-event:focus,
+.fc .fc-h-event:hover,
+.fc .fc-h-event:focus,
+.fc .fc-timegrid-event:hover,
+.fc .fc-timegrid-event:focus {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: inherit !important;
+  border-color: inherit !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* FullCalendar List View Styling */
+.fc-list-day,
+.fc .fc-list-day,
+.fc-list-day-cushion {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  color: var(--text) !important;
+  font-weight: 600 !important;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.fc-list-day-text,
+.fc .fc-list-day-text {
+  color: var(--text) !important;
+  font-size: 16px !important;
+}
+
+.fc-list-day-side,
+.fc .fc-list-day-side {
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+
+/* Make day name link look like plain text (no blue rounded pill) */
+.fc a.fc-list-day-text,
+.fc .fc-list-day-text {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  color: var(--text) !important;
+  text-decoration: none !important;
+  display: inline !important;
+}
+
+.fc a.fc-list-day-text:hover,
+.fc a.fc-list-day-text:focus {
+  background: transparent !important;
+  color: var(--brand) !important;
+  outline: none !important;
+}
+
+/* Make date link look like plain text (no blue rounded pill) */
+.fc a.fc-list-day-side-text,
+.fc .fc-list-day-side-text {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  color: var(--text) !important;
+  font-size: 16px !important;
+  font-weight: inherit !important;
+  text-decoration: none !important;
+  display: inline !important;
+}
+
+/* Lay out day name and date together on the left */
+.fc .fc-list-day-cushion {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  text-align: left !important;
+}
+
+.fc .fc-list-day-side { float: none !important; margin-left: 0 !important; }
+.fc .fc-list-day-side-text { margin-left: 0 !important; }
+
+/* Add a comma between day name and date */
+.fc .fc-list-day-text::after {
+  content: ", " !important;
+  color: var(--text) !important;
+}
+
+/* Show Today label above current day's header in list view */
+.fc .fc-list-day.fc-day-today .fc-list-day-cushion::before,
+.fc .fc-list-day.fc-today .fc-list-day-cushion::before {
+  content: "Today" !important;
+  display: block !important;
+  width: 100% !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: var(--brand) !important;
+  margin-bottom: 2px !important;
+  line-height: 1.2 !important;
+}
+
+/* Show Today above, keep day + date on one line below */
+.fc .fc-list-day.fc-day-today .fc-list-day-cushion,
+.fc .fc-list-day.fc-today .fc-list-day-cushion {
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* Prevent wrapping inside day/date on the second line */
+.fc .fc-list-day-text,
+.fc .fc-list-day-side-text {
+  white-space: nowrap !important;
+}
+
+.fc a.fc-list-day-side-text:hover,
+.fc a.fc-list-day-side-text:focus {
+  background: transparent !important;
+  color: var(--brand) !important;
+  outline: none !important;
+}
+
+/* Override any white backgrounds in list view */
+.fc-list-view .fc-list-day,
+.fc .fc-list-view .fc-list-day,
+.fc .fc-list-view .fc-list-day-cushion,
+.fc-list-view .fc-list-day-cushion {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  color: var(--text) !important;
+}
+
+/* Nuclear option for list view headers */
+.fc-list-view *,
+.fc .fc-list-view * {
+  background-color: inherit !important;
+}
+
+.fc-list-view .fc-list-day *,
+.fc .fc-list-view .fc-list-day-cushion * {
+  background-color: rgba(31, 41, 55, 0.7) !important;
+  color: var(--text) !important;
+}
+
+/* List view appointment items */
+.fc-list-event {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  margin: 4px 0 !important;
+  padding: 12px !important;
+  transition: all 0.2s ease !important;
+}
+
+.fc-list-event:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  transform: translateX(2px) !important;
+}
+
+/* Ensure list view hover rows don't flip to white */
+.fc .fc-list .fc-list-event:hover,
+.fc .fc-list .fc-list-event:hover td,
+.fc-theme-standard .fc-list .fc-list-event:hover,
+.fc-theme-standard .fc-list .fc-list-event:hover td,
+.fc .fc-list-event:hover td {
+  background-color: rgba(15, 23, 42, 0.75) !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Prevent anchors inside list rows from imposing white bg on hover */
+.fc .fc-list-event:hover a,
+.fc .fc-list-event:hover a:focus {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.fc-list-event-title {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  color: var(--text) !important;
+}
+
+.fc-list-event-time {
+  font-size: 12px !important;
+  color: var(--brand) !important;
+  font-weight: 600 !important;
+  margin-bottom: 4px !important;
+}
+
+.fc-list-event-dot {
+  display: none !important;
+}
+
+/* Hide FullCalendar's default time display */
+.fc-list-event-time {
+  display: none !important;
+}
+
+.fc .fc-list-event-time {
+  display: none !important;
+}
+
+/* List view event content styling */
+.fc-list-event-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Style the custom start time */
+.custom-start-time {
+  color: var(--brand) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  min-width: 60px !important;
+  text-align: left !important;
+}
+
+/* Style the duration */
+.custom-duration {
+  color: var(--muted) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  min-width: 40px !important;
+  text-align: left !important;
+}
+
+.fc-list-event-customer {
+  font-size: 14px !important;
+  color: var(--text) !important;
+  font-weight: 700 !important;
+}
+
+.fc-list-event-type {
+  font-size: 11px !important;
+  color: var(--muted) !important;
+  font-weight: 400 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.image-grid img { width: 100%; height: 100px; object-fit: cover; border-radius: 10px; }
+
+.modal-root { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 10000; background: rgba(0,0,0,0.45); }
+.modal-root[aria-hidden="false"] { display: flex; }
+.modal {
+  width: min(92vw, 520px);
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 10001;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}
+
+.hidden { display: none !important; }
+
+@media (max-width: 640px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* Customer view */
+.customer-view { position: relative; }
+.view-header { display: grid; grid-template-columns: 1fr auto; align-items: center; margin-bottom: 8px; }
+.customer-title { text-align: center; margin: 0; }
+.view-actions { display: flex; gap: 8px; }
+.icon-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 8px 10px; cursor: pointer; text-decoration: none; }
+.icon-btn:hover { background: rgba(255,255,255,0.12); }
+.selected-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.collapse { margin: 8px 0 12px; }
+.collapse > summary { cursor: pointer; list-style: none; }
+.summary-button { display: inline-block; padding: 8px 12px; border-radius: 10px; background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: black; font-weight: 700; position: relative; padding-right: 28px; }
+.collapse[open] > .summary-button::after { content: '▴'; }
+.collapse:not([open]) > .summary-button::after { content: '▾'; }
+.collapse > .summary-button::after { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+.collapse > summary::-webkit-details-marker { display: none; }
+.collapse-body { padding: 8px 0 0; }
+.detail-list { display: grid; gap: 8px; margin: 8px 0 12px; }
+.detail-item { display: grid; grid-template-columns: 28px 120px 1fr; align-items: center; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 8px; }
+.detail-icon { font-size: 18px; text-align: center; }
+.detail-label { color: var(--muted); font-size: 13px; }
+.detail-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notes-view .rich-note { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px; }
+
+/* Next Appointment Module */
+.next-appointment {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.next-appointment:hover {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(255,255,255,0.2);
+  transform: translateY(-1px);
+}
+
+.next-appointment h3 {
+  margin: 0 0 12px 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.next-appointment-content {
+  min-height: 40px;
+}
+
+.next-appointment-content .loading {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.next-apt-details {
+  display: grid;
+  gap: 8px;
+}
+
+.next-apt-date {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.next-apt-time {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.next-apt-service {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.no-next-apt {
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.error {
+  color: var(--danger);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+/* All Customers Section */
+.text-button {
+  transition: color 0.2s ease;
+}
+
+.text-button:hover {
+  color: var(--brand) !important;
+}
+
+.all-customers-container {
+  position: relative;
+  display: flex;
+  gap: 16px;
+}
+
+#all-customers-list {
+  flex: 1;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+#all-customers-list .list-item {
+  height: 60px;
+  min-height: 60px;
+  max-height: 60px;
+}
+
+#all-customers-list .list-item .button {
+  padding: 6px 12px;
+  font-size: 12px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -2px;
+}
+
+/* Alphabet Scrollbar */
+.alphabet-scrollbar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  height: fit-content;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.scrollbar-letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.scrollbar-letter:hover {
+  background: rgba(34, 211, 238, 0.2);
+  color: var(--brand);
+}
+
+.scrollbar-letter:active {
+  background: rgba(34, 211, 238, 0.3);
+  transform: scale(0.95);
+}
+
+/* Custom scrollbar for the customers list */
+#all-customers-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+#all-customers-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+#all-customers-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+#all-customers-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+
