@@ -317,22 +317,9 @@
             <label>${t('socialMediaName')}</label>
             <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
           </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('referralType')}</label>
-              <select name="referralType">
-                <option value="Walk in">${t('walkIn')}</option>
-                <option value="Friend">${t('friend')}</option>
-                <option value="Instagram">${t('instagram')}</option>
-                <option value="Website">${t('website')}</option>
-                <option value="Google Maps">${t('googleMaps')}</option>
-                <option value="Other">${t('other')}</option>
-              </select>
-            </div>
-            <div>
-              <label>${t('referralNotes')}</label>
-              <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
-            </div>
+          <div>
+            <label>Referral</label>
+            <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
           </div>
           <div>
             <label>${t('notes')}</label>
@@ -356,13 +343,12 @@
       const lastName = form.querySelector('input[name="lastName"]').value.trim();
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
       const socialMediaName = form.querySelector('input[name="socialMediaName"]').value.trim();
-      const referralType = form.querySelector('select[name="referralType"]').value;
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
       const notesHtml = quill.root.innerHTML;
       const imageFiles = form.querySelector('input[name="images"]').files;
 
       const customer = {
-        firstName, lastName, contactNumber, socialMediaName, referralType, referralNotes,
+        firstName, lastName, contactNumber, socialMediaName, referralNotes,
         notesHtml,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -709,10 +695,10 @@
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="card customer-view">
         <div class="view-header">
-          <h2 class="customer-title">${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
+          <h2 class="customer-title" style="text-align: left; font-size: 24px; margin: 0; padding-left: 16px;">👤 ${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
           <div class="view-actions">
             <button id="quick-note-btn" class="button secondary small" title="Add notes" aria-label="Add notes">Add notes</button>
-            <a id="edit-btn" class="icon-btn" title="Edit" aria-label="Edit" href="#/customer-edit?id=${encodeURIComponent(id)}">✏️</a>
+            <button id="edit-btn" class="edit-btn-custom" title="Edit" aria-label="Edit" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">✏️</button>
           </div>
         </div>
 
@@ -724,7 +710,7 @@
         </div>
 
         <details id="appt-collapse" class="collapse">
-          <summary class="summary-button">Book Appointment</summary>
+          <summary class="summary-button" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal; padding-right: 28px; position: relative;">Book Appointment</summary>
           <div class="collapse-body">
             <div class="grid-3">
               <div>
@@ -736,9 +722,13 @@
                 <div class="select-wrap">
                   <select id="appt-duration">
                     <option value="30">30 minutes</option>
-                    <option value="60">60 minutes</option>
-                    <option value="90">90 minutes</option>
-                    <option value="120">120 minutes</option>
+                    <option value="60">1 hour</option>
+                    <option value="90">1.5 hours</option>
+                    <option value="120">2 hours</option>
+                    <option value="150">2.5 hours</option>
+                    <option value="180">3 hours</option>
+                    <option value="210">3.5 hours</option>
+                    <option value="240">4 hours</option>
                   </select>
                 </div>
               </div>
@@ -761,7 +751,7 @@
               </div>
             </div>
             <div class="row" style="margin-top:8px;">
-              <button class="button" id="book-btn">Book</button>
+              <button class="button" id="book-btn" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal;">Book</button>
             </div>
           </div>
         </details>
@@ -769,8 +759,7 @@
         <div class="detail-list">
           <div class="detail-item"><span class="detail-icon">📞</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || '—')}</span></div>
           <div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>
-          <div class="detail-item"><span class="detail-icon">🏷️</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralType || '—')}</span></div>
-          <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral notes</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
+          <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
         </div>
 
         <div class="notes-view">
@@ -778,9 +767,14 @@
           <div id="notes-view" class="rich-note"></div>
         </div>
 
-        <div class="gallery">
+        <div class="gallery" style="margin-top: 20px;">
           <h3 style="margin:0;">Images</h3>
+          <div id="no-images-message" class="muted" style="margin-top:10px; display: none;">No images uploaded</div>
           <div id="image-grid" class="image-grid" style="margin-top:10px;"></div>
+        </div>
+        
+        <div class="customer-view-actions-bottom">
+          <button id="delete-btn" class="icon-btn delete" title="Delete customer" aria-label="Delete customer" style="color: #dc3545;">🗑️</button>
         </div>
       </div>
     `);
@@ -789,7 +783,15 @@
     const imageGrid = document.getElementById('image-grid');
     async function refreshImages() {
       const imgs = await ChikasDB.getImagesByCustomerId(id);
-      imageGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
+      const noImagesMessage = document.getElementById('no-images-message');
+      
+      if (imgs.length === 0) {
+        noImagesMessage.style.display = 'block';
+        imageGrid.innerHTML = '';
+      } else {
+        noImagesMessage.style.display = 'none';
+        imageGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
+      }
     }
     async function renderImageThumbHtml(img) {
       const url = URL.createObjectURL(img.blob);
@@ -883,6 +885,9 @@
       const appt = { customerId: id, title, start: startISO, end: endISO, createdAt: new Date().toISOString() };
       const appointmentId = await ChikasDB.createAppointment(appt);
       alert(t('appointmentBooked'));
+      
+      // Refresh the Next Appointment block to show the newly created appointment
+      await loadNextAppointment();
     });
 
     // Enforce 15-minute steps in the native picker by snapping on change
@@ -961,6 +966,28 @@
         alert('Note added');
       };
     });
+
+    // Edit customer functionality
+    document.getElementById('edit-btn').addEventListener('click', () => {
+      navigate(`/customer-edit?id=${encodeURIComponent(id)}`);
+    });
+
+    // Delete customer functionality
+    document.getElementById('delete-btn').addEventListener('click', async () => {
+      const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'this customer';
+      if (!confirm(`Are you sure you want to delete ${customerName}? This will also delete all their appointments and images. This action cannot be undone.`)) {
+        return;
+      }
+      
+      try {
+        await ChikasDB.deleteCustomer(id);
+        alert('Customer deleted successfully');
+        navigate('/find');
+      } catch (error) {
+        console.error('Error deleting customer:', error);
+        alert('Error deleting customer. Please try again.');
+      }
+    });
   }
 
   async function renderCustomerEdit({ query }) {
@@ -990,27 +1017,29 @@
             <label>Contact Number</label>
             <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
           </div>
-          <div class="grid-2">
-            <div>
-              <label>Referral Type</label>
-              <select name="referralType">
-                <option value="Walk in">Walk in</option>
-                <option value="Friend">Friend</option>
-                <option value="Instagram">Instagram</option>
-                <option value="Website">Website</option>
-                <option value="Google Maps">Google Maps</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label>Referral Notes</label>
-              <input type="text" name="referralNotes" />
-            </div>
+          <div>
+            <label>${t('socialMediaName')}</label>
+            <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" />
+          </div>
+          <div>
+            <label>Referral</label>
+            <input type="text" name="referralNotes" />
           </div>
           <div>
             <label>Notes</label>
             <div id="notes" style="height: 220px;"></div>
           </div>
+          
+          <div>
+            <label>${t('attachImages')}</label>
+            <input type="file" name="images" accept="image/*" multiple />
+          </div>
+          
+          <div id="existing-images-section" style="margin-top: 16px;">
+            <h4 style="margin: 0 0 8px 0;">Existing Images</h4>
+            <div id="existing-images-grid" class="image-grid" style="margin-top: 8px;"></div>
+          </div>
+          
           <div class="row" style="margin-top: 10px;">
             <button class="button" id="save-btn">${t('saveChanges')}</button>
             <a class="button secondary" href="#/customer?id=${encodeURIComponent(id)}">${t('cancel')}</a>
@@ -1023,25 +1052,67 @@
     setInputValue(form, 'firstName', customer.firstName || '');
     setInputValue(form, 'lastName', customer.lastName || '');
     setInputValue(form, 'contactNumber', customer.contactNumber || '');
-    setSelectValue(form, 'referralType', customer.referralType || 'Walk in');
+    setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
 
     const notesQuill = new Quill('#notes', { theme: 'snow' });
     notesQuill.clipboard.dangerouslyPasteHTML(customer.notesHtml || '');
 
+    // Load and display existing images
+    const existingImagesGrid = document.getElementById('existing-images-grid');
+    async function loadExistingImages() {
+      try {
+        const imgs = await ChikasDB.getImagesByCustomerId(id);
+        if (imgs.length === 0) {
+          existingImagesGrid.innerHTML = '<div class="muted">No images uploaded yet</div>';
+          return;
+        }
+        
+        existingImagesGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
+      } catch (error) {
+        console.error('Error loading existing images:', error);
+        existingImagesGrid.innerHTML = '<div class="error">Error loading images</div>';
+      }
+    }
+    
+    async function renderImageThumbHtml(img) {
+      const url = URL.createObjectURL(img.blob);
+      return `<img src="${url}" alt="${escapeHtml(img.name)}" />`;
+    }
+    
+    await loadExistingImages();
+
     document.getElementById('save-btn').addEventListener('click', async () => {
+      // Check if Quill editor has meaningful content
+      const notesContent = notesQuill.root.innerHTML;
+      const hasNotes = notesContent && notesContent.trim() !== '' && notesContent !== '<p><br></p>';
+      
       const updated = {
         ...customer,
         firstName: getInputValue(form, 'firstName').trim(),
         lastName: getInputValue(form, 'lastName').trim(),
         contactNumber: getInputValue(form, 'contactNumber').trim(),
-        referralType: getSelectValue(form, 'referralType'),
+        socialMediaName: getInputValue(form, 'socialMediaName').trim(),
         referralNotes: getInputValue(form, 'referralNotes').trim(),
-        notesHtml: notesQuill.root.innerHTML,
+        notesHtml: hasNotes ? notesContent : '',
         updatedAt: new Date().toISOString(),
       };
-      await ChikasDB.updateCustomer(updated);
-      navigate(`/customer?id=${encodeURIComponent(id)}`);
+      
+      try {
+        await ChikasDB.updateCustomer(updated);
+        
+        // Handle new image uploads
+        const imageFiles = form.querySelector('input[name="images"]').files;
+        if (imageFiles && imageFiles.length > 0) {
+          const entries = await ChikasDB.fileListToEntries(imageFiles);
+          await ChikasDB.addImages(id, entries);
+        }
+        
+        navigate(`/customer?id=${encodeURIComponent(id)}`);
+      } catch (error) {
+        console.error('Error saving customer:', error);
+        alert('Error saving customer. Please try again.');
+      }
     });
   }
 

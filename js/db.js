@@ -266,6 +266,51 @@
     ));
   }
 
+  function deleteCustomer(id) {
+    return runTransaction(['customers', 'appointments', 'images'], 'readwrite', (customers, appointments, images) => (
+      Promise.all([
+        // Delete customer
+        new Promise((resolve, reject) => {
+          const req = customers.delete(parseInt(id));
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        }),
+        // Delete all appointments for this customer
+        new Promise((resolve, reject) => {
+          const index = appointments.index('customerId');
+          const range = IDBKeyRange.only(parseInt(id));
+          const req = index.openCursor(range);
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              appointments.delete(cursor.primaryKey);
+              cursor.continue();
+            } else {
+              resolve(null);
+            }
+          };
+          req.onerror = () => reject(req.error);
+        }),
+        // Delete all images for this customer
+        new Promise((resolve, reject) => {
+          const index = images.index('customerId');
+          const range = IDBKeyRange.only(parseInt(id));
+          const req = index.openCursor(range);
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              images.delete(cursor.primaryKey);
+              cursor.continue();
+            } else {
+              resolve(null);
+            }
+          };
+          req.onerror = () => reject(req.error);
+        })
+      ])
+    ));
+  }
+
   // Utils
   async function fileListToEntries(fileList) {
     const files = Array.from(fileList || []);
@@ -387,6 +432,7 @@
     createAppointment,
     updateAppointment,
     deleteAppointment,
+    deleteCustomer,
     getAppointmentsBetween,
     getAppointmentsForCustomer,
     getAppointmentById,
