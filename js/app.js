@@ -547,11 +547,7 @@
       try {
         let allCustomers = await ChikasDB.getAllCustomers();
         
-        // Add dummy customers if we have less than 50 total
-        if (allCustomers.length < 50) {
-          await addDummyCustomers();
-          allCustomers = await ChikasDB.getAllCustomers();
-        }
+
         
         const sortedCustomers = [...allCustomers].sort((a, b) => {
           const aName = `${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase();
@@ -603,63 +599,7 @@
       }
     }
 
-    // Function to add dummy customer records
-    async function addDummyCustomers() {
-      const dummyFirstNames = [
-        'Alice', 'Bob', 'Charlie', 'Diana', 'Edward', 'Fiona', 'George', 'Hannah', 'Ian', 'Julia',
-        'Kevin', 'Laura', 'Michael', 'Natalie', 'Oliver', 'Patricia', 'Quentin', 'Rachel', 'Samuel', 'Tiffany',
-        'Ulysses', 'Victoria', 'William', 'Xena', 'Yasmine', 'Zachary', 'Amelia', 'Benjamin', 'Charlotte', 'Daniel',
-        'Emma', 'Franklin', 'Grace', 'Henry', 'Isabella', 'Jackson', 'Katherine', 'Liam', 'Madison', 'Noah',
-        'Olivia', 'Parker', 'Quinn', 'Riley', 'Sophia', 'Thomas', 'Uma', 'Vincent', 'Willow', 'Xavier'
-      ];
-      
-      const dummyLastNames = [
-        'Anderson', 'Brown', 'Clark', 'Davis', 'Evans', 'Fisher', 'Garcia', 'Harris', 'Johnson', 'King',
-        'Lee', 'Miller', 'Nelson', 'O\'Connor', 'Parker', 'Quinn', 'Roberts', 'Smith', 'Taylor', 'Underwood',
-        'Valdez', 'Wilson', 'Young', 'Zimmerman', 'Adams', 'Baker', 'Campbell', 'Edwards', 'Foster', 'Green',
-        'Hall', 'Irwin', 'Jones', 'Kelly', 'Lewis', 'Moore', 'Newman', 'Owen', 'Phillips', 'Reed',
-        'Scott', 'Thompson', 'Walker', 'White', 'Young', 'Adams', 'Baker', 'Campbell', 'Davis', 'Evans'
-      ];
-      
-      const dummyPhoneNumbers = [
-        '555-0101', '555-0102', '555-0103', '555-0104', '555-0105', '555-0106', '555-0107', '555-0108', '555-0109', '555-0110',
-        '555-0111', '555-0112', '555-0113', '555-0114', '555-0115', '555-0116', '555-0117', '555-0118', '555-0119', '555-0120',
-        '555-0121', '555-0122', '555-0123', '555-0124', '555-0125', '555-0126', '555-0127', '555-0128', '555-0129', '555-0130',
-        '555-0131', '555-0132', '555-0133', '555-0134', '555-0135', '555-0136', '555-0137', '555-0138', '555-0139', '555-0140',
-        '555-0141', '555-0142', '555-0143', '555-0144', '555-0145', '555-0146', '555-0147', '555-0148', '555-0149', '555-0150'
-      ];
-      
-      try {
-        for (let i = 0; i < 50; i++) {
-          const firstName = dummyFirstNames[i];
-          const lastName = dummyLastNames[i];
-          const phoneNumber = dummyPhoneNumbers[i];
-          
-          // Check if customer already exists
-          const existingCustomers = await ChikasDB.getAllCustomers();
-          const exists = existingCustomers.some(c => 
-            c.firstName === firstName && c.lastName === lastName
-          );
-          
-          if (!exists) {
-            const dummyCustomer = {
-              firstName: firstName,
-              lastName: lastName,
-              contactNumber: phoneNumber,
-              email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
-              address: `${Math.floor(Math.random() * 9999) + 1} ${['Main St', 'Oak Ave', 'Pine Rd', 'Elm St', 'Maple Dr'][Math.floor(Math.random() * 5)]}`,
-              notes: `Dummy customer record for testing purposes.`,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            };
-            
-            await ChikasDB.createCustomer(dummyCustomer);
-          }
-        }
-      } catch (error) {
-        console.error('Error adding dummy customers:', error);
-      }
-    }
+
 
     // Function to set up alphabet scrollbar functionality
     function setupAlphabetScrollbar() {
@@ -2024,6 +1964,20 @@
       sidebar.style.marginTop = '';
     }
   }
+
+  // Add a global function to clear all data (for development/testing)
+  window.clearAllData = async () => {
+    if (confirm('This will permanently delete ALL data including customers, appointments, and images. This action cannot be undone. Are you sure?')) {
+      try {
+        await ChikasDB.clearAllStores();
+        alert('All data has been cleared successfully. The page will now refresh.');
+        window.location.reload();
+      } catch (error) {
+        console.error('Error clearing data:', error);
+        alert('Error clearing data: ' + error.message);
+      }
+    }
+  };
 
   window.addEventListener('hashchange', render);
   window.addEventListener('load', () => {
