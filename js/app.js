@@ -302,28 +302,46 @@
           <div class="grid-2">
             <div>
               <label>${t('firstName')}</label>
-              <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
+              <div class="input-with-button">
+                <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="firstName" title="Handwrite">✏️</button>
+              </div>
             </div>
             <div>
               <label>${t('lastName')}</label>
-              <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
+              <div class="input-with-button">
+                <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="lastName" title="Handwrite">✏️</button>
+              </div>
             </div>
           </div>
           <div>
             <label>${t('contactNumber')}</label>
-            <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
+            <div class="input-with-button">
+              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
+              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
+            </div>
           </div>
           <div>
             <label>${t('socialMediaName')}</label>
-            <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
+            <div class="input-with-button">
+              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Handwrite">✏️</button>
+            </div>
           </div>
           <div>
             <label>Referral</label>
-            <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
+            <div class="input-with-button">
+              <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
+              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Handwrite">✏️</button>
+            </div>
           </div>
           <div>
             <label>${t('notes')}</label>
-            <div id="new-notes" style="height: 180px;"></div>
+            <div style="position: relative;">
+              <div id="new-notes" style="height: 180px;"></div>
+              <button type="button" class="handwriting-btn" id="new-notes-handwriting" title="Open handwriting mode" style="position: absolute; top: 8px; right: 8px; background: rgba(34, 211, 238, 0.2); border: 1px solid rgba(34, 211, 238, 0.4); color: var(--brand); border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer;">✏️ Handwrite</button>
+            </div>
           </div>
           <div>
             <label>${t('attachImages')}</label>
@@ -336,7 +354,35 @@
       </div>
     `);
 
-    const quill = new Quill('#new-notes', { theme: 'snow' });
+    const quill = createHandwritingQuill('#new-notes');
+    
+    // Add handwriting button functionality for notes
+    document.getElementById('new-notes-handwriting').addEventListener('click', () => {
+      const currentContent = quill.root.innerHTML;
+      showHandwritingModal('Add Notes', currentContent, (newContent) => {
+        quill.clipboard.dangerouslyPasteHTML(newContent);
+      });
+    });
+    
+    // Add handwriting functionality for text inputs
+    document.querySelectorAll('.input-icon-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fieldName = btn.dataset.field;
+        const input = document.querySelector(`input[name="${fieldName}"]`);
+        const currentValue = input.value;
+        
+        // Get field label for modal title
+        const label = input.closest('.input-with-button').previousElementSibling.textContent;
+        
+        showHandwritingModal(`Handwrite ${label}`, currentValue, (newValue) => {
+          // Extract plain text from HTML (in case user used formatting)
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = newValue;
+          input.value = tempDiv.textContent || tempDiv.innerText || '';
+        });
+      });
+    });
+    
     document.getElementById('save-btn').addEventListener('click', async () => {
       const form = document.getElementById('new-form');
       const firstName = form.querySelector('input[name="firstName"]').value.trim();
@@ -872,39 +918,19 @@
     });
     updateTypeSummary();
 
-    // Quick notes overlay
+    // Quick notes overlay - now uses handwriting modal
     document.getElementById('quick-note-btn').addEventListener('click', () => {
       const now = new Date();
-      showModal(`
-        <div class=\"modal\">
-          <h3 style=\"margin-top:0;\">${t('addNotes')}</h3>
-          <div id=\"quick-quill\" style=\"height: 180px;\"></div>
-          <div class=\"row\" style=\"margin-top: 10px;\">
-            <button class=\"button\" id=\"quick-save\">Save</button>
-            <button class=\"button secondary\" id=\"quick-cancel\">Cancel</button>
-          </div>
-        </div>
-      `);
-      const q = new Quill('#quick-quill', { theme: 'snow' });
-      document.getElementById('quick-cancel').onclick = () => {
-        const hasContent = (q.getText() || '').trim().length > 0;
-        if (hasContent) {
-          if (!confirm('Discard entered note?')) return;
-        }
-        hideModal();
-      };
-      document.getElementById('quick-save').onclick = async () => {
-        const html = q.root.innerHTML;
-        if (!html || html === '<p><br></p>') { hideModal(); return; }
-        const appended = appendNotesHtml(customer.notesHtml || '', html, now);
+      showHandwritingModal(t('addNotes'), '', async (newContent) => {
+        if (!newContent || newContent === '<p><br></p>') return;
+        const appended = appendNotesHtml(customer.notesHtml || '', newContent, now);
         const updated = { ...customer, notesHtml: appended, updatedAt: new Date().toISOString() };
         await ChikasDB.updateCustomer(updated);
         customer.notesHtml = appended;
         const notesView = document.getElementById('notes-view');
         if (notesView) notesView.innerHTML = appended;
-        hideModal();
         alert('Note added');
-      };
+      });
     });
 
     // Edit customer functionality
@@ -946,28 +972,46 @@
           <div class="grid-2">
             <div>
               <label>First Name</label>
-              <input type="text" name="firstName" />
+              <div class="input-with-button">
+                <input type="text" name="firstName" />
+                <button type="button" class="input-icon-btn" data-field="firstName" title="Handwrite">✏️</button>
+              </div>
             </div>
             <div>
               <label>Last Name</label>
-              <input type="text" name="lastName" />
+              <div class="input-with-button">
+                <input type="text" name="lastName" />
+                <button type="button" class="input-icon-btn" data-field="lastName" title="Handwrite">✏️</button>
+              </div>
             </div>
           </div>
           <div>
             <label>Contact Number</label>
-            <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
+            <div class="input-with-button">
+              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
+              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
+            </div>
           </div>
           <div>
             <label>${t('socialMediaName')}</label>
-            <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" />
+            <div class="input-with-button">
+              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" />
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Handwrite">✏️</button>
+            </div>
           </div>
           <div>
             <label>Referral</label>
-            <input type="text" name="referralNotes" />
+            <div class="input-with-button">
+              <input type="text" name="referralNotes" />
+              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Handwrite">✏️</button>
+            </div>
           </div>
           <div>
             <label>Notes</label>
-            <div id="notes" style="height: 220px;"></div>
+            <div style="position: relative;">
+              <div id="notes" style="height: 220px;"></div>
+              <button type="button" class="handwriting-btn" id="notes-handwriting" title="Open handwriting mode" style="position: absolute; top: 8px; right: 8px; background: rgba(34, 211, 238, 0.2); border: 1px solid rgba(34, 211, 238, 0.4); color: var(--brand); border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer;">✏️ Handwrite</button>
+            </div>
           </div>
           
           <div>
@@ -995,8 +1039,35 @@
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
 
-    const notesQuill = new Quill('#notes', { theme: 'snow' });
+    const notesQuill = createHandwritingQuill('#notes');
     notesQuill.clipboard.dangerouslyPasteHTML(customer.notesHtml || '');
+    
+    // Add handwriting button functionality for notes
+    document.getElementById('notes-handwriting').addEventListener('click', () => {
+      const currentContent = notesQuill.root.innerHTML;
+      showHandwritingModal('Edit Notes', currentContent, (newContent) => {
+        notesQuill.clipboard.dangerouslyPasteHTML(newContent);
+      });
+    });
+    
+    // Add handwriting functionality for text inputs
+    document.querySelectorAll('.input-icon-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fieldName = btn.dataset.field;
+        const input = document.querySelector(`input[name="${fieldName}"]`);
+        const currentValue = input.value;
+        
+        // Get field label for modal title
+        const label = input.closest('.input-with-button').previousElementSibling.textContent;
+        
+        showHandwritingModal(`Handwrite ${label}`, currentValue, (newValue) => {
+          // Extract plain text from HTML (in case user used formatting)
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = newValue;
+          input.value = tempDiv.textContent || tempDiv.innerText || '';
+        });
+      });
+    });
 
     // Load and display existing images
     const existingImagesGrid = document.getElementById('existing-images-grid');
@@ -1900,6 +1971,85 @@
   function hideModal() {
     modalRoot.innerHTML = '';
     modalRoot.setAttribute('aria-hidden', 'true');
+  }
+
+  // Enhanced Quill configuration for handwriting
+  function createHandwritingQuill(containerId, options = {}) {
+    const defaultConfig = {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ 'header': [1, 2, 3, false] }],
+          ['bold', 'italic', 'underline'],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+          ['clean']
+        ]
+      },
+      placeholder: 'Write with Apple Pencil...',
+      readOnly: false
+    };
+    
+    const config = { ...defaultConfig, ...options };
+    return new Quill(containerId, config);
+  }
+
+  // Enhanced handwriting modal for iPad
+  function showHandwritingModal(title, initialContent = '', onSave = null) {
+    const modalId = 'handwriting-modal-' + Date.now();
+    const modalHtml = `
+      <div class="handwriting-modal" id="${modalId}">
+        <div class="modal-header">
+          <h2 class="modal-title">${title}</h2>
+          <div class="modal-actions">
+            <button class="button secondary" id="handwriting-cancel">${t('cancel')}</button>
+            <button class="button" id="handwriting-save">${t('save')}</button>
+          </div>
+        </div>
+        <div id="handwriting-quill-container"></div>
+      </div>
+    `;
+    
+    modalRoot.innerHTML = modalHtml;
+    modalRoot.setAttribute('aria-hidden', 'false');
+    
+    // Initialize Quill with enhanced configuration for handwriting
+    const quill = createHandwritingQuill('#handwriting-quill-container');
+    
+    // Set initial content
+    if (initialContent) {
+      quill.clipboard.dangerouslyPasteHTML(initialContent);
+    }
+    
+    // Focus the editor for immediate handwriting
+    setTimeout(() => {
+      quill.focus();
+    }, 100);
+    
+    // Event handlers
+    document.getElementById('handwriting-cancel').addEventListener('click', () => {
+      const hasContent = (quill.getText() || '').trim().length > 0;
+      if (hasContent) {
+        if (!confirm('Discard changes?')) return;
+      }
+      hideModal();
+    });
+    
+    document.getElementById('handwriting-save').addEventListener('click', () => {
+      const content = quill.root.innerHTML;
+      if (onSave) {
+        onSave(content);
+      }
+      hideModal();
+    });
+    
+    // Close on escape key
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        document.removeEventListener('keydown', handleEscape);
+        hideModal();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
   }
 
   function debounce(fn, ms) {

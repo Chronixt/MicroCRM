@@ -325,6 +325,183 @@ input[type="text"], input[type="tel"], input[type="datetime-local"], select, .te
   backdrop-filter: saturate(140%) blur(12px);
   -webkit-backdrop-filter: saturate(140%) blur(12px);
 }
+
+/* Enhanced Quill editor styles for iPad handwriting */
+.ql-container {
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 200px;
+}
+
+/* iPad-specific enhancements for handwriting */
+@media (min-width: 768px) and (pointer: coarse) {
+  .ql-container {
+    min-height: 300px;
+    font-size: 18px;
+    line-height: 1.8;
+    padding: 20px;
+  }
+  
+  .ql-editor {
+    min-height: 280px;
+    padding: 16px;
+  }
+  
+  /* Larger handwriting area for modals */
+  .handwriting-modal .ql-container {
+    min-height: 60vh;
+    font-size: 20px;
+    line-height: 2;
+  }
+  
+  .handwriting-modal .ql-editor {
+    min-height: calc(60vh - 40px);
+    padding: 24px;
+  }
+}
+
+/* Fullscreen handwriting modal */
+.handwriting-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.handwriting-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.handwriting-modal .modal-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.handwriting-modal .modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.handwriting-modal .ql-toolbar {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px 12px 0 0;
+  padding: 12px 16px;
+}
+
+.handwriting-modal .ql-container {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+/* Enhanced touch targets for iPad */
+@media (pointer: coarse) {
+  .ql-toolbar .ql-formats {
+    margin-right: 16px;
+  }
+  
+  .ql-toolbar button {
+    min-width: 44px;
+    min-height: 44px;
+    margin: 2px;
+  }
+  
+  .ql-toolbar .ql-picker {
+    min-height: 44px;
+  }
+}
+
+/* Handwriting button styles */
+.handwriting-btn {
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.handwriting-btn:hover {
+  background: rgba(34, 211, 238, 0.3) !important;
+  border-color: rgba(34, 211, 238, 0.6) !important;
+  transform: translateY(-1px);
+}
+
+.handwriting-btn:active {
+  transform: translateY(0);
+  background: rgba(34, 211, 238, 0.4) !important;
+}
+
+/* Ensure handwriting buttons are visible on iPad */
+@media (min-width: 768px) and (pointer: coarse) {
+  .handwriting-btn {
+    font-size: 14px !important;
+    padding: 8px 12px !important;
+    min-height: 36px;
+  }
+  
+  .input-icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 18px;
+    padding: 8px 10px;
+  }
+  
+  .input-with-button {
+    gap: 12px; /* Slightly larger gap on iPad */
+  }
+}
+
+/* Input with button styling - side by side layout */
+.input-with-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input-with-button input {
+  flex: 1;
+  margin: 0; /* Remove any default margins */
+}
+
+.input-icon-btn {
+  font-size: 16px;
+  background: rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  color: var(--brand);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0; /* Prevent button from shrinking */
+}
+
+.input-icon-btn:hover {
+  background: rgba(34, 211, 238, 0.25);
+  border-color: rgba(34, 211, 238, 0.5);
+  transform: scale(1.05);
+}
+
+.input-icon-btn:active {
+  transform: scale(0.95);
+  background: rgba(34, 211, 238, 0.35);
+}
 /* Make calendar/time picker icons visible on dark bg (WebKit) */
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator,
