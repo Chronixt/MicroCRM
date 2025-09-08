@@ -833,7 +833,7 @@
         
         return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
           <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
@@ -884,7 +884,9 @@
               
               img.onerror = () => {
                 console.error('Image failed to load:', img.dataset.src);
-                if (placeholder) placeholder.textContent = 'Failed to load';
+                if (placeholder) placeholder.style.display = 'none';
+                const errorDiv = container.querySelector('.image-error');
+                if (errorDiv) errorDiv.style.display = 'block';
               };
               
               // Add click handler
@@ -1246,7 +1248,7 @@
         
         return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
           <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
@@ -1299,7 +1301,9 @@
               
               img.onerror = () => {
                 console.error('Edit image failed to load:', img.dataset.src);
-                if (placeholder) placeholder.textContent = 'Failed to load';
+                if (placeholder) placeholder.style.display = 'none';
+                const errorDiv = container.querySelector('.image-error');
+                if (errorDiv) errorDiv.style.display = 'block';
               };
               
               // Add click handler
