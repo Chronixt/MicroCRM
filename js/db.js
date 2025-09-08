@@ -144,24 +144,31 @@
     ));
   }
 
-  // Images
+  // Images - Simple approach that works with iOS Safari
   function addImages(customerId, fileEntries) {
     return runTransaction(['images'], 'readwrite', (images) => (
       Promise.all(fileEntries.map((entry) => new Promise(async (resolve, reject) => {
-        const toStore = {
-          customerId,
-          name: entry.name,
-          type: entry.type,
-          blob: entry.blob,
-          createdAt: new Date().toISOString(),
-        };
-        const req = images.add(toStore);
-        req.onsuccess = async () => {
-          // Also store in localStorage as backup for iOS
-          await storeImageInLocalStorage(req.result, toStore);
-          resolve(req.result);
-        };
-        req.onerror = () => reject(req.error);
+        try {
+          // Convert blob to dataURL for storage
+          const dataUrl = await blobToDataURL(entry.blob);
+          
+          const toStore = {
+            customerId,
+            name: entry.name,
+            type: entry.type,
+            dataUrl: dataUrl, // Store as dataURL instead of blob
+            createdAt: new Date().toISOString(),
+          };
+          
+          const req = images.add(toStore);
+          req.onsuccess = () => {
+            resolve(req.result);
+          };
+          req.onerror = () => reject(req.error);
+        } catch (error) {
+          console.error('Error adding image:', error);
+          reject(error);
+        }
       })))
     ));
   }
@@ -176,23 +183,21 @@
         req.onsuccess = (e) => {
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
           if (cursor) { 
-            results.push(cursor.value); 
+            const imageData = cursor.value;
+            // Convert dataURL back to blob for display
+            if (imageData.dataUrl) {
+              const blob = dataURLToBlob(imageData.dataUrl, imageData.type);
+              results.push({
+                ...imageData,
+                blob: blob
+              });
+            }
             cursor.continue(); 
           } else {
-            // If no results from IndexedDB, try localStorage backup
-            if (results.length === 0) {
-              const backupImages = getImagesFromLocalStorage(customerId);
-              resolve(backupImages);
-            } else {
-              resolve(results);
-            }
+            resolve(results);
           }
         };
-        req.onerror = () => {
-          // If IndexedDB fails, try localStorage backup
-          const backupImages = getImagesFromLocalStorage(customerId);
-          resolve(backupImages);
-        };
+        req.onerror = () => reject(req.error);
       })
     ));
   }
@@ -429,19 +434,19 @@
       let errorCount = 0;
       
       await runTransaction(['images'], 'readwrite', (imagesStore) => {
-        images.forEach(async (img, index) => {
+        images.forEach((img, index) => {
           try {
-            const blob = dataURLToBlob(img.dataUrl, img.type);
-            if (blob.size > 0) {
-              const imageData = { id: img.id, customerId: img.customerId, name: img.name, type: img.type, blob, createdAt: img.createdAt };
-              imagesStore.put(imageData);
-              // Also store in localStorage as backup for iOS
-              await storeImageInLocalStorage(img.id, imageData);
-              successCount++;
-            } else {
-              console.warn(`Skipped empty blob for image ${index + 1}: ${img.name}`);
-              errorCount++;
-            }
+            // Store directly as dataURL (already in the backup)
+            const imageData = { 
+              id: img.id, 
+              customerId: img.customerId, 
+              name: img.name, 
+              type: img.type, 
+              dataUrl: img.dataUrl, 
+              createdAt: img.createdAt 
+            };
+            imagesStore.put(imageData);
+            successCount++;
           } catch (error) {
             console.error(`Error processing image ${index + 1}: ${img.name}`, error);
             errorCount++;
@@ -486,16 +491,22 @@
   }
 
   // localStorage backup functions for iOS Safari IndexedDB issues
-  async function storeImageInLocalStorage(imageId, imageData) {
+  async function storeImageReferenceInLocalStorage(imageId, imageData) {
     try {
       const key = `chikas_image_${imageId}`;
       const dataToStore = {
-        ...imageData,
-        blob: imageData.blob ? await blobToDataURL(imageData.blob) : null
+        id: imageData.id,
+        customerId: imageData.customerId,
+        name: imageData.name,
+        type: imageData.type,
+        fileUrl: imageData.fileUrl,
+        createdAt: imageData.createdAt,
+        // Store a small dataURL for emergency fallback
+        thumbnail: imageData.blob ? await createThumbnail(imageData.blob) : null
       };
       localStorage.setItem(key, JSON.stringify(dataToStore));
     } catch (error) {
-      console.warn('Failed to store image in localStorage:', error);
+      console.warn('Failed to store image reference in localStorage:', error);
     }
   }
 
@@ -507,15 +518,45 @@
         if (key && key.startsWith('chikas_image_')) {
           const data = JSON.parse(localStorage.getItem(key));
           if (data.customerId === customerId) {
-            // Convert dataURL back to blob
-            const blob = data.blob ? dataURLToBlob(data.blob, data.type) : null;
-            if (blob) {
+            // Try to recreate blob from fileUrl or use thumbnail
+            let blob = null;
+            if (data.fileUrl) {
+              // Try to fetch from fileUrl
+              fetch(data.fileUrl)
+                .then(response => response.blob())
+                .then(fetchedBlob => {
+                  images.push({
+                    id: data.id,
+                    customerId: data.customerId,
+                    name: data.name,
+                    type: data.type,
+                    blob: fetchedBlob,
+                    createdAt: data.createdAt
+                  });
+                })
+                .catch(() => {
+                  // Fallback to thumbnail if available
+                  if (data.thumbnail) {
+                    const thumbnailBlob = dataURLToBlob(data.thumbnail, data.type);
+                    images.push({
+                      id: data.id,
+                      customerId: data.customerId,
+                      name: data.name,
+                      type: data.type,
+                      blob: thumbnailBlob,
+                      createdAt: data.createdAt
+                    });
+                  }
+                });
+            } else if (data.thumbnail) {
+              // Use thumbnail as fallback
+              const thumbnailBlob = dataURLToBlob(data.thumbnail, data.type);
               images.push({
                 id: data.id,
                 customerId: data.customerId,
                 name: data.name,
                 type: data.type,
-                blob: blob,
+                blob: thumbnailBlob,
                 createdAt: data.createdAt
               });
             }
@@ -535,6 +576,35 @@
     } catch (error) {
       console.warn('Failed to clear image from localStorage:', error);
     }
+  }
+
+  // Create a small thumbnail for emergency fallback
+  async function createThumbnail(blob) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        // Create a small thumbnail (150x150 max)
+        const maxSize = 150;
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((thumbnailBlob) => {
+          if (thumbnailBlob) {
+            blobToDataURL(thumbnailBlob).then(resolve);
+          } else {
+            resolve(null);
+          }
+        }, 'image/jpeg', 0.7);
+      };
+      
+      img.onerror = () => resolve(null);
+      img.src = URL.createObjectURL(blob);
+    });
   }
 
   // Expose API
