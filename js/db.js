@@ -402,12 +402,29 @@
         appointments.forEach((a) => appointmentsStore.put(a));
       });
       // Images need dataUrl -> blob
+      console.log(`Importing ${images.length} images...`);
+      let successCount = 0;
+      let errorCount = 0;
+      
       await runTransaction(['images'], 'readwrite', (imagesStore) => {
-        images.forEach((img) => {
-          const blob = dataURLToBlob(img.dataUrl, img.type);
-          imagesStore.put({ id: img.id, customerId: img.customerId, name: img.name, type: img.type, blob, createdAt: img.createdAt });
+        images.forEach((img, index) => {
+          try {
+            const blob = dataURLToBlob(img.dataUrl, img.type);
+            if (blob.size > 0) {
+              imagesStore.put({ id: img.id, customerId: img.customerId, name: img.name, type: img.type, blob, createdAt: img.createdAt });
+              successCount++;
+            } else {
+              console.warn(`Skipped empty blob for image ${index + 1}: ${img.name}`);
+              errorCount++;
+            }
+          } catch (error) {
+            console.error(`Error processing image ${index + 1}: ${img.name}`, error);
+            errorCount++;
+          }
         });
       });
+      
+      console.log(`Image import complete: ${successCount} successful, ${errorCount} failed`);
     };
     return perform();
   }
@@ -417,14 +434,28 @@
       const parts = String(dataUrl || '').split(',');
       const meta = parts[0] || '';
       const base64 = parts[1] || '';
+      
+      if (!base64) {
+        console.warn('Empty base64 data in dataURL');
+        return new Blob([], { type: fallbackType || 'application/octet-stream' });
+      }
+      
       const mimeMatch = /data:([^;]+);base64/.exec(meta);
       const mime = mimeMatch ? mimeMatch[1] : (fallbackType || 'application/octet-stream');
+      
+      // Check if base64 is too large (iPad memory limit)
+      if (base64.length > 50 * 1024 * 1024) { // 50MB limit
+        console.warn('Base64 data too large for iPad, skipping image');
+        return new Blob([], { type: mime });
+      }
+      
       const binary = atob(base64);
       const len = binary.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
       return new Blob([bytes], { type: mime });
     } catch (e) {
+      console.error('Error converting dataURL to blob:', e);
       return new Blob([], { type: fallbackType || 'application/octet-stream' });
     }
   }

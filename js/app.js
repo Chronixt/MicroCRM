@@ -769,8 +769,17 @@
     const imageGrid = document.getElementById('image-grid');
     
     async function renderImageThumbHtml(img) {
-      const url = URL.createObjectURL(img.blob);
-      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
+      try {
+        if (!img.blob || img.blob.size === 0) {
+          console.warn('Invalid or empty blob for image:', img.name);
+          return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+        }
+        const url = URL.createObjectURL(img.blob);
+        return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" onerror="this.parentNode.innerHTML='<div class=\\"image-error\\" style=\\"padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;\\">Failed to load image</div>'" />`;
+      } catch (error) {
+        console.error('Error rendering image:', img.name, error);
+        return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+      }
     }
     
     async function refreshImages() {
@@ -1092,8 +1101,17 @@
     const existingImagesGrid = document.getElementById('existing-images-grid');
     
     async function renderImageThumbHtml(img) {
-      const url = URL.createObjectURL(img.blob);
-      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
+      try {
+        if (!img.blob || img.blob.size === 0) {
+          console.warn('Invalid or empty blob for image:', img.name);
+          return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+        }
+        const url = URL.createObjectURL(img.blob);
+        return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" onerror="this.parentNode.innerHTML='<div class=\\"image-error\\" style=\\"padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;\\">Failed to load image</div>'" />`;
+      } catch (error) {
+        console.error('Error rendering image:', img.name, error);
+        return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+      }
     }
     
     async function loadExistingImages() {
