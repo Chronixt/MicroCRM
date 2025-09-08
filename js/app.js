@@ -1939,6 +1939,20 @@
       customerList.querySelectorAll('.select-customer').forEach((cb) => { cb.checked = false; });
     });
 
+    // Add a "Select First 10" button for testing
+    const selectFirst10Btn = document.createElement('button');
+    selectFirst10Btn.textContent = 'Select First 10';
+    selectFirst10Btn.className = 'button secondary';
+    selectFirst10Btn.style.marginLeft = '8px';
+    selectAllBtn.parentNode.insertBefore(selectFirst10Btn, selectNoneBtn.nextSibling);
+    
+    selectFirst10Btn.addEventListener('click', () => {
+      const checkboxes = customerList.querySelectorAll('.select-customer');
+      checkboxes.forEach((cb, index) => {
+        cb.checked = index < 10;
+      });
+    });
+
     importSelectedBtn.addEventListener('click', async () => {
       if (!loadedBackup) { alert('Load a backup first'); return; }
       const selectedIds = Array.from(customerList.querySelectorAll('.select-customer'))
@@ -1953,12 +1967,61 @@
       const customers = (loadedBackup.customers || []).filter((c) => selectedIds.includes(c.id));
       const appointments = includeAppointments ? (loadedBackup.appointments || []).filter((a) => selectedIds.includes(a.customerId)) : [];
       const images = includeImages ? (loadedBackup.images || []).filter((img) => selectedIds.includes(img.customerId)) : [];
-      const payload = { __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, customers, appointments, images };
-      try {
-        await ChikasDB.importAllData(payload, { mode });
-        alert('Import complete');
-      } catch (e) {
-        alert('Import failed: ' + e.message);
+      
+      // Chunked import for large datasets
+      const CHUNK_SIZE = 5; // Process 5 customers at a time
+      const totalCustomers = customers.length;
+      
+      if (totalCustomers > CHUNK_SIZE) {
+        const proceed = confirm(`Importing ${totalCustomers} customers. This will be done in chunks of ${CHUNK_SIZE} to prevent memory issues. Continue?`);
+        if (!proceed) return;
+        
+        statusEl.textContent = `Importing in chunks... (0/${totalCustomers})`;
+        importSelectedBtn.disabled = true;
+        
+        try {
+          for (let i = 0; i < customers.length; i += CHUNK_SIZE) {
+            const chunk = customers.slice(i, i + CHUNK_SIZE);
+            const chunkCustomerIds = chunk.map(c => c.id);
+            const chunkAppointments = appointments.filter(a => chunkCustomerIds.includes(a.customerId));
+            const chunkImages = images.filter(img => chunkCustomerIds.includes(img.customerId));
+            
+            const payload = { 
+              __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, 
+              customers: chunk, 
+              appointments: chunkAppointments, 
+              images: chunkImages 
+            };
+            
+            await ChikasDB.importAllData(payload, { mode });
+            
+            const processed = Math.min(i + CHUNK_SIZE, totalCustomers);
+            statusEl.textContent = `Importing in chunks... (${processed}/${totalCustomers})`;
+            
+            // Small delay to prevent overwhelming the browser
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          
+          statusEl.textContent = `Import complete! ${totalCustomers} customers imported.`;
+          alert(`Import complete! ${totalCustomers} customers imported successfully.`);
+        } catch (e) {
+          statusEl.textContent = 'Import failed';
+          alert('Import failed: ' + e.message);
+        } finally {
+          importSelectedBtn.disabled = false;
+        }
+      } else {
+        // Small dataset, import normally
+        const payload = { __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, customers, appointments, images };
+        try {
+          statusEl.textContent = 'Importing...';
+          await ChikasDB.importAllData(payload, { mode });
+          statusEl.textContent = 'Import complete';
+          alert('Import complete');
+        } catch (e) {
+          statusEl.textContent = 'Import failed';
+          alert('Import failed: ' + e.message);
+        }
       }
     });
 
