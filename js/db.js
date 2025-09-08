@@ -266,6 +266,16 @@
     ));
   }
 
+  function deleteImage(imageId) {
+    return runTransaction(['images'], 'readwrite', (images) => (
+      new Promise((resolve, reject) => {
+        const req = images.delete(parseInt(imageId));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
   function deleteCustomer(id) {
     return runTransaction(['customers', 'appointments', 'images'], 'readwrite', (customers, appointments, images) => (
       Promise.all([
@@ -429,6 +439,7 @@
     searchCustomers,
     addImages,
     getImagesByCustomerId,
+    deleteImage,
     createAppointment,
     updateAppointment,
     deleteAppointment,

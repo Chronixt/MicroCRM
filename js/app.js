@@ -777,11 +777,18 @@
       } else {
         noImagesMessage.style.display = 'none';
         imageGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
+        
+        // Add click handlers for images
+        imageGrid.querySelectorAll('.clickable-image').forEach((img, index) => {
+          img.addEventListener('click', () => {
+            showImageViewer(imgs, index);
+          });
+        });
       }
     }
     async function renderImageThumbHtml(img) {
       const url = URL.createObjectURL(img.blob);
-      return `<img src="${url}" alt="${escapeHtml(img.name)}" />`;
+      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
     }
     await refreshImages();
 
@@ -1080,6 +1087,13 @@
         }
         
         existingImagesGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
+        
+        // Add click handlers for images
+        existingImagesGrid.querySelectorAll('.clickable-image').forEach((img, index) => {
+          img.addEventListener('click', () => {
+            showImageViewer(imgs, index);
+          });
+        });
       } catch (error) {
         console.error('Error loading existing images:', error);
         existingImagesGrid.innerHTML = '<div class="error">Error loading images</div>';
@@ -1088,7 +1102,7 @@
     
     async function renderImageThumbHtml(img) {
       const url = URL.createObjectURL(img.blob);
-      return `<img src="${url}" alt="${escapeHtml(img.name)}" />`;
+      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
     }
     
     await loadExistingImages();
@@ -1991,6 +2005,120 @@
     
     const config = { ...defaultConfig, ...options };
     return new Quill(containerId, config);
+  }
+
+  // Image viewer modal
+  function showImageViewer(images, currentIndex = 0) {
+    if (!images || images.length === 0) return;
+    
+    const modalId = 'image-viewer-' + Date.now();
+    const currentImage = images[currentIndex];
+    const hasMultiple = images.length > 1;
+    
+    const modalHtml = `
+      <div class="image-viewer-modal" id="${modalId}">
+        <div class="image-viewer-header">
+          <div class="image-counter">${currentIndex + 1} / ${images.length}</div>
+          <button class="image-viewer-close" id="image-viewer-close">✕</button>
+        </div>
+        <div class="image-viewer-content">
+          ${hasMultiple ? '<button class="image-nav-btn image-nav-prev" id="image-nav-prev">‹</button>' : ''}
+          <div class="image-viewer-main">
+            <img src="${URL.createObjectURL(currentImage.blob)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" />
+            <div class="image-actions">
+              <button class="image-delete-btn" id="image-delete-btn" data-image-id="${currentImage.id}">🗑️ Delete</button>
+            </div>
+          </div>
+          ${hasMultiple ? '<button class="image-nav-btn image-nav-next" id="image-nav-next">›</button>' : ''}
+        </div>
+      </div>
+    `;
+    
+    modalRoot.innerHTML = modalHtml;
+    modalRoot.setAttribute('aria-hidden', 'false');
+    
+    let currentIdx = currentIndex;
+    
+    // Navigation functions
+    function showImage(index) {
+      if (index < 0 || index >= images.length) return;
+      currentIdx = index;
+      const img = images[currentIdx];
+      const imgEl = document.querySelector('.viewer-image');
+      const counterEl = document.querySelector('.image-counter');
+      const deleteBtn = document.getElementById('image-delete-btn');
+      
+      imgEl.src = URL.createObjectURL(img.blob);
+      imgEl.alt = escapeHtml(img.name);
+      counterEl.textContent = `${currentIdx + 1} / ${images.length}`;
+      deleteBtn.dataset.imageId = img.id;
+      
+      // Update navigation button states
+      const prevBtn = document.getElementById('image-nav-prev');
+      const nextBtn = document.getElementById('image-nav-next');
+      if (prevBtn) prevBtn.disabled = currentIdx === 0;
+      if (nextBtn) nextBtn.disabled = currentIdx === images.length - 1;
+    }
+    
+    // Event handlers
+    document.getElementById('image-viewer-close').addEventListener('click', hideModal);
+    
+    const prevBtn = document.getElementById('image-nav-prev');
+    const nextBtn = document.getElementById('image-nav-next');
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => showImage(currentIdx - 1));
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => showImage(currentIdx + 1));
+    }
+    
+    // Delete image
+    document.getElementById('image-delete-btn').addEventListener('click', async () => {
+      const imageId = parseInt(document.getElementById('image-delete-btn').dataset.imageId);
+      if (!confirm('Delete this image?')) return;
+      
+      try {
+        await ChikasDB.deleteImage(imageId);
+        // Remove from local array
+        images.splice(currentIdx, 1);
+        
+        if (images.length === 0) {
+          hideModal();
+          // Refresh the image grid by triggering a page refresh or re-rendering
+          window.location.reload();
+          return;
+        }
+        
+        // Adjust current index if needed
+        if (currentIdx >= images.length) {
+          currentIdx = images.length - 1;
+        }
+        
+        showImage(currentIdx);
+        
+        // Refresh the image grid by triggering a page refresh
+        window.location.reload();
+      } catch (error) {
+        console.error('Error deleting image:', error);
+        alert('Error deleting image');
+      }
+    });
+    
+    // Keyboard navigation
+    const handleKeydown = (e) => {
+      if (e.key === 'Escape') {
+        document.removeEventListener('keydown', handleKeydown);
+        hideModal();
+      } else if (e.key === 'ArrowLeft' && hasMultiple) {
+        showImage(currentIdx - 1);
+      } else if (e.key === 'ArrowRight' && hasMultiple) {
+        showImage(currentIdx + 1);
+      }
+    };
+    document.addEventListener('keydown', handleKeydown);
+    
+    // Initialize
+    showImage(currentIdx);
   }
 
   // Enhanced handwriting modal for iPad
