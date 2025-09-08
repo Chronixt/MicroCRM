@@ -789,6 +789,12 @@
     
     async function renderImageThumbHtml(img) {
       try {
+        console.log(`Rendering image ${img.id}:`, {
+          name: img.name,
+          blobSize: img.blob ? img.blob.size : 'no blob',
+          blobType: img.blob ? img.blob.type : 'no blob'
+        });
+        
         if (!img.blob || img.blob.size === 0) {
           console.warn('Invalid or empty blob for image:', img.name);
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
@@ -797,8 +803,32 @@
         // Use cached URL if available
         let url = window.currentImageCache.get(img.id);
         if (!url) {
-          url = URL.createObjectURL(img.blob);
-          window.currentImageCache.set(img.id, url);
+          try {
+            // Check if we're on iPad Safari and use dataURL directly as fallback
+            const isIpadSafari = /iPad/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
+            
+            if (isIpadSafari && img.dataUrl) {
+              // Use dataURL directly for iPad Safari (more reliable)
+              url = img.dataUrl;
+              console.log(`Using dataURL directly for iPad Safari image ${img.id}`);
+            } else {
+              // Use object URL for other browsers
+              url = URL.createObjectURL(img.blob);
+              console.log(`Created object URL for image ${img.id}:`, url);
+            }
+            window.currentImageCache.set(img.id, url);
+          } catch (urlError) {
+            console.error(`Failed to create object URL for image ${img.id}:`, urlError);
+            // Fallback to dataURL if available
+            if (img.dataUrl) {
+              url = img.dataUrl;
+              console.log(`Fallback to dataURL for image ${img.id}`);
+            } else {
+              return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Failed to create image URL</div>`;
+            }
+          }
+        } else {
+          console.log(`Using cached URL for image ${img.id}:`, url);
         }
         
         return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">

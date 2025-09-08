@@ -272,14 +272,27 @@
             const imageData = cursor.value;
             // Convert dataURL back to blob for display
             if (imageData.dataUrl) {
-              const blob = dataURLToBlob(imageData.dataUrl, imageData.type);
-              results.push({
-                ...imageData,
-                blob: blob
-              });
+              try {
+                const blob = dataURLToBlob(imageData.dataUrl, imageData.type);
+                if (blob && blob.size > 0) {
+                  results.push({
+                    ...imageData,
+                    blob: blob,
+                    dataUrl: imageData.dataUrl // Keep dataUrl for iPad Safari fallback
+                  });
+                  console.log(`Successfully converted image ${imageData.id}: ${(blob.size / 1024).toFixed(1)}KB`);
+                } else {
+                  console.error(`Failed to convert image ${imageData.id}: empty or invalid blob`);
+                }
+              } catch (error) {
+                console.error(`Error converting image ${imageData.id}:`, error);
+              }
+            } else {
+              console.error(`Image ${imageData.id} has no dataUrl`);
             }
             cursor.continue(); 
           } else {
+            console.log(`Loaded ${results.length} images for customer ${customerId}`);
             resolve(results);
           }
         };
