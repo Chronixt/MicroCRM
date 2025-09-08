@@ -1,7 +1,7 @@
 /* IndexedDB wrapper for Chikas DB */
 (function () {
   const DB_NAME = 'chikas-db';
-  const DB_VERSION = 1;
+  const DB_VERSION = 3;
 
   /** @type {IDBDatabase | null} */
   let database = null;
@@ -13,21 +13,38 @@
 
       request.onupgradeneeded = (event) => {
         const db = /** @type {IDBDatabase} */ (request.result);
-        if (!db.objectStoreNames.contains('customers')) {
-          const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
-          customerStore.createIndex('lastName', 'lastName', { unique: false });
-          customerStore.createIndex('firstName', 'firstName', { unique: false });
-          customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
+        const oldVersion = event.oldVersion;
+        
+        // For version 3, we'll recreate the database structure with all indexes
+        // This ensures a clean upgrade from any previous version
+        
+        // Delete existing stores if they exist (for clean upgrade)
+        if (db.objectStoreNames.contains('customers')) {
+          db.deleteObjectStore('customers');
         }
-        if (!db.objectStoreNames.contains('appointments')) {
-          const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
-          appointmentStore.createIndex('customerId', 'customerId', { unique: false });
-          appointmentStore.createIndex('start', 'start', { unique: false });
+        if (db.objectStoreNames.contains('appointments')) {
+          db.deleteObjectStore('appointments');
         }
-        if (!db.objectStoreNames.contains('images')) {
-          const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
-          imagesStore.createIndex('customerId', 'customerId', { unique: false });
+        if (db.objectStoreNames.contains('images')) {
+          db.deleteObjectStore('images');
         }
+        
+        // Create customers store with all indexes
+        const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
+        customerStore.createIndex('lastName', 'lastName', { unique: false });
+        customerStore.createIndex('firstName', 'firstName', { unique: false });
+        customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
+        customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+        
+        // Create appointments store with all indexes
+        const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
+        appointmentStore.createIndex('customerId', 'customerId', { unique: false });
+        appointmentStore.createIndex('start', 'start', { unique: false });
+        appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
+        
+        // Create images store with indexes
+        const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+        imagesStore.createIndex('customerId', 'customerId', { unique: false });
       };
 
       request.onsuccess = () => {
@@ -114,6 +131,28 @@
     ));
   }
 
+  // NEW: Get customers sorted by update time (for recent customers)
+  function getRecentCustomers(limit = 10) {
+    return runTransaction(['customers'], 'readonly', (customers) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = customers.index('updatedAt');
+        const req = index.openCursor(null, 'prev'); // Descending order
+        
+        req.onsuccess = (e) => {
+          const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
+          if (cursor && results.length < limit) {
+            results.push(cursor.value);
+            cursor.continue();
+          } else {
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
   function getAllAppointments() {
     return runTransaction(['appointments'], 'readonly', (appointments) => (
       new Promise((resolve, reject) => {
@@ -144,19 +183,20 @@
     ));
   }
 
-  // Images - Simple approach that works with iOS Safari
+  // Images - Optimized approach with compression for iPad
   function addImages(customerId, fileEntries) {
     return runTransaction(['images'], 'readwrite', (images) => (
       Promise.all(fileEntries.map((entry) => new Promise(async (resolve, reject) => {
         try {
-          // Convert blob to dataURL for storage
-          const dataUrl = await blobToDataURL(entry.blob);
+          // Compress image before storing
+          const compressedBlob = await compressImage(entry.blob, entry.type);
+          const dataUrl = await blobToDataURL(compressedBlob);
           
           const toStore = {
             customerId,
             name: entry.name,
             type: entry.type,
-            dataUrl: dataUrl, // Store as dataURL instead of blob
+            dataUrl: dataUrl,
             createdAt: new Date().toISOString(),
           };
           
@@ -171,6 +211,52 @@
         }
       })))
     ));
+  }
+  
+  // Image compression function for iPad memory optimization
+  async function compressImage(blob, type) {
+    return new Promise((resolve) => {
+      // Check if image is already small enough
+      if (blob.size <= 500 * 1024) { // 500KB limit
+        resolve(blob);
+        return;
+      }
+      
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        // Calculate new dimensions (max 1200px width/height)
+        const maxSize = 1200;
+        let { width, height } = img;
+        
+        if (width > maxSize || height > maxSize) {
+          const ratio = Math.min(maxSize / width, maxSize / height);
+          width *= ratio;
+          height *= ratio;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw compressed image
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to blob with quality compression
+        canvas.toBlob((compressedBlob) => {
+          if (compressedBlob && compressedBlob.size < blob.size) {
+            console.log(`Image compressed: ${(blob.size / 1024).toFixed(1)}KB -> ${(compressedBlob.size / 1024).toFixed(1)}KB`);
+            resolve(compressedBlob);
+          } else {
+            resolve(blob); // Use original if compression didn't help
+          }
+        }, type || 'image/jpeg', 0.8); // 80% quality
+      };
+      
+      img.onerror = () => resolve(blob); // Fallback to original
+      img.src = URL.createObjectURL(blob);
+    });
   }
 
   function getImagesByCustomerId(customerId) {
@@ -214,19 +300,53 @@
   }
 
   function getAppointmentsBetween(startISO, endISO) {
-    // For simplicity, load all and filter
     return runTransaction(['appointments'], 'readonly', (appointments) => (
       new Promise((resolve, reject) => {
-        const items = [];
-        const req = appointments.openCursor();
+        const results = [];
+        const index = appointments.index('start');
+        const range = IDBKeyRange.bound(startISO, endISO);
+        const req = index.openCursor(range);
+        
         req.onsuccess = (e) => {
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
           if (cursor) {
-            items.push(cursor.value);
+            results.push(cursor.value);
             cursor.continue();
           } else {
-            const filtered = items.filter((a) => (!startISO || a.start >= startISO) && (!endISO || a.start <= endISO));
-            resolve(filtered);
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  // NEW: Get appointments for a specific date (for today's appointments)
+  function getAppointmentsForDate(date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+    return getAppointmentsBetween(start.toISOString(), end.toISOString());
+  }
+
+  // NEW: Get future appointments for a customer (for next appointment)
+  function getFutureAppointmentsForCustomer(customerId) {
+    const now = new Date().toISOString();
+    return runTransaction(['appointments'], 'readonly', (appointments) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = appointments.index('customerId_start');
+        const range = IDBKeyRange.bound([customerId, now], [customerId, '\uffff']);
+        const req = index.openCursor(range);
+        
+        req.onsuccess = (e) => {
+          const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
+          if (cursor) {
+            results.push(cursor.value);
+            cursor.continue();
+          } else {
+            resolve(results);
           }
         };
         req.onerror = () => reject(req.error);
@@ -394,7 +514,7 @@
     return {
       __meta: {
         app: 'chikas-db',
-        version: 1,
+        version: 3,
         exportedAt: new Date().toISOString(),
       },
       customers,
@@ -613,6 +733,7 @@
     updateCustomer,
     getCustomerById,
     getAllCustomers,
+    getRecentCustomers, // NEW
     getAllAppointments,
     searchCustomers,
     addImages,
@@ -623,6 +744,8 @@
     deleteAppointment,
     deleteCustomer,
     getAppointmentsBetween,
+    getAppointmentsForDate, // NEW
+    getFutureAppointmentsForCustomer, // NEW
     getAppointmentsForCustomer,
     getAppointmentById,
     fileListToEntries,

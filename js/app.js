@@ -115,11 +115,28 @@
     return window.location.hash.replace(/^#/, '') || '/';
   }
 
+  // Global image cache cleanup
+  function cleanupAllImageCaches() {
+    // Clean up any existing image caches
+    if (window.currentImageCache) {
+      window.currentImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentImageCache.clear();
+    }
+    if (window.currentEditImageCache) {
+      window.currentEditImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentEditImageCache.clear();
+    }
+  }
+
   async function render() {
     const path = currentPath();
     const [base, queryString] = path.split('?');
     const query = new URLSearchParams(queryString || '');
     const view = routes[base] || renderNotFound;
+    
+    // Clean up image caches before rendering new view
+    cleanupAllImageCaches();
+    
     appRoot.innerHTML = '';
     await view({ query });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -180,16 +197,12 @@
   async function loadTodaysAppointments() {
     try {
       const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
       
-      const appointments = await ChikasDB.getAllAppointments();
+      // Use the new optimized function instead of loading all appointments
+      const todaysAppointments = await ChikasDB.getAppointmentsForDate(today);
       
-      const todaysAppointments = appointments.filter(apt => {
-        // Handle both Date objects and ISO strings
-        const aptDate = apt.start instanceof Date ? apt.start : new Date(apt.start);
-        const aptDateStr = aptDate.toISOString().split('T')[0];
-        return aptDateStr === todayStr;
-      }).sort((a, b) => {
+      // Sort by time
+      const sortedAppointments = todaysAppointments.sort((a, b) => {
         const dateA = a.start instanceof Date ? a.start : new Date(a.start);
         const dateB = b.start instanceof Date ? b.start : new Date(b.start);
         return dateA - dateB;
@@ -198,10 +211,10 @@
       const appointmentsContainer = document.querySelector('.todays-appointments');
       
       if (appointmentsContainer) {
-        if (todaysAppointments.length > 0) {
+        if (sortedAppointments.length > 0) {
           // Get customer details for each appointment
           const appointmentsWithCustomers = await Promise.all(
-            todaysAppointments.map(async (apt) => {
+            sortedAppointments.map(async (apt) => {
               try {
                 const customer = await ChikasDB.getCustomerById(apt.customerId);
                 return {
@@ -486,12 +499,13 @@
       if (customers.length === 0) {
         resultsEl.innerHTML = `<div class="muted">${t('noMatchesFound')}</div>`;
       } else {
-        const now = new Date();
-        const allAppts = await ChikasDB.getAllAppointments();
+        // Use optimized query to get only future appointments
+        const now = new Date().toISOString();
+        const futureAppts = await ChikasDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
         const nextByCustomer = new Map();
-        allAppts.forEach((a) => {
+        futureAppts.forEach((a) => {
           const start = new Date(a.start);
-          if (start <= now) return;
+          if (start <= new Date(now)) return;
           const cur = nextByCustomer.get(a.customerId);
           if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
         });
@@ -527,47 +541,43 @@
     await refresh();
 
     async function refreshRecents() {
-      const customers = await ChikasDB.getAllCustomers();
-      const sorted = [...customers].sort((a, b) => {
-        const ad = Date.parse(a.updatedAt || a.createdAt || 0) || 0;
-        const bd = Date.parse(b.updatedAt || b.createdAt || 0) || 0;
-        return bd - ad;
+      // Use the new optimized function for recent customers
+      const customers = await ChikasDB.getRecentCustomers(10);
+      
+      // Use optimized query to get only future appointments
+      const now = new Date().toISOString();
+      const futureAppts = await ChikasDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
+      const nextByCustomer = new Map();
+      futureAppts.forEach((a) => {
+        const start = new Date(a.start);
+        if (start <= new Date(now)) return;
+        const cur = nextByCustomer.get(a.customerId);
+        if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
       });
-      {
-        const now = new Date();
-        const allAppts = await ChikasDB.getAllAppointments();
-        const nextByCustomer = new Map();
-        allAppts.forEach((a) => {
-          const start = new Date(a.start);
-          if (start <= now) return;
-          const cur = nextByCustomer.get(a.customerId);
-          if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
+      recentsEl.innerHTML = customers.map((c) => {
+        const next = nextByCustomer.get(c.id);
+        let rightHtml = '';
+        if (next) {
+          const start = new Date(next.start);
+          const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
+          rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
+        }
+        return `
+        <div class=\"list-item\" data-id=\"${c.id}\"> 
+          <div>
+            <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
+            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+          </div>
+          ${rightHtml}
+        </div>`;
+      }).join('');
+      recentsEl.querySelectorAll('.list-item').forEach((rowEl) => {
+        rowEl.addEventListener('click', () => {
+          const id = Number(rowEl.getAttribute('data-id'));
+          if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
         });
-        recentsEl.innerHTML = sorted.slice(0, 10).map((c) => {
-          const next = nextByCustomer.get(c.id);
-          let rightHtml = '';
-          if (next) {
-            const start = new Date(next.start);
-            const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
-            rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
-          }
-          return `
-          <div class=\"list-item\" data-id=\"${c.id}\"> 
-            <div>
-              <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
-            </div>
-            ${rightHtml}
-          </div>`;
-        }).join('');
-        recentsEl.querySelectorAll('.list-item').forEach((rowEl) => {
-          rowEl.addEventListener('click', () => {
-            const id = Number(rowEl.getAttribute('data-id'));
-            if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
-          });
-        });
-      }
+      });
     }
     await refreshRecents();
 
@@ -768,14 +778,34 @@
     // Images
     const imageGrid = document.getElementById('image-grid');
     
+    // Image cache to prevent re-conversion of dataURL to blob
+    window.currentImageCache = new Map();
+    
+    // Cleanup function to prevent memory leaks
+    function cleanupImageCache() {
+      window.currentImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentImageCache.clear();
+    }
+    
     async function renderImageThumbHtml(img) {
       try {
         if (!img.blob || img.blob.size === 0) {
           console.warn('Invalid or empty blob for image:', img.name);
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
-        const url = URL.createObjectURL(img.blob);
-        return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" onerror="this.parentNode.innerHTML='<div class=\\"image-error\\" style=\\"padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;\\">Failed to load image</div>'" />`;
+        
+        // Use cached URL if available
+        let url = window.currentImageCache.get(img.id);
+        if (!url) {
+          url = URL.createObjectURL(img.blob);
+          window.currentImageCache.set(img.id, url);
+        }
+        
+        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+          <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
+        </div>`;
       } catch (error) {
         console.error('Error rendering image:', img.name, error);
         return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
@@ -793,21 +823,87 @@
         noImagesMessage.style.display = 'none';
         imageGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
         
-        // Add click handlers for images
-        try {
-          const clickableImages = imageGrid.querySelectorAll('.clickable-image');
-          console.log('Found clickable images:', clickableImages.length);
-          clickableImages.forEach((img, index) => {
-            img.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              console.log('Image clicked:', index);
-              showImageViewer(imgs, index);
-            });
+        // Set up lazy loading for images
+        setupLazyLoading(imgs);
+      }
+    }
+    
+    // Lazy loading setup with intersection observer
+    function setupLazyLoading(imgs) {
+      const lazyImages = imageGrid.querySelectorAll('.lazy-image');
+      console.log('Setting up lazy loading for', lazyImages.length, 'images');
+      
+      if ('IntersectionObserver' in window) {
+        const imageObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const img = entry.target;
+              const container = img.closest('.lazy-image-container');
+              const placeholder = container.querySelector('.image-placeholder');
+              
+              console.log('Loading image:', img.dataset.src);
+              
+              // Load the image
+              img.src = img.dataset.src;
+              img.style.display = 'block';
+              
+              img.onload = () => {
+                console.log('Image loaded successfully');
+                if (placeholder) placeholder.style.display = 'none';
+              };
+              
+              img.onerror = () => {
+                console.error('Image failed to load:', img.dataset.src);
+                if (placeholder) placeholder.textContent = 'Failed to load';
+              };
+              
+              // Add click handler
+              img.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const imageId = parseInt(img.dataset.imageId);
+                const index = imgs.findIndex(i => i.id === imageId);
+                if (index !== -1) {
+                  showImageViewer(imgs, index);
+                }
+              });
+              
+              observer.unobserve(img);
+            }
           });
-        } catch (error) {
-          console.error('Error attaching click handlers:', error);
-        }
+        }, {
+          rootMargin: '50px 0px', // Start loading 50px before image comes into view
+          threshold: 0.1
+        });
+        
+        lazyImages.forEach((img, index) => {
+          console.log('Observing image', index, img.dataset.src);
+          imageObserver.observe(img);
+          
+          // Fallback: load image after 2 seconds if intersection observer doesn't trigger
+          setTimeout(() => {
+            if (img.style.display === 'none' || !img.src) {
+              console.log('Fallback loading image', index);
+              img.src = img.dataset.src;
+              img.style.display = 'block';
+              const container = img.closest('.lazy-image-container');
+              const placeholder = container.querySelector('.image-placeholder');
+              if (placeholder) placeholder.style.display = 'none';
+            }
+          }, 2000);
+        });
+      } else {
+        // Fallback for browsers without IntersectionObserver
+        console.log('IntersectionObserver not supported, loading all images immediately');
+        lazyImages.forEach((img, index) => {
+          img.src = img.dataset.src;
+          img.style.display = 'block';
+          img.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showImageViewer(imgs, index);
+          });
+        });
       }
     }
     
@@ -826,13 +922,8 @@
     // Load next appointment
     async function loadNextAppointment() {
       try {
-        const now = new Date();
-        const appointments = await ChikasDB.getAllAppointments();
-        
-        // Filter appointments for this customer that are in the future
-        const futureAppointments = appointments
-          .filter(apt => apt.customerId === id && new Date(apt.start) > now)
-          .sort((a, b) => new Date(a.start) - new Date(b.start));
+        // Use the new optimized function instead of loading all appointments
+        const futureAppointments = await ChikasDB.getFutureAppointmentsForCustomer(id);
         
         const nextAppointmentContent = document.getElementById('next-appointment-content');
         
@@ -1100,14 +1191,34 @@
     // Load and display existing images
     const existingImagesGrid = document.getElementById('existing-images-grid');
     
+    // Image cache for edit view
+    window.currentEditImageCache = new Map();
+    
+    // Cleanup function for edit view
+    function cleanupEditImageCache() {
+      window.currentEditImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentEditImageCache.clear();
+    }
+    
     async function renderImageThumbHtml(img) {
       try {
         if (!img.blob || img.blob.size === 0) {
           console.warn('Invalid or empty blob for image:', img.name);
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
-        const url = URL.createObjectURL(img.blob);
-        return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" onerror="this.parentNode.innerHTML='<div class=\\"image-error\\" style=\\"padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;\\">Failed to load image</div>'" />`;
+        
+        // Use cached URL if available
+        let url = window.currentEditImageCache.get(img.id);
+        if (!url) {
+          url = URL.createObjectURL(img.blob);
+          window.currentEditImageCache.set(img.id, url);
+        }
+        
+        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+          <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+          <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
+        </div>`;
       } catch (error) {
         console.error('Error rendering image:', img.name, error);
         return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
@@ -1124,24 +1235,90 @@
         
         existingImagesGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
         
-        // Add click handlers for images
-        try {
-          const clickableImages = existingImagesGrid.querySelectorAll('.clickable-image');
-          console.log('Found clickable images in edit view:', clickableImages.length);
-          clickableImages.forEach((img, index) => {
-            img.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              console.log('Image clicked in edit view:', index);
-              showImageViewer(imgs, index);
-            });
-          });
-        } catch (error) {
-          console.error('Error attaching click handlers in edit view:', error);
-        }
+        // Set up lazy loading for images in edit view
+        setupEditLazyLoading(imgs);
       } catch (error) {
         console.error('Error loading existing images:', error);
         existingImagesGrid.innerHTML = '<div class="error">Error loading images</div>';
+      }
+    }
+    
+    // Lazy loading setup for edit view
+    function setupEditLazyLoading(imgs) {
+      const lazyImages = existingImagesGrid.querySelectorAll('.lazy-image');
+      console.log('Setting up lazy loading for edit view:', lazyImages.length, 'images');
+      
+      if ('IntersectionObserver' in window) {
+        const imageObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const img = entry.target;
+              const container = img.closest('.lazy-image-container');
+              const placeholder = container.querySelector('.image-placeholder');
+              
+              console.log('Loading edit image:', img.dataset.src);
+              
+              // Load the image
+              img.src = img.dataset.src;
+              img.style.display = 'block';
+              
+              img.onload = () => {
+                console.log('Edit image loaded successfully');
+                if (placeholder) placeholder.style.display = 'none';
+              };
+              
+              img.onerror = () => {
+                console.error('Edit image failed to load:', img.dataset.src);
+                if (placeholder) placeholder.textContent = 'Failed to load';
+              };
+              
+              // Add click handler
+              img.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const imageId = parseInt(img.dataset.imageId);
+                const index = imgs.findIndex(i => i.id === imageId);
+                if (index !== -1) {
+                  showImageViewer(imgs, index);
+                }
+              });
+              
+              observer.unobserve(img);
+            }
+          });
+        }, {
+          rootMargin: '50px 0px',
+          threshold: 0.1
+        });
+        
+        lazyImages.forEach((img, index) => {
+          console.log('Observing edit image', index, img.dataset.src);
+          imageObserver.observe(img);
+          
+          // Fallback: load image after 2 seconds if intersection observer doesn't trigger
+          setTimeout(() => {
+            if (img.style.display === 'none' || !img.src) {
+              console.log('Fallback loading edit image', index);
+              img.src = img.dataset.src;
+              img.style.display = 'block';
+              const container = img.closest('.lazy-image-container');
+              const placeholder = container.querySelector('.image-placeholder');
+              if (placeholder) placeholder.style.display = 'none';
+            }
+          }, 2000);
+        });
+      } else {
+        // Fallback for browsers without IntersectionObserver
+        console.log('IntersectionObserver not supported, loading all edit images immediately');
+        lazyImages.forEach((img, index) => {
+          img.src = img.dataset.src;
+          img.style.display = 'block';
+          img.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showImageViewer(imgs, index);
+          });
+        });
       }
     }
     
