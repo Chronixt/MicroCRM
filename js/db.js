@@ -147,7 +147,7 @@
   // Images
   function addImages(customerId, fileEntries) {
     return runTransaction(['images'], 'readwrite', (images) => (
-      Promise.all(fileEntries.map((entry) => new Promise((resolve, reject) => {
+      Promise.all(fileEntries.map((entry) => new Promise(async (resolve, reject) => {
         const toStore = {
           customerId,
           name: entry.name,
@@ -156,7 +156,11 @@
           createdAt: new Date().toISOString(),
         };
         const req = images.add(toStore);
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = async () => {
+          // Also store in localStorage as backup for iOS
+          await storeImageInLocalStorage(req.result, toStore);
+          resolve(req.result);
+        };
         req.onerror = () => reject(req.error);
       })))
     ));
@@ -171,10 +175,24 @@
         const req = index.openCursor(range);
         req.onsuccess = (e) => {
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
-          if (cursor) { results.push(cursor.value); cursor.continue(); }
-          else resolve(results);
+          if (cursor) { 
+            results.push(cursor.value); 
+            cursor.continue(); 
+          } else {
+            // If no results from IndexedDB, try localStorage backup
+            if (results.length === 0) {
+              const backupImages = getImagesFromLocalStorage(customerId);
+              resolve(backupImages);
+            } else {
+              resolve(results);
+            }
+          }
         };
-        req.onerror = () => reject(req.error);
+        req.onerror = () => {
+          // If IndexedDB fails, try localStorage backup
+          const backupImages = getImagesFromLocalStorage(customerId);
+          resolve(backupImages);
+        };
       })
     ));
   }
@@ -270,7 +288,11 @@
     return runTransaction(['images'], 'readwrite', (images) => (
       new Promise((resolve, reject) => {
         const req = images.delete(parseInt(imageId));
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => {
+          // Also remove from localStorage
+          clearImageFromLocalStorage(imageId);
+          resolve(req.result);
+        };
         req.onerror = () => reject(req.error);
       })
     ));
@@ -407,11 +429,14 @@
       let errorCount = 0;
       
       await runTransaction(['images'], 'readwrite', (imagesStore) => {
-        images.forEach((img, index) => {
+        images.forEach(async (img, index) => {
           try {
             const blob = dataURLToBlob(img.dataUrl, img.type);
             if (blob.size > 0) {
-              imagesStore.put({ id: img.id, customerId: img.customerId, name: img.name, type: img.type, blob, createdAt: img.createdAt });
+              const imageData = { id: img.id, customerId: img.customerId, name: img.name, type: img.type, blob, createdAt: img.createdAt };
+              imagesStore.put(imageData);
+              // Also store in localStorage as backup for iOS
+              await storeImageInLocalStorage(img.id, imageData);
               successCount++;
             } else {
               console.warn(`Skipped empty blob for image ${index + 1}: ${img.name}`);
@@ -457,6 +482,58 @@
     } catch (e) {
       console.error('Error converting dataURL to blob:', e);
       return new Blob([], { type: fallbackType || 'application/octet-stream' });
+    }
+  }
+
+  // localStorage backup functions for iOS Safari IndexedDB issues
+  async function storeImageInLocalStorage(imageId, imageData) {
+    try {
+      const key = `chikas_image_${imageId}`;
+      const dataToStore = {
+        ...imageData,
+        blob: imageData.blob ? await blobToDataURL(imageData.blob) : null
+      };
+      localStorage.setItem(key, JSON.stringify(dataToStore));
+    } catch (error) {
+      console.warn('Failed to store image in localStorage:', error);
+    }
+  }
+
+  function getImagesFromLocalStorage(customerId) {
+    try {
+      const images = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('chikas_image_')) {
+          const data = JSON.parse(localStorage.getItem(key));
+          if (data.customerId === customerId) {
+            // Convert dataURL back to blob
+            const blob = data.blob ? dataURLToBlob(data.blob, data.type) : null;
+            if (blob) {
+              images.push({
+                id: data.id,
+                customerId: data.customerId,
+                name: data.name,
+                type: data.type,
+                blob: blob,
+                createdAt: data.createdAt
+              });
+            }
+          }
+        }
+      }
+      return images;
+    } catch (error) {
+      console.warn('Failed to get images from localStorage:', error);
+      return [];
+    }
+  }
+
+  function clearImageFromLocalStorage(imageId) {
+    try {
+      localStorage.removeItem(`chikas_image_${imageId}`);
+    } catch (error) {
+      console.warn('Failed to clear image from localStorage:', error);
     }
   }
 
