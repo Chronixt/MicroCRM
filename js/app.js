@@ -767,6 +767,12 @@
 
     // Images
     const imageGrid = document.getElementById('image-grid');
+    
+    async function renderImageThumbHtml(img) {
+      const url = URL.createObjectURL(img.blob);
+      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
+    }
+    
     async function refreshImages() {
       const imgs = await ChikasDB.getImagesByCustomerId(id);
       const noImagesMessage = document.getElementById('no-images-message');
@@ -779,17 +785,23 @@
         imageGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
         
         // Add click handlers for images
-        imageGrid.querySelectorAll('.clickable-image').forEach((img, index) => {
-          img.addEventListener('click', () => {
-            showImageViewer(imgs, index);
+        try {
+          const clickableImages = imageGrid.querySelectorAll('.clickable-image');
+          console.log('Found clickable images:', clickableImages.length);
+          clickableImages.forEach((img, index) => {
+            img.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('Image clicked:', index);
+              showImageViewer(imgs, index);
+            });
           });
-        });
+        } catch (error) {
+          console.error('Error attaching click handlers:', error);
+        }
       }
     }
-    async function renderImageThumbHtml(img) {
-      const url = URL.createObjectURL(img.blob);
-      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
-    }
+    
     await refreshImages();
 
     // Notes view render
@@ -1078,6 +1090,12 @@
 
     // Load and display existing images
     const existingImagesGrid = document.getElementById('existing-images-grid');
+    
+    async function renderImageThumbHtml(img) {
+      const url = URL.createObjectURL(img.blob);
+      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
+    }
+    
     async function loadExistingImages() {
       try {
         const imgs = await ChikasDB.getImagesByCustomerId(id);
@@ -1089,20 +1107,24 @@
         existingImagesGrid.innerHTML = (await Promise.all(imgs.map(renderImageThumbHtml))).join('');
         
         // Add click handlers for images
-        existingImagesGrid.querySelectorAll('.clickable-image').forEach((img, index) => {
-          img.addEventListener('click', () => {
-            showImageViewer(imgs, index);
+        try {
+          const clickableImages = existingImagesGrid.querySelectorAll('.clickable-image');
+          console.log('Found clickable images in edit view:', clickableImages.length);
+          clickableImages.forEach((img, index) => {
+            img.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('Image clicked in edit view:', index);
+              showImageViewer(imgs, index);
+            });
           });
-        });
+        } catch (error) {
+          console.error('Error attaching click handlers in edit view:', error);
+        }
       } catch (error) {
         console.error('Error loading existing images:', error);
         existingImagesGrid.innerHTML = '<div class="error">Error loading images</div>';
       }
-    }
-    
-    async function renderImageThumbHtml(img) {
-      const url = URL.createObjectURL(img.blob);
-      return `<img src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image" />`;
     }
     
     await loadExistingImages();
@@ -2009,6 +2031,7 @@
 
   // Image viewer modal
   function showImageViewer(images, currentIndex = 0) {
+    console.log('showImageViewer called with:', images?.length, 'images, index:', currentIndex);
     if (!images || images.length === 0) return;
     
     const modalId = 'image-viewer-' + Date.now();

@@ -663,6 +663,25 @@ input[type="text"], input[type="tel"], input[type="datetime-local"], select, .te
   box-shadow: 0 4px 16px rgba(34, 211, 238, 0.3);
 }
 
+/* Clickable image styling */
+.clickable-image {
+  cursor: pointer !important;
+  transition: all 0.2s ease;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 1;
+}
+
+.clickable-image:hover {
+  transform: scale(1.05);
+  border-color: var(--brand);
+  box-shadow: 0 4px 16px rgba(34, 211, 238, 0.3);
+}
+
+.clickable-image:active {
+  transform: scale(0.98);
+}
+
 /* iPad-specific image viewer enhancements */
 @media (min-width: 768px) and (pointer: coarse) {
   .image-viewer-modal {
