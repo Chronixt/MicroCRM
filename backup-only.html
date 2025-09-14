@@ -123,17 +123,15 @@
                 progressContainer.style.display = 'block';
                 
                 // Use the safe backup function with progress
-                const data = await ChikasDB.safeExportAllData((message, progress) => {
+                const result = await ChikasDB.safeExportAllData((message, progress) => {
                     statusEl.innerHTML = `<p>${message}</p>`;
                     progressBar.style.width = `${progress}%`;
                 });
                 
                 statusEl.innerHTML = '<p>Creating download...</p>';
                 
-                // Create and download the backup
-                const jsonString = JSON.stringify(data, null, 2);
-                const blob = new Blob([jsonString], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
+                // Use the pre-created blob
+                const url = URL.createObjectURL(result.blob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = `chikas-backup-${new Date().toISOString().split('T')[0]}.json`;
@@ -144,7 +142,7 @@
                 
                 statusEl.innerHTML = `
                     <p>✅ Backup Complete!</p>
-                    <p>${data.customers.length} customers, ${data.appointments.length} appointments, ${data.images.length} images</p>
+                    <p>${result.customers.length} customers, ${result.appointments.length} appointments, ${result.imageCount} images</p>
                 `;
                 progressBar.style.background = 'linear-gradient(90deg, #4ecdc4, #44a08d)';
                 

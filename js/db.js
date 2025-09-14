@@ -773,74 +773,122 @@
     });
   }
 
-  // Safe backup function with progress callback
+  // Ultra-safe backup function with streaming JSON creation
   async function safeExportAllData(progressCallback = null) {
     try {
       if (progressCallback) progressCallback('Starting backup...', 0);
       
       // Export customers first (usually small)
       const customers = await getAllCustomers();
-      if (progressCallback) progressCallback(`Exported ${customers.length} customers`, 20);
+      if (progressCallback) progressCallback(`Exported ${customers.length} customers`, 10);
       
       // Export appointments (usually small)
       const appointments = await getAllAppointments();
-      if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 40);
+      if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 20);
       
-      // Export images in smaller chunks to avoid memory issues
+      // Get image count first
       const images = await getAllImages();
-      if (progressCallback) progressCallback(`Found ${images.length} images, processing...`, 50);
+      if (progressCallback) progressCallback(`Found ${images.length} images, processing...`, 30);
       
-      const imagesSerialized = [];
-      const chunkSize = 5; // Smaller chunks for iPad
+      // Create streaming JSON writer
+      const jsonParts = [];
+      
+      // Start JSON structure
+      jsonParts.push('{\n');
+      jsonParts.push('  "__meta": {\n');
+      jsonParts.push('    "app": "chikas-db",\n');
+      jsonParts.push('    "version": 3,\n');
+      jsonParts.push(`    "exportedAt": "${new Date().toISOString()}"\n`);
+      jsonParts.push('  },\n');
+      
+      // Add customers
+      jsonParts.push('  "customers": ');
+      jsonParts.push(JSON.stringify(customers, null, 2));
+      jsonParts.push(',\n');
+      
+      // Add appointments
+      jsonParts.push('  "appointments": ');
+      jsonParts.push(JSON.stringify(appointments, null, 2));
+      jsonParts.push(',\n');
+      
+      // Process images in very small chunks and add to JSON directly
+      jsonParts.push('  "images": [\n');
+      
+      const chunkSize = 2; // Even smaller chunks - process 2 images at a time
       const totalChunks = Math.ceil(images.length / chunkSize);
+      let isFirstImage = true;
+      let processedCount = 0;
       
       for (let i = 0; i < images.length; i += chunkSize) {
         const chunk = images.slice(i, i + chunkSize);
         const chunkNumber = Math.floor(i / chunkSize) + 1;
         
         if (progressCallback) {
-          progressCallback(`Processing images ${chunkNumber}/${totalChunks}`, 50 + (chunkNumber / totalChunks) * 40);
+          progressCallback(`Processing images ${chunkNumber}/${totalChunks} (${processedCount}/${images.length})`, 30 + (chunkNumber / totalChunks) * 60);
         }
         
-        const chunkProcessed = [];
         for (const img of chunk) {
           try {
-            chunkProcessed.push({
+            if (!isFirstImage) {
+              jsonParts.push(',\n');
+            }
+            
+            // Process image data one at a time
+            const imageData = {
               id: img.id,
               customerId: img.customerId,
               name: img.name,
               type: img.type,
               createdAt: img.createdAt,
               dataUrl: img.dataUrl,
-            });
+            };
+            
+            jsonParts.push('    ');
+            jsonParts.push(JSON.stringify(imageData, null, 4));
+            isFirstImage = false;
+            processedCount++;
+            
+            // Clear the image data immediately
+            img.dataUrl = null;
+            
           } catch (error) {
             console.error(`Error processing image ${img.id}:`, error);
             // Continue with other images
           }
         }
         
-        imagesSerialized.push(...chunkProcessed);
+        // Clear the chunk from memory
+        chunk.length = 0;
+        
+        // Aggressive memory cleanup
+        if (global.gc) global.gc(); // Force garbage collection if available
         
         // Longer delay for iPad memory management
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
-      if (progressCallback) progressCallback('Creating backup file...', 90);
+      // Close images array and JSON
+      jsonParts.push('\n  ]\n');
+      jsonParts.push('}');
       
-      const result = {
-        __meta: {
-          app: 'chikas-db',
-          version: 3,
-          exportedAt: new Date().toISOString(),
-        },
-        customers,
-        appointments,
-        images: imagesSerialized,
-      };
+      if (progressCallback) progressCallback('Creating backup file...', 95);
+      
+      // Create blob from parts (this should use less memory)
+      const jsonString = jsonParts.join('');
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      
+      // Clear the parts array to free memory
+      jsonParts.length = 0;
       
       if (progressCallback) progressCallback('Backup complete!', 100);
       
-      return result;
+      return {
+        blob: blob,
+        customers: customers,
+        appointments: appointments,
+        imageCount: processedCount
+      };
+      
     } catch (error) {
       console.error('Backup failed:', error);
       if (progressCallback) progressCallback(`Backup failed: ${error.message}`, 0);

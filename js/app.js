@@ -2299,16 +2299,15 @@
         exportBtn.disabled = true;
         exportBtn.textContent = 'Exporting...';
         
-        const data = await ChikasDB.safeExportAllData((message, progress) => {
+        const result = await ChikasDB.safeExportAllData((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         
         statusEl.textContent = 'Creating backup file...';
         
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
+        // Use the pre-created blob
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
-        lastExportBlobUrl = URL.createObjectURL(blob);
+        lastExportBlobUrl = URL.createObjectURL(result.blob);
         lastExportFileName = `chikas-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
         downloadBtn.disabled = false;
         statusEl.textContent = `✅ Backup ready: ${lastExportFileName}`;
@@ -2507,18 +2506,14 @@
         exportBtn.disabled = true;
         exportBtn.textContent = 'Backing up...';
         
-        const data = await ChikasDB.safeExportAllData((message, progress) => {
+        const result = await ChikasDB.safeExportAllData((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         
         statusEl.textContent = 'Creating download...';
         
-        // Create blob in smaller chunks to avoid memory issues
-        const jsonString = JSON.stringify(data, null, 2);
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        
-        // Create download
-        const url = URL.createObjectURL(blob);
+        // Use the pre-created blob
+        const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `chikas-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
@@ -2527,7 +2522,7 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        statusEl.textContent = `✅ Backup downloaded! ${data.customers.length} customers, ${data.appointments.length} appointments, ${data.images.length} images`;
+        statusEl.textContent = `✅ Backup downloaded! ${result.customers.length} customers, ${result.appointments.length} appointments, ${result.imageCount} images`;
         statusEl.style.color = '#4ecdc4';
         
         // Re-enable button
