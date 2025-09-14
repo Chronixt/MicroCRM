@@ -861,7 +861,7 @@
         chunk.length = 0;
         
         // Aggressive memory cleanup
-        if (global.gc) global.gc(); // Force garbage collection if available
+        // Note: global.gc is not available in browser environment
         
         // Longer delay for iPad memory management
         await new Promise(resolve => setTimeout(resolve, 500));
