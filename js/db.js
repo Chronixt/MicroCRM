@@ -522,7 +522,7 @@
       name: img.name,
       type: img.type,
       createdAt: img.createdAt,
-      dataUrl: await blobToDataURL(img.blob),
+      dataUrl: img.dataUrl, // Use dataUrl directly instead of converting from blob
     })));
     return {
       __meta: {

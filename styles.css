@@ -1516,6 +1516,24 @@ select option { color: black; }
   box-shadow: 0 10px 30px rgba(0,0,0,0.6);
 }
 
+/* Full-screen modal for handwriting */
+.handwriting-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(17, 24, 39, 0.98);
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  z-index: 10001;
+  box-shadow: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .hidden { display: none !important; }
 
 @media (max-width: 640px) {
@@ -1583,6 +1601,31 @@ select option { color: black; }
 .detail-label { color: var(--muted); font-size: 13px; }
 .detail-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notes-view .rich-note { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px; }
+
+/* Handwriting SVG styling */
+.handwriting-svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 2px 0;
+}
+
+.handwriting-svg svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Custom handwriting embed styling */
+.handwriting-embed {
+  display: inline-block;
+  margin: 2px 0;
+  vertical-align: middle;
+}
+
+.handwriting-embed .handwriting-svg {
+  display: inline-block;
+  vertical-align: middle;
+}
 
 /* Next Appointment Module */
 .next-appointment {
@@ -1753,7 +1796,295 @@ select option { color: black; }
 }
 
 #all-customers-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+/* Notes canvas specific styles */
+#new-notes, #notes {
+  position: relative;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#new-notes canvas, #notes canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  cursor: crosshair;
+  background: rgba(255,255,255,0.03);
+  border: none;
+  border-radius: 0;
+}
+
+/* Scrollable canvas container */
+#new-notes.scrollable, #notes.scrollable {
+  overflow: auto;
+  max-height: 300px;
+}
+
+#new-notes.scrollable canvas, #notes.scrollable canvas {
+  width: auto !important;
+  height: auto !important;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+/* Custom scrollbar for canvas containers */
+#new-notes.scrollable::-webkit-scrollbar,
+#notes.scrollable::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+#new-notes.scrollable::-webkit-scrollbar-track,
+#notes.scrollable::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+#new-notes.scrollable::-webkit-scrollbar-thumb,
+#notes.scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+#new-notes.scrollable::-webkit-scrollbar-thumb:hover,
+#notes.scrollable::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* Canvas expand button */
+.canvas-expand-btn {
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.canvas-expand-btn:hover {
+  background: rgba(34, 211, 238, 0.3) !important;
+  border-color: rgba(34, 211, 238, 0.6) !important;
+  transform: translateY(-1px);
+}
+
+.canvas-expand-btn:active {
+  transform: translateY(0);
+  background: rgba(34, 211, 238, 0.4) !important;
+}
+
+/* Fullscreen canvas overlay */
+#canvas-fullscreen-overlay {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+#canvas-fullscreen-overlay canvas {
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Toolbar button hover effects */
+#canvas-fullscreen-overlay button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+#canvas-fullscreen-overlay button:active {
+  transform: translateY(0);
+}
+
+/* Color preset buttons */
+#canvas-fullscreen-overlay .color-preset-btn {
+  transition: all 0.2s ease;
+}
+
+#canvas-fullscreen-overlay .color-preset-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Range slider styling */
+#canvas-fullscreen-overlay input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+#canvas-fullscreen-overlay input[type="range"]::-webkit-slider-track {
+  background: rgba(255,255,255,0.2);
+  height: 6px;
+  border-radius: 3px;
+}
+
+#canvas-fullscreen-overlay input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--brand);
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+#canvas-fullscreen-overlay input[type="range"]::-moz-range-track {
+  background: rgba(255,255,255,0.2);
+  height: 6px;
+  border-radius: 3px;
+  border: none;
+}
+
+#canvas-fullscreen-overlay input[type="range"]::-moz-range-thumb {
+  background: var(--brand);
+  height: 18px;
+  width: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Notes view styling for canvas images */
+.notes-view img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  background: rgba(255,255,255,0.05);
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Handwriting digitization styles */
+.handwriting-modal .modal-header {
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(31, 41, 55, 0.3);
+  flex-shrink: 0;
+}
+
+.handwriting-controls {
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(31, 41, 55, 0.3);
+  flex-shrink: 0;
+}
+
+.handwriting-mode-selector {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.handwriting-mode-selector label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.handwriting-mode-selector input[type="radio"] {
+  margin: 0;
+}
+
+.handwriting-options {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.handwriting-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.handwriting-options select,
+.handwriting-options input[type="number"] {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(31, 41, 55, 0.5);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.handwriting-options input[type="checkbox"] {
+  margin: 0;
+}
+
+#handwriting-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#handwriting-canvas-container {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.canvas-toolbar .button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+#handwriting-canvas-wrapper {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+#handwriting-canvas-wrapper canvas {
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  touch-action: none;
+}
+
+/* Responsive adjustments for full-screen modal */
+@media (max-width: 768px) {
+  .handwriting-options {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .handwriting-mode-selector {
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 
 

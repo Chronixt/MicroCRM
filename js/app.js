@@ -306,6 +306,10 @@
   }
 
   async function renderAddRecord() {
+    // Clear global customer variables to prevent notes from being assigned to wrong customer
+    window.currentCustomerId = null;
+    window.currentCustomer = null;
+    
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
         <h2>${t('newCustomer')}</h2>
@@ -351,10 +355,8 @@
           </div>
           <div>
             <label>${t('notes')}</label>
-            <div style="position: relative;">
-              <div id="new-notes" style="height: 180px;"></div>
-              <button type="button" class="handwriting-btn" id="new-notes-handwriting" title="Open handwriting mode" style="position: absolute; top: 8px; right: 8px; background: rgba(34, 211, 238, 0.2); border: 1px solid rgba(34, 211, 238, 0.4); color: var(--brand); border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer;">✏️ Handwrite</button>
-            </div>
+            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+            <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
           <div>
             <label>${t('attachImages')}</label>
@@ -367,15 +369,13 @@
       </div>
     `);
 
-    const quill = createHandwritingQuill('#new-notes');
-    
-    // Add handwriting button functionality for notes
-    document.getElementById('new-notes-handwriting').addEventListener('click', () => {
-      const currentContent = quill.root.innerHTML;
-      showHandwritingModal('Add Notes', currentContent, (newContent) => {
-        quill.clipboard.dangerouslyPasteHTML(newContent);
-      });
+    // Initialize add note button functionality
+    document.querySelector('.add-note-btn').addEventListener('click', () => {
+      fullscreenNotesCanvas.show();
     });
+    
+    // Load any existing temporary notes for new customer
+    loadExistingNotes('temp-new-customer');
     
     // Add handwriting functionality for text inputs
     document.querySelectorAll('.input-icon-btn').forEach(btn => {
@@ -403,17 +403,33 @@
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
       const socialMediaName = form.querySelector('input[name="socialMediaName"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
-      const notesHtml = quill.root.innerHTML;
+      
+      // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
+      let notesImageData = '';
+      if (fullscreenNotesCanvas && fullscreenNotesCanvas.canvas && fullscreenNotesCanvas.strokes && fullscreenNotesCanvas.strokes.length > 0) {
+        notesImageData = fullscreenNotesCanvas.getImageData();
+      }
+      
       const imageFiles = form.querySelector('input[name="images"]').files;
 
       const customer = {
         firstName, lastName, contactNumber, socialMediaName, referralNotes,
-        notesHtml,
+        notesImageData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
       const newId = await ChikasDB.createCustomer(customer);
+
+      // Transfer any temporary notes from 'temp-new-customer' to the real customer ID
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const tempNotes = existingNotes['temp-new-customer'] || [];
+      if (tempNotes.length > 0) {
+        console.log(`Transferring ${tempNotes.length} temporary notes to customer ${newId}`);
+        existingNotes[newId] = tempNotes;
+        delete existingNotes['temp-new-customer'];
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+      }
 
       if (imageFiles && imageFiles.length > 0) {
         const entries = await ChikasDB.fileListToEntries(imageFiles);
@@ -687,6 +703,10 @@
     if (!id) return renderNotFound();
     const customer = await ChikasDB.getCustomerById(id);
     if (!customer) return renderNotFound();
+    
+    // Store customer ID globally for notes system
+    window.currentCustomerId = id;
+    window.currentCustomer = customer;
 
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="card customer-view">
@@ -760,7 +780,8 @@
 
         <div class="notes-view">
           <h3 style="margin:0 0 6px 0;">Notes</h3>
-          <div id="notes-view" class="rich-note"></div>
+          <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+          <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
         </div>
 
         <div class="gallery" style="margin-top: 20px;">
@@ -941,15 +962,13 @@
     
     await refreshImages();
 
-    // Notes view render
-    const notesView = document.getElementById('notes-view');
-    if (notesView) {
-      if (customer.notesHtml && customer.notesHtml.trim() !== '') {
-        notesView.innerHTML = customer.notesHtml;
-      } else {
-        notesView.innerHTML = '<div class="muted">No notes added</div>';
-      }
-    }
+    // Notes view render - load existing notes
+    loadExistingNotes(id);
+    
+    // Add note button event listener
+    document.querySelector('.add-note-btn').addEventListener('click', () => {
+      fullscreenNotesCanvas.show();
+    });
 
     // Load next appointment
     async function loadNextAppointment() {
@@ -1069,18 +1088,132 @@
     });
     updateTypeSummary();
 
-    // Quick notes overlay - now uses handwriting modal
+    // Quick notes overlay - create temporary canvas for drawing
     document.getElementById('quick-note-btn').addEventListener('click', () => {
       const now = new Date();
-      showHandwritingModal(t('addNotes'), '', async (newContent) => {
-        if (!newContent || newContent === '<p><br></p>') return;
-        const appended = appendNotesHtml(customer.notesHtml || '', newContent, now);
-        const updated = { ...customer, notesHtml: appended, updatedAt: new Date().toISOString() };
-        await ChikasDB.updateCustomer(updated);
-        customer.notesHtml = appended;
-        const notesView = document.getElementById('notes-view');
-        if (notesView) notesView.innerHTML = appended;
-        alert('Note added');
+      const tempCanvas = new NotesCanvas('#notes-view', { width: 400, height: 300 });
+      tempCanvas.container.innerHTML = ''; // Clear existing content
+      tempCanvas.container.appendChild(tempCanvas.canvas);
+      
+      // Create a simple fullscreen overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(17, 24, 39, 0.98);
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+      `;
+      
+      const header = document.createElement('div');
+      header.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      `;
+      
+      const title = document.createElement('h2');
+      title.textContent = t('addNotes');
+      title.style.margin = '0';
+      title.style.color = 'var(--text)';
+      
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        color: var(--text);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        font-size: 18px;
+      `;
+      
+      const canvasContainer = document.createElement('div');
+      canvasContainer.style.cssText = `
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 20px;
+      `;
+      
+      const canvas = new NotesCanvas(canvasContainer, { width: 800, height: 600 });
+      
+      const actions = document.createElement('div');
+      actions.style.cssText = `
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        margin-top: 20px;
+      `;
+      
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save Note';
+      saveBtn.style.cssText = `
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        color: black;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 24px;
+        cursor: pointer;
+        font-weight: 600;
+      `;
+      
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        color: var(--text);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px;
+        padding: 12px 24px;
+        cursor: pointer;
+      `;
+      
+      header.appendChild(title);
+      header.appendChild(closeBtn);
+      actions.appendChild(saveBtn);
+      actions.appendChild(cancelBtn);
+      
+      overlay.appendChild(header);
+      overlay.appendChild(canvasContainer);
+      overlay.appendChild(actions);
+      document.body.appendChild(overlay);
+      
+      const cleanup = () => {
+        document.body.removeChild(overlay);
+      };
+      
+      closeBtn.addEventListener('click', cleanup);
+      cancelBtn.addEventListener('click', cleanup);
+      
+      saveBtn.addEventListener('click', async () => {
+        if (canvas.hasContent()) {
+          const newContent = canvas.getImageData();
+          const appended = appendNotesCanvas(customer.notesImageData || '', newContent, now);
+          const updated = { ...customer, notesImageData: appended, updatedAt: new Date().toISOString() };
+          await ChikasDB.updateCustomer(updated);
+          customer.notesImageData = appended;
+          const notesView = document.getElementById('notes-view');
+          if (notesView) {
+            notesView.innerHTML = `<img src="${appended}" style="max-width: 100%; height: auto; border-radius: 4px;" alt="Notes drawing" />`;
+          }
+          alert('Note added');
+        }
+        cleanup();
       });
     });
 
@@ -1112,6 +1245,10 @@
     if (!id) return renderNotFound();
     const customer = await ChikasDB.getCustomerById(id);
     if (!customer) return renderNotFound();
+    
+    // Store customer ID globally for notes system
+    window.currentCustomerId = id;
+    window.currentCustomer = customer;
 
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="card">
@@ -1159,10 +1296,8 @@
           </div>
           <div>
             <label>Notes</label>
-            <div style="position: relative;">
-              <div id="notes" style="height: 220px;"></div>
-              <button type="button" class="handwriting-btn" id="notes-handwriting" title="Open handwriting mode" style="position: absolute; top: 8px; right: 8px; background: rgba(34, 211, 238, 0.2); border: 1px solid rgba(34, 211, 238, 0.4); color: var(--brand); border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer;">✏️ Handwrite</button>
-            </div>
+            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+            <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
           
           <div>
@@ -1190,16 +1325,13 @@
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
 
-    const notesQuill = createHandwritingQuill('#notes');
-    notesQuill.clipboard.dangerouslyPasteHTML(customer.notesHtml || '');
-    
-    // Add handwriting button functionality for notes
-    document.getElementById('notes-handwriting').addEventListener('click', () => {
-      const currentContent = notesQuill.root.innerHTML;
-      showHandwritingModal('Edit Notes', currentContent, (newContent) => {
-        notesQuill.clipboard.dangerouslyPasteHTML(newContent);
-      });
+    // Initialize add note button functionality
+    document.querySelector('.add-note-btn').addEventListener('click', () => {
+      fullscreenNotesCanvas.show();
     });
+    
+    // Load existing notes
+    loadExistingNotes(customer.id);
     
     // Add handwriting functionality for text inputs
     document.querySelectorAll('.input-icon-btn').forEach(btn => {
@@ -1359,9 +1491,14 @@
     await loadExistingImages();
 
     document.getElementById('save-btn').addEventListener('click', async () => {
-      // Check if Quill editor has meaningful content
-      const notesContent = notesQuill.root.innerHTML;
-      const hasNotes = notesContent && notesContent.trim() !== '' && notesContent !== '<p><br></p>';
+      // Check if canvas has meaningful content
+      let notesImageData = customer.notesImageData || '';
+      let hasNotes = false;
+      
+      if (fullscreenNotesCanvas && fullscreenNotesCanvas.canvas && fullscreenNotesCanvas.strokes && fullscreenNotesCanvas.strokes.length > 0) {
+        notesImageData = fullscreenNotesCanvas.getImageData();
+        hasNotes = true;
+      }
       
       const updated = {
         ...customer,
@@ -1370,7 +1507,7 @@
         contactNumber: getInputValue(form, 'contactNumber').trim(),
         socialMediaName: getInputValue(form, 'socialMediaName').trim(),
         referralNotes: getInputValue(form, 'referralNotes').trim(),
-        notesHtml: hasNotes ? notesContent : '',
+        notesImageData: hasNotes ? notesImageData : '',
         updatedAt: new Date().toISOString(),
       };
       
@@ -2318,7 +2455,28 @@
     };
     
     const config = { ...defaultConfig, ...options };
-    return new Quill(containerId, config);
+    const quill = new Quill(containerId, config);
+    
+    // Register custom embed for handwriting content
+    const CustomHandwriting = Quill.import('blots/embed');
+    class HandwritingBlot extends CustomHandwriting {
+      static create(value) {
+        const node = super.create();
+        node.innerHTML = value;
+        return node;
+      }
+      
+      static value(node) {
+        return node.innerHTML;
+      }
+    }
+    HandwritingBlot.blotName = 'custom-handwriting';
+    HandwritingBlot.tagName = 'div';
+    HandwritingBlot.className = 'handwriting-embed';
+    
+    Quill.register(HandwritingBlot);
+    
+    return quill;
   }
 
   // Image viewer modal
@@ -2448,29 +2606,170 @@
             <button class="button" id="handwriting-save">${t('save')}</button>
           </div>
         </div>
-        <div id="handwriting-quill-container"></div>
+        <div class="handwriting-controls">
+          <div class="handwriting-mode-selector">
+            <label>
+              <input type="radio" name="handwriting-mode" value="auto" ${handwritingSettings.digitizationMode === 'auto' ? 'checked' : ''}>
+              Auto Digitization
+            </label>
+            <label>
+              <input type="radio" name="handwriting-mode" value="vector" ${handwritingSettings.digitizationMode === 'vector' ? 'checked' : ''}>
+              Save as Vector/Image
+            </label>
+          </div>
+          <div class="handwriting-options" id="handwriting-options" style="display: ${handwritingSettings.digitizationMode === 'vector' ? 'block' : 'none'};">
+            <label>
+              Format:
+              <select id="vector-format">
+                <option value="svg" ${handwritingSettings.vectorFormat === 'svg' ? 'selected' : ''}>SVG</option>
+                <option value="png" ${handwritingSettings.vectorFormat === 'png' ? 'selected' : ''}>PNG</option>
+              </select>
+            </label>
+            <label>
+              <input type="checkbox" id="auto-resize" ${handwritingSettings.autoResize ? 'checked' : ''}>
+              Auto-resize to line height
+            </label>
+            <label>
+              Line height: <input type="number" id="line-height" value="${handwritingSettings.lineHeight}" min="12" max="48" step="2">
+            </label>
+          </div>
+        </div>
+        <div id="handwriting-content">
+          <div id="handwriting-quill-container" style="display: ${handwritingSettings.digitizationMode === 'auto' ? 'block' : 'none'};"></div>
+          <div id="handwriting-canvas-container" style="display: ${handwritingSettings.digitizationMode === 'vector' ? 'block' : 'none'};">
+            <div class="canvas-toolbar">
+              <button type="button" id="clear-canvas" class="button secondary">Clear</button>
+              <button type="button" id="undo-stroke" class="button secondary">Undo</button>
+            </div>
+            <div id="handwriting-canvas-wrapper"></div>
+          </div>
+        </div>
       </div>
     `;
     
     modalRoot.innerHTML = modalHtml;
     modalRoot.setAttribute('aria-hidden', 'false');
     
-    // Initialize Quill with enhanced configuration for handwriting
-    const quill = createHandwritingQuill('#handwriting-quill-container');
+    // Prevent touch events from going through to elements behind the modal
+    modalRoot.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    });
+    modalRoot.addEventListener('touchmove', (e) => {
+      e.stopPropagation();
+    });
+    modalRoot.addEventListener('touchend', (e) => {
+      e.stopPropagation();
+    });
     
-    // Set initial content
-    if (initialContent) {
-      quill.clipboard.dangerouslyPasteHTML(initialContent);
+    let quill = null;
+    let handwritingCanvas = null;
+    let currentContent = initialContent;
+
+    // Initialize based on selected mode
+    function initializeHandwriting() {
+      const mode = document.querySelector('input[name="handwriting-mode"]:checked').value;
+      
+      if (mode === 'auto') {
+        // Initialize Quill for auto digitization
+        if (!quill) {
+          quill = createHandwritingQuill('#handwriting-quill-container');
+          if (initialContent) {
+            quill.clipboard.dangerouslyPasteHTML(initialContent);
+          }
+        }
+        document.getElementById('handwriting-quill-container').style.display = 'block';
+        document.getElementById('handwriting-canvas-container').style.display = 'none';
+      } else {
+        // Initialize canvas for vector/image mode
+        if (!handwritingCanvas) {
+          // Calculate canvas size to use most of the available screen space
+          const availableWidth = window.innerWidth - 100; // Account for padding
+          const availableHeight = window.innerHeight - 200; // Account for header and controls
+          const canvasWidth = Math.max(800, availableWidth);
+          const canvasHeight = Math.max(500, availableHeight);
+          
+          handwritingCanvas = new HandwritingCanvas('#handwriting-canvas-wrapper', {
+            width: canvasWidth,
+            height: canvasHeight,
+            lineWidth: 3, // Slightly thicker for better visibility on larger canvas
+            strokeColor: '#ffffff'
+          });
+        }
+        document.getElementById('handwriting-quill-container').style.display = 'none';
+        document.getElementById('handwriting-canvas-container').style.display = 'block';
+      }
     }
-    
-    // Focus the editor for immediate handwriting
-    setTimeout(() => {
-      quill.focus();
-    }, 100);
-    
+
+    // Initialize on load
+    initializeHandwriting();
+
+    // Mode change handler
+    document.querySelectorAll('input[name="handwriting-mode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        handwritingSettings.digitizationMode = e.target.value;
+        saveHandwritingSettings();
+        
+        // Show/hide options panel
+        const optionsPanel = document.getElementById('handwriting-options');
+        if (e.target.value === 'vector') {
+          optionsPanel.style.display = 'block';
+        } else {
+          optionsPanel.style.display = 'none';
+        }
+        
+        initializeHandwriting();
+      });
+    });
+
+    // Options change handlers
+    document.getElementById('vector-format').addEventListener('change', (e) => {
+      handwritingSettings.vectorFormat = e.target.value;
+      saveHandwritingSettings();
+    });
+
+    document.getElementById('auto-resize').addEventListener('change', (e) => {
+      handwritingSettings.autoResize = e.target.checked;
+      saveHandwritingSettings();
+    });
+
+    document.getElementById('line-height').addEventListener('change', (e) => {
+      handwritingSettings.lineHeight = parseInt(e.target.value);
+      saveHandwritingSettings();
+    });
+
+    // Canvas controls
+    document.getElementById('clear-canvas').addEventListener('click', () => {
+      if (handwritingCanvas) {
+        handwritingCanvas.clear();
+      }
+    });
+
+    document.getElementById('undo-stroke').addEventListener('click', () => {
+      if (handwritingCanvas && handwritingCanvas.strokes.length > 0) {
+        handwritingCanvas.strokes.pop();
+        handwritingCanvas.clear();
+        handwritingCanvas.ctx.strokeStyle = '#ffffff';
+        handwritingCanvas.ctx.lineWidth = 2;
+        handwritingCanvas.ctx.lineCap = 'round';
+        handwritingCanvas.ctx.lineJoin = 'round';
+        
+        // Redraw all strokes except the last one
+        handwritingCanvas.strokes.forEach(stroke => {
+          if (stroke.length < 2) return;
+          handwritingCanvas.ctx.beginPath();
+          handwritingCanvas.ctx.moveTo(stroke[0].x, stroke[0].y);
+          for (let i = 1; i < stroke.length; i++) {
+            handwritingCanvas.ctx.lineTo(stroke[i].x, stroke[i].y);
+          }
+          handwritingCanvas.ctx.stroke();
+        });
+      }
+    });
+
     // Event handlers
     document.getElementById('handwriting-cancel').addEventListener('click', () => {
-      const hasContent = (quill.getText() || '').trim().length > 0;
+      const hasContent = handwritingCanvas ? handwritingCanvas.strokes.length > 0 : 
+                        quill ? (quill.getText() || '').trim().length > 0 : false;
       if (hasContent) {
         if (!confirm('Discard changes?')) return;
       }
@@ -2478,9 +2777,52 @@
     });
     
     document.getElementById('handwriting-save').addEventListener('click', () => {
-      const content = quill.root.innerHTML;
+      const mode = document.querySelector('input[name="handwriting-mode"]:checked').value;
+      
+      if (mode === 'auto' && quill) {
+        // Auto digitization mode - save as HTML
+        currentContent = quill.root.innerHTML;
+      } else if (mode === 'vector' && handwritingCanvas) {
+        // Vector/image mode - save as image or SVG
+        if (handwritingCanvas.strokes.length === 0) {
+          alert('Please draw something before saving.');
+          return;
+        }
+
+        let content;
+        if (handwritingSettings.vectorFormat === 'svg') {
+          // For SVG, apply auto-resize by scaling the viewBox if enabled
+          let svgContent = handwritingCanvas.getSVG();
+          if (handwritingSettings.autoResize) {
+            // Calculate scale factor
+            const originalHeight = handwritingCanvas.canvas.height;
+            const targetHeight = handwritingSettings.lineHeight;
+            const scale = targetHeight / originalHeight;
+            const newWidth = Math.round(handwritingCanvas.canvas.width * scale);
+            
+            // Update SVG dimensions - use regex to match any width/height values
+            svgContent = svgContent.replace(
+              /width="\d+" height="\d+"/,
+              `width="${newWidth}" height="${targetHeight}"`
+            );
+          }
+          content = `<div class="handwriting-svg" style="max-height: ${handwritingSettings.lineHeight}px; width: auto; display: inline-block;">${svgContent}</div>`;
+        } else {
+          // PNG format
+          let canvas = handwritingCanvas.canvas;
+          if (handwritingSettings.autoResize) {
+            canvas = handwritingCanvas.resizeToLineHeight();
+          }
+          content = `<img src="${canvas.toDataURL('image/png')}" style="max-height: ${handwritingSettings.lineHeight}px; width: auto;" />`;
+        }
+        
+        currentContent = content;
+      }
+      
+      console.log('Saving handwriting content:', currentContent);
+      
       if (onSave) {
-        onSave(content);
+        onSave(currentContent);
       }
       hideModal();
     });
@@ -2513,6 +2855,16 @@
     const block = `<div class="note-entry"><div class="muted" style="font-size:12px;">${escapeHtml(tsStr)}</div>${newHtml}</div>`;
     if (!existingHtml || existingHtml.trim() === '') return block;
     return existingHtml + '<hr />' + block;
+  }
+
+  function appendNotesCanvas(existingImageData, newImageData, timestamp) {
+    const ts = timestamp instanceof Date ? timestamp : new Date();
+    const tsStr = ts.toLocaleString();
+    
+    // For canvas data, we'll create a simple HTML structure with the new image
+    // Since we can't easily combine canvas images, we'll just return the new one
+    // In a more sophisticated implementation, you might want to create a composite image
+    return newImageData;
   }
 
   // Round a datetime-local string to the nearest N minutes (default 15)
@@ -2577,7 +2929,1704 @@
     // Default route
     if (!window.location.hash) navigate('/');
     render();
+    
+    // Run migration for old notes system
+    migrateOldNotes();
   });
+
+  // Handwriting digitization settings and functionality
+  let handwritingSettings = {
+    digitizationMode: 'auto', // 'auto' or 'vector'
+    vectorFormat: 'svg', // 'svg' or 'png'
+    autoResize: true,
+    lineHeight: 24 // pixels
+  };
+
+  // Load settings from localStorage
+  function loadHandwritingSettings() {
+    const saved = localStorage.getItem('handwritingSettings');
+    if (saved) {
+      handwritingSettings = { ...handwritingSettings, ...JSON.parse(saved) };
+    }
+  }
+
+  // Save settings to localStorage
+  function saveHandwritingSettings() {
+    localStorage.setItem('handwritingSettings', JSON.stringify(handwritingSettings));
+  }
+
+  // Initialize settings on app start
+  loadHandwritingSettings();
+
+  // Expand canvas function
+
+  // Notes canvas functionality - simplified version for notes
+  class NotesCanvas {
+    constructor(container, options = {}) {
+      this.container = typeof container === 'string' ? document.querySelector(container) : container;
+      this.canvas = document.createElement('canvas');
+      this.ctx = this.canvas.getContext('2d');
+      this.isDrawing = false;
+      this.strokes = [];
+      this.currentStroke = [];
+      
+      // Drawing properties
+      this.strokeColor = '#ffffff';
+      this.strokeWidth = 2;
+      
+      // Set up canvas
+      this.setupCanvas(options);
+      
+      // Set up toolbar
+      this.setupToolbar();
+    }
+
+    setupCanvas(options = {}) {
+      const width = options.width || 400;
+      const height = options.height || 300;
+      
+      // Set display size first
+      this.canvas.style.border = '1px solid rgba(255,255,255,0.2)';
+      this.canvas.style.borderRadius = '4px';
+      this.canvas.style.cursor = 'crosshair';
+      this.canvas.style.backgroundColor = 'rgba(255,255,255,0.03)';
+      this.canvas.style.width = '100%';
+      this.canvas.style.height = '100%';
+      this.canvas.style.display = 'block';
+      
+      this.container.appendChild(this.canvas);
+      
+      // Set actual canvas size to match display size for crisp rendering
+      const rect = this.canvas.getBoundingClientRect();
+      this.canvas.width = rect.width;
+      this.canvas.height = rect.height;
+      
+      // Set drawing properties
+      this.ctx.strokeStyle = this.strokeColor;
+      this.ctx.lineWidth = this.strokeWidth;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+      
+      // Mouse events
+      this.canvas.addEventListener('mousedown', this.startDrawing.bind(this));
+      this.canvas.addEventListener('mousemove', this.draw.bind(this));
+      this.canvas.addEventListener('mouseup', this.stopDrawing.bind(this));
+      this.canvas.addEventListener('mouseout', this.stopDrawing.bind(this));
+      
+      // Touch events
+      this.canvas.addEventListener('touchstart', this.handleTouch.bind(this));
+      this.canvas.addEventListener('touchmove', this.handleTouch.bind(this));
+      this.canvas.addEventListener('touchend', this.stopDrawing.bind(this));
+    }
+
+    setupToolbar() {
+      // Find the toolbar for this canvas
+      const toolbar = this.container.parentNode.querySelector('.notes-toolbar');
+      if (!toolbar) return;
+
+      // Color buttons
+      const colorButtons = toolbar.querySelectorAll('.color-btn');
+      colorButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const color = btn.dataset.color;
+          this.setStrokeColor(color);
+          
+          // Update active state
+          colorButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        });
+      });
+
+      // Stroke width slider
+      const widthSlider = toolbar.querySelector('.stroke-width-slider');
+      const widthValue = toolbar.querySelector('.stroke-width-value');
+      if (widthSlider && widthValue) {
+        widthSlider.addEventListener('input', (e) => {
+          const newWidth = parseInt(e.target.value);
+          this.setStrokeWidth(newWidth);
+          widthValue.textContent = newWidth + 'px';
+        });
+      }
+
+      // Undo button
+      const undoBtn = toolbar.querySelector('.undo-btn');
+      if (undoBtn) {
+        undoBtn.addEventListener('click', () => {
+          this.undo();
+        });
+      }
+
+      // Clear button
+      const clearBtn = toolbar.querySelector('.clear-btn');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          this.clear();
+        });
+      }
+    }
+
+    handleTouch(e) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const mouseEvent = new MouseEvent(e.type === 'touchstart' ? 'mousedown' : 
+                                       e.type === 'touchmove' ? 'mousemove' : 'mouseup', {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+      });
+      this.canvas.dispatchEvent(mouseEvent);
+    }
+
+    getEventPos(e) {
+      const rect = this.canvas.getBoundingClientRect();
+      
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    startDrawing(e) {
+      this.isDrawing = true;
+      this.currentStroke = [];
+      
+      const pos = this.getEventPos(e);
+      this.currentStroke.push(pos);
+    }
+
+    draw(e) {
+      if (!this.isDrawing) return;
+      
+      const pos = this.getEventPos(e);
+      this.currentStroke.push(pos);
+      
+      if (this.currentStroke.length >= 2) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.currentStroke[this.currentStroke.length - 2].x, 
+                       this.currentStroke[this.currentStroke.length - 2].y);
+        this.ctx.lineTo(pos.x, pos.y);
+        this.ctx.stroke();
+      }
+    }
+
+    stopDrawing() {
+      if (this.isDrawing) {
+        this.isDrawing = false;
+        if (this.currentStroke.length > 0) {
+          this.strokes.push([...this.currentStroke]);
+          this.currentStroke = [];
+        }
+      }
+    }
+
+    clear() {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.strokes = [];
+      this.currentStroke = [];
+    }
+
+    getImageData() {
+      return this.canvas.toDataURL('image/png');
+    }
+
+    setImageData(dataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        this.clear();
+        this.ctx.drawImage(img, 0, 0);
+        // Note: This doesn't restore strokes for editing, just displays the image
+      };
+      img.src = dataUrl;
+    }
+
+    hasContent() {
+      return this.strokes.length > 0;
+    }
+
+    setStrokeColor(color) {
+      this.strokeColor = color;
+      this.ctx.strokeStyle = color;
+    }
+
+    setStrokeWidth(width) {
+      this.strokeWidth = width;
+      this.ctx.lineWidth = width;
+    }
+
+    undo() {
+      if (this.strokes.length > 0) {
+        this.strokes.pop();
+        this.redrawStrokes();
+      }
+    }
+
+    redrawStrokes() {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.ctx.strokeStyle = this.strokeColor;
+      this.ctx.lineWidth = this.strokeWidth;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+      
+      this.strokes.forEach(stroke => {
+        if (stroke.length > 1) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(stroke[0].x, stroke[0].y);
+          for (let i = 1; i < stroke.length; i++) {
+            this.ctx.lineTo(stroke[i].x, stroke[i].y);
+          }
+          this.ctx.stroke();
+        }
+      });
+    }
+
+  }
+
+  // Fullscreen Notes Canvas functionality
+  class FullscreenNotesCanvas {
+    constructor() {
+      this.canvas = null;
+      this.ctx = null;
+      this.isDrawing = false;
+      this.strokes = [];
+      this.currentStroke = { points: [], color: '#ffffff', width: 2 };
+      this.strokeColor = '#ffffff';
+      this.strokeWidth = 2;
+      this.overlay = null;
+      this.isErasing = false;
+      this.eraserWidth = 10;
+    }
+
+    show() {
+      this.createOverlay();
+      this.setupCanvas();
+      this.setupToolbar();
+      this.setupEventListeners();
+      
+      // If editing a note, redraw the existing strokes and update header
+      if (this.editingNote) {
+        this.redrawStrokes();
+        const headerTitle = document.querySelector('#fullscreen-notes-overlay .header h2');
+        if (headerTitle) {
+          headerTitle.textContent = `Edit Note ${this.editingNote.noteNumber}`;
+        }
+      } else {
+        // Reset header for new note
+        const headerTitle = document.querySelector('#fullscreen-notes-overlay .header h2');
+        if (headerTitle) {
+          headerTitle.textContent = 'Add Note';
+        }
+      }
+    }
+
+    createOverlay() {
+      this.overlay = document.createElement('div');
+      this.overlay.id = 'fullscreen-notes-overlay';
+      this.overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(17, 24, 39, 0.98);
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+      `;
+      
+      // Header
+      const header = document.createElement('div');
+      header.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      `;
+      
+      const title = document.createElement('h2');
+      title.textContent = 'Add Note';
+      title.style.margin = '0';
+      title.style.color = 'var(--text)';
+      
+      const doneBtn = document.createElement('button');
+      doneBtn.textContent = 'Done';
+      doneBtn.style.cssText = `
+        background: var(--brand);
+        border: none;
+        color: white;
+        border-radius: 6px;
+        padding: 10px 20px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
+      header.appendChild(title);
+      header.appendChild(doneBtn);
+
+      // Canvas container
+      const canvasContainer = document.createElement('div');
+      canvasContainer.style.cssText = `
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+        min-height: 0;
+      `;
+
+      this.overlay.appendChild(header);
+      this.overlay.appendChild(canvasContainer);
+
+      // Event listeners
+      doneBtn.addEventListener('click', () => this.handleDone());
+      this.overlay.addEventListener('click', (e) => {
+        if (e.target === this.overlay) this.hide();
+      });
+
+      document.body.appendChild(this.overlay);
+    }
+
+    setupCanvas() {
+      this.canvas = document.createElement('canvas');
+      this.ctx = this.canvas.getContext('2d');
+      
+      const canvasContainer = this.overlay.querySelector('div:last-child');
+      canvasContainer.appendChild(this.canvas);
+
+      // Set canvas size
+      const rect = canvasContainer.getBoundingClientRect();
+      const width = Math.min(1000, window.innerWidth - 100);
+      const height = Math.min(700, window.innerHeight - 200);
+      
+      this.canvas.width = width;
+      this.canvas.height = height;
+      this.canvas.style.width = width + 'px';
+      this.canvas.style.height = height + 'px';
+      this.canvas.style.border = '1px solid rgba(255,255,255,0.2)';
+      this.canvas.style.borderRadius = '4px';
+      this.canvas.style.cursor = 'crosshair';
+      this.canvas.style.backgroundColor = 'rgba(255,255,255,0.03)';
+
+      // Set drawing properties
+      this.ctx.strokeStyle = this.strokeColor;
+      this.ctx.lineWidth = this.strokeWidth;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+    }
+
+    setupToolbar() {
+      const toolbar = document.createElement('div');
+      toolbar.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+        padding: 16px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 12px;
+      `;
+
+      // Top row: Colors and Brush Size
+      const topRow = document.createElement('div');
+      topRow.style.cssText = `
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+      `;
+      
+      // Color presets
+      const colors = ['#ffffff', '#000000', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+      const colorPresets = document.createElement('div');
+      colorPresets.style.cssText = `
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      `;
+      
+      const colorLabel = document.createElement('span');
+      colorLabel.textContent = 'Colors:';
+      colorLabel.style.color = 'var(--text)';
+      colorLabel.style.fontSize = '14px';
+      colorLabel.style.fontWeight = '600';
+      
+      colors.forEach(color => {
+        const colorBtn = document.createElement('button');
+        colorBtn.className = 'color-btn';
+        colorBtn.style.cssText = `
+          width: 32px;
+          height: 32px;
+          border: 2px solid ${color === this.strokeColor ? 'var(--brand)' : 'rgba(255,255,255,0.3)'};
+          border-radius: 50%;
+          background: ${color};
+          cursor: pointer;
+          transition: all 0.2s ease;
+        `;
+        colorBtn.addEventListener('click', () => {
+          this.setStrokeColor(color);
+          colorPresets.querySelectorAll('button').forEach(btn => {
+            btn.style.borderColor = btn === colorBtn ? 'var(--brand)' : 'rgba(255,255,255,0.3)';
+          });
+        });
+        colorPresets.appendChild(colorBtn);
+      });
+      
+      // Brush size
+      const sizeContainer = document.createElement('div');
+      sizeContainer.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      `;
+      
+      const sizeLabel = document.createElement('span');
+      sizeLabel.textContent = 'Brush Size';
+      sizeLabel.style.color = 'var(--text)';
+      sizeLabel.style.fontSize = '14px';
+      sizeLabel.style.fontWeight = '600';
+      
+      const sizeSlider = document.createElement('input');
+      sizeSlider.type = 'range';
+      sizeSlider.min = '1';
+      sizeSlider.max = '20';
+      sizeSlider.value = this.strokeWidth;
+      sizeSlider.style.cssText = `
+        width: 120px;
+        height: 6px;
+        background: rgba(255,255,255,0.2);
+        border-radius: 3px;
+        outline: none;
+      `;
+      
+      const sizeValue = document.createElement('span');
+      sizeValue.textContent = this.strokeWidth + 'px';
+      sizeValue.style.color = 'var(--muted)';
+      sizeValue.style.fontSize = '12px';
+      
+      // Bottom row: Drawing tools (left) and Action tools (right)
+      const bottomRow = document.createElement('div');
+      bottomRow.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      `;
+
+      // Drawing tools (pencil and eraser) - left side
+      const drawingToolsContainer = document.createElement('div');
+      drawingToolsContainer.style.cssText = `
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      `;
+      
+      const pencilBtn = document.createElement('button');
+      pencilBtn.innerHTML = '✏️ Pencil';
+      pencilBtn.style.cssText = `
+        background: ${!this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)'};
+        border: 1px solid ${!this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)'};
+        color: ${!this.isErasing ? '#3b82f6' : 'var(--text)'};
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      `;
+
+      const eraserBtn = document.createElement('button');
+      eraserBtn.innerHTML = '🧽 Eraser';
+      eraserBtn.style.cssText = `
+        background: ${this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)'};
+        border: 1px solid ${this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)'};
+        color: ${this.isErasing ? '#3b82f6' : 'var(--text)'};
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      `;
+
+      // Action tools (undo and clear) - right side
+      const actionToolsContainer = document.createElement('div');
+      actionToolsContainer.style.cssText = `
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      `;
+      
+      const undoBtn = document.createElement('button');
+      undoBtn.innerHTML = '↶ Undo';
+      undoBtn.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      `;
+      
+      const clearBtn = document.createElement('button');
+      clearBtn.innerHTML = '🗑️ Clear';
+      clearBtn.style.cssText = `
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: #ef4444;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      `;
+
+      // Assemble toolbar
+      colorPresets.insertBefore(colorLabel, colorPresets.firstChild);
+      sizeContainer.appendChild(sizeLabel);
+      sizeContainer.appendChild(sizeSlider);
+      sizeContainer.appendChild(sizeValue);
+      
+      drawingToolsContainer.appendChild(pencilBtn);
+      drawingToolsContainer.appendChild(eraserBtn);
+      actionToolsContainer.appendChild(undoBtn);
+      actionToolsContainer.appendChild(clearBtn);
+      
+      topRow.appendChild(colorPresets);
+      topRow.appendChild(sizeContainer);
+      bottomRow.appendChild(drawingToolsContainer);
+      bottomRow.appendChild(actionToolsContainer);
+      
+      toolbar.appendChild(topRow);
+      toolbar.appendChild(bottomRow);
+
+      // Insert toolbar before canvas container
+      const canvasContainer = this.overlay.querySelector('div:last-child');
+      this.overlay.insertBefore(toolbar, canvasContainer);
+      
+      // Event listeners
+      sizeSlider.addEventListener('input', (e) => {
+        const newWidth = parseInt(e.target.value);
+        this.setStrokeWidth(newWidth);
+        sizeValue.textContent = newWidth + 'px';
+      });
+      
+      clearBtn.addEventListener('click', () => this.clear());
+      undoBtn.addEventListener('click', () => this.undo());
+      pencilBtn.addEventListener('click', () => this.setDrawingMode());
+      eraserBtn.addEventListener('click', () => this.setEraserMode());
+    }
+
+    setupEventListeners() {
+      // Mouse events
+      this.canvas.addEventListener('mousedown', this.startDrawing.bind(this));
+      this.canvas.addEventListener('mousemove', this.draw.bind(this));
+      this.canvas.addEventListener('mouseup', this.stopDrawing.bind(this));
+      this.canvas.addEventListener('mouseout', this.stopDrawing.bind(this));
+
+      // Touch events
+      this.canvas.addEventListener('touchstart', this.handleTouch.bind(this));
+      this.canvas.addEventListener('touchmove', this.handleTouch.bind(this));
+      this.canvas.addEventListener('touchend', this.stopDrawing.bind(this));
+    }
+
+    handleTouch(e) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const mouseEvent = new MouseEvent(e.type === 'touchstart' ? 'mousedown' : 
+                                       e.type === 'touchmove' ? 'mousemove' : 'mouseup', {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+      });
+      this.canvas.dispatchEvent(mouseEvent);
+    }
+
+    getEventPos(e) {
+      const rect = this.canvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    startDrawing(e) {
+      this.isDrawing = true;
+      this.currentStroke = {
+        points: [],
+        color: this.isErasing ? 'eraser' : this.strokeColor,
+        width: this.isErasing ? this.eraserWidth : this.strokeWidth
+      };
+      const pos = this.getEventPos(e);
+      this.currentStroke.points.push(pos);
+      
+      // Set up drawing context for eraser or normal drawing
+      if (this.isErasing) {
+        this.ctx.globalCompositeOperation = 'destination-out';
+        this.ctx.lineWidth = this.eraserWidth;
+      } else {
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.lineWidth = this.strokeWidth;
+        this.ctx.strokeStyle = this.strokeColor;
+      }
+    }
+
+    draw(e) {
+      if (!this.isDrawing) return;
+      
+      const pos = this.getEventPos(e);
+      this.currentStroke.points.push(pos);
+      
+      if (this.currentStroke.points.length >= 2) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.currentStroke.points[this.currentStroke.points.length - 2].x, 
+                       this.currentStroke.points[this.currentStroke.points.length - 2].y);
+        this.ctx.lineTo(pos.x, pos.y);
+        this.ctx.stroke();
+      }
+    }
+
+    stopDrawing() {
+      if (this.isDrawing) {
+        this.isDrawing = false;
+        if (this.currentStroke.points.length > 0) {
+          this.strokes.push({...this.currentStroke});
+          this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+        }
+      }
+    }
+
+    clear() {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.strokes = [];
+      this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+    }
+
+    undo() {
+      if (this.strokes.length > 0) {
+        this.strokes.pop();
+        this.redrawStrokes();
+      }
+    }
+
+    redrawStrokes() {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      
+      this.strokes.forEach(stroke => {
+        if (stroke.points && stroke.points.length > 1) {
+          // Set up context for eraser or normal drawing
+          if (stroke.color === 'eraser') {
+            this.ctx.globalCompositeOperation = 'destination-out';
+          } else {
+            this.ctx.globalCompositeOperation = 'source-over';
+            this.ctx.strokeStyle = stroke.color;
+          }
+          
+          this.ctx.lineWidth = stroke.width;
+          this.ctx.lineCap = 'round';
+          this.ctx.lineJoin = 'round';
+          
+          this.ctx.beginPath();
+          this.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+          for (let i = 1; i < stroke.points.length; i++) {
+            this.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+          }
+          this.ctx.stroke();
+        }
+      });
+      
+      // Reset to normal drawing mode
+      this.ctx.globalCompositeOperation = 'source-over';
+    }
+
+    setStrokeColor(color) {
+      this.strokeColor = color;
+      this.ctx.strokeStyle = color;
+    }
+
+    setStrokeWidth(width) {
+      this.strokeWidth = width;
+      this.ctx.lineWidth = width;
+    }
+
+    setDrawingMode() {
+      this.isErasing = false;
+      this.updateToolButtons();
+      this.ctx.globalCompositeOperation = 'source-over';
+      this.ctx.lineWidth = this.strokeWidth;
+      this.ctx.strokeStyle = this.strokeColor;
+    }
+
+    setEraserMode() {
+      this.isErasing = true;
+      this.updateToolButtons();
+      this.ctx.globalCompositeOperation = 'destination-out';
+      this.ctx.lineWidth = this.eraserWidth;
+    }
+
+    updateToolButtons() {
+      const pencilBtn = this.overlay.querySelector('button[innerHTML*="Pencil"]');
+      const eraserBtn = this.overlay.querySelector('button[innerHTML*="Eraser"]');
+      
+      if (pencilBtn) {
+        pencilBtn.style.background = !this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
+        pencilBtn.style.borderColor = !this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
+        pencilBtn.style.color = !this.isErasing ? '#3b82f6' : 'var(--text)';
+      }
+      
+      if (eraserBtn) {
+        eraserBtn.style.background = this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
+        eraserBtn.style.borderColor = this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
+        eraserBtn.style.color = this.isErasing ? '#3b82f6' : 'var(--text)';
+      }
+    }
+
+    canvasToSVG() {
+      // Calculate bounding box of all strokes
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let hasStrokes = false;
+      
+      this.strokes.forEach(stroke => {
+        if (stroke.points && stroke.points.length > 0 && stroke.color !== 'eraser') {
+          hasStrokes = true;
+          stroke.points.forEach(point => {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+          });
+        }
+      });
+      
+      // If no strokes, return empty SVG
+      if (!hasStrokes) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '1');
+        svg.setAttribute('height', '1');
+        svg.setAttribute('viewBox', '0 0 1 1');
+        return new XMLSerializer().serializeToString(svg);
+      }
+      
+      // Add some padding around the content
+      const padding = 10;
+      minX = Math.max(0, minX - padding);
+      minY = Math.max(0, minY - padding);
+      maxX = Math.min(this.canvas.width, maxX + padding);
+      maxY = Math.min(this.canvas.height, maxY + padding);
+      
+      // Calculate dimensions
+      const width = maxX - minX;
+      const height = maxY - minY;
+      
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      // Group strokes by color and width for better organization
+      const strokeGroups = {};
+      
+      this.strokes.forEach(stroke => {
+        if (stroke.points && stroke.points.length > 1 && stroke.color !== 'eraser') {
+          const strokeKey = `${stroke.color}_${stroke.width}`;
+          if (!strokeGroups[strokeKey]) {
+            strokeGroups[strokeKey] = {
+              color: stroke.color,
+              width: stroke.width,
+              paths: []
+            };
+          }
+          
+          // Adjust coordinates relative to the bounding box
+          let pathData = `M ${stroke.points[0].x - minX} ${stroke.points[0].y - minY}`;
+          for (let i = 1; i < stroke.points.length; i++) {
+            pathData += ` L ${stroke.points[i].x - minX} ${stroke.points[i].y - minY}`;
+          }
+          strokeGroups[strokeKey].paths.push(pathData);
+        }
+      });
+
+      // Create path elements for each stroke group
+      Object.values(strokeGroups).forEach(group => {
+        group.paths.forEach(pathData => {
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData);
+          path.setAttribute('stroke', group.color);
+          path.setAttribute('stroke-width', group.width);
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          path.setAttribute('fill', 'none');
+          svg.appendChild(path);
+        });
+      });
+
+      return new XMLSerializer().serializeToString(svg);
+    }
+
+    handleDone() {
+      if (this.strokes.length === 0) {
+        this.hide();
+        return;
+      }
+
+      // Show save prompt
+      const savePrompt = document.createElement('div');
+      savePrompt.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: var(--bg);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 12px;
+        padding: 24px;
+        z-index: 10001;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      `;
+
+      const promptText = document.createElement('p');
+      promptText.textContent = 'Do you want to save this note?';
+      promptText.style.margin = '0 0 16px 0';
+      promptText.style.color = 'var(--text)';
+      promptText.style.fontSize = '16px';
+
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = `
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+      `;
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+      `;
+
+      const dontSaveBtn = document.createElement('button');
+      dontSaveBtn.textContent = "Don't Save";
+      dontSaveBtn.style.cssText = `
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: #ef4444;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save';
+      saveBtn.style.cssText = `
+        background: var(--brand);
+        border: none;
+        color: white;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
+      buttonContainer.appendChild(cancelBtn);
+      buttonContainer.appendChild(dontSaveBtn);
+      buttonContainer.appendChild(saveBtn);
+      savePrompt.appendChild(promptText);
+      savePrompt.appendChild(buttonContainer);
+
+      document.body.appendChild(savePrompt);
+
+      cancelBtn.addEventListener('click', () => {
+        document.body.removeChild(savePrompt);
+        // Don't hide the overlay, just close the dialog
+      });
+
+      dontSaveBtn.addEventListener('click', () => {
+        document.body.removeChild(savePrompt);
+        this.hide();
+      });
+
+      saveBtn.addEventListener('click', () => {
+        document.body.removeChild(savePrompt);
+        this.saveNote();
+      });
+    }
+
+    saveNote() {
+      const svgData = this.canvasToSVG();
+      const customerId = this.getCurrentCustomerId();
+      
+      console.log('Saving note for customer ID:', customerId);
+      
+      // Get existing notes for this customer
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const customerNotes = existingNotes[customerId] || [];
+      
+      if (this.editingNote) {
+        // Editing existing note - update it
+        console.log('Updating existing note:', this.editingNote.id);
+        
+        const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
+        if (noteIndex !== -1) {
+          customerNotes[noteIndex] = {
+            ...this.editingNote,
+            svg: svgData,
+            editedDate: new Date().toLocaleString()
+          };
+          
+          // Update localStorage
+          existingNotes[customerId] = customerNotes;
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+          
+          console.log('Updated note data:', customerNotes[noteIndex]);
+          
+          // Refresh the notes list
+          loadExistingNotes(customerId);
+        }
+        
+        // Clear editing state
+        this.editingNote = null;
+      } else {
+        // Creating new note
+        const nextNoteNumber = customerNotes.length + 1;
+        
+        console.log('Existing notes for customer:', customerNotes.length, 'Next note number:', nextNoteNumber);
+        
+        const noteData = {
+          id: Date.now(),
+          svg: svgData,
+          date: new Date().toLocaleDateString(),
+          noteNumber: nextNoteNumber
+        };
+
+        // Store in localStorage
+        if (!existingNotes[customerId]) {
+          existingNotes[customerId] = [];
+        }
+        existingNotes[customerId].push(noteData);
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+
+        console.log('Saved note data:', noteData);
+
+        // Add note to UI
+        this.addNoteToUI(noteData);
+      }
+      
+      this.hide();
+    }
+
+    getCurrentCustomerId() {
+      // Try to get customer ID from URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+      if (id) {
+        console.log('Found customer ID from URL:', id);
+        return id;
+      }
+      
+      // Try to get from the current customer data if available
+      if (window.currentCustomer && window.currentCustomer.id) {
+        console.log('Found customer ID from currentCustomer:', window.currentCustomer.id);
+        return window.currentCustomer.id;
+      }
+      
+      // Try to extract from the current page context
+      // Check if we're on a customer view page by looking for customer data in the DOM
+      const currentId = window.currentCustomerId || window.customerId;
+      if (currentId) {
+        console.log('Found customer ID from page context:', currentId);
+        return currentId;
+      }
+      
+      // If editing, try to get from form
+      const form = document.querySelector('form');
+      if (form && form.dataset.customerId) {
+        console.log('Found customer ID from form dataset:', form.dataset.customerId);
+        return form.dataset.customerId;
+      }
+      
+      // Check if we're on the new customer page
+      const isNewCustomerPage = window.location.hash.includes('#/add') || 
+                               document.querySelector('h2')?.textContent?.includes('New Customer') ||
+                               document.querySelector('h2')?.textContent?.includes('newCustomer');
+      
+      if (isNewCustomerPage) {
+        console.log('On new customer page, using temporary ID');
+        return 'temp-new-customer';
+      }
+      
+      console.log('No customer ID found, using default');
+      // Default fallback
+      return 'default';
+    }
+
+    addNoteToUI(noteData) {
+      const notesList = document.querySelector('.notes-list');
+      if (!notesList) return;
+
+      const noteElement = document.createElement('div');
+      noteElement.className = 'note-entry';
+      noteElement.style.cssText = `
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.03);
+        overflow: hidden;
+      `;
+
+      const noteHeader = document.createElement('div');
+      noteHeader.className = 'note-header';
+      noteHeader.style.cssText = `
+        padding: 12px 16px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(255,255,255,0.05);
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      `;
+
+      const noteTitle = document.createElement('span');
+      noteTitle.style.color = 'var(--text)';
+      noteTitle.style.fontWeight = '600';
+      
+      // Create the main title text
+      const titleText = document.createElement('span');
+      titleText.textContent = `Note ${noteData.noteNumber} - ${noteData.date}`;
+      
+      noteTitle.appendChild(titleText);
+      
+      // Add edited timestamp if the note was edited
+      if (noteData.editedDate) {
+        const editedText = document.createElement('span');
+        editedText.textContent = ` (edited: ${noteData.editedDate})`;
+        editedText.style.fontStyle = 'italic';
+        editedText.style.fontSize = '0.85em';
+        editedText.style.color = 'var(--muted)';
+        editedText.style.fontWeight = '400';
+        noteTitle.appendChild(editedText);
+      }
+
+      const headerRight = document.createElement('div');
+      headerRight.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      `;
+
+      const editButton = document.createElement('button');
+      editButton.textContent = '✏️';
+      editButton.title = 'Edit Note';
+      editButton.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+        color: var(--text);
+        font-size: 12px;
+        transition: background 0.2s ease;
+      `;
+      editButton.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent header click
+        this.editNote(noteData);
+      });
+      editButton.addEventListener('mouseenter', () => {
+        editButton.style.background = 'rgba(255,255,255,0.2)';
+      });
+      editButton.addEventListener('mouseleave', () => {
+        editButton.style.background = 'rgba(255,255,255,0.1)';
+      });
+
+      const expandIcon = document.createElement('span');
+      expandIcon.textContent = '▼';
+      expandIcon.style.color = 'var(--muted)';
+      expandIcon.style.transition = 'transform 0.2s ease';
+
+      // Add delete button only on edit and new customer screens
+      const isEditScreen = window.location.hash.includes('#/customer-edit');
+      const isNewCustomerScreen = window.location.hash.includes('#/add') || 
+                                 document.querySelector('h2')?.textContent?.includes('New Customer') ||
+                                 document.querySelector('h2')?.textContent?.includes('newCustomer');
+      
+      if (isEditScreen || isNewCustomerScreen) {
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = '🗑️';
+        deleteButton.title = 'Delete Note';
+        deleteButton.style.cssText = `
+          background: rgba(255,100,100,0.2);
+          border: 1px solid rgba(255,100,100,0.4);
+          border-radius: 4px;
+          padding: 4px 8px;
+          cursor: pointer;
+          color: #ff6b6b;
+          font-size: 12px;
+          transition: background 0.2s ease;
+        `;
+        deleteButton.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent header click
+          this.deleteNote(noteData);
+        });
+        deleteButton.addEventListener('mouseenter', () => {
+          deleteButton.style.background = 'rgba(255,100,100,0.3)';
+        });
+        deleteButton.addEventListener('mouseleave', () => {
+          deleteButton.style.background = 'rgba(255,100,100,0.2)';
+        });
+        
+        headerRight.appendChild(deleteButton);
+      }
+
+      headerRight.appendChild(editButton);
+      headerRight.appendChild(expandIcon);
+      noteHeader.appendChild(noteTitle);
+      noteHeader.appendChild(headerRight);
+
+      const noteContent = document.createElement('div');
+      noteContent.className = 'note-content';
+      noteContent.style.cssText = `
+        padding: 16px;
+        display: none;
+        background: rgba(255,255,255,0.02);
+      `;
+
+      const svgContainer = document.createElement('div');
+      svgContainer.innerHTML = noteData.svg;
+      svgContainer.style.cssText = `
+        max-width: 100%;
+        overflow: auto;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 4px;
+        padding: 8px;
+        background: transparent;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      `;
+      
+      // Scale the SVG to fit the container
+      const svg = svgContainer.querySelector('svg');
+      if (svg) {
+        svg.style.cssText = `
+          max-width: 100%;
+          max-height: 300px;
+          width: auto;
+          height: auto;
+          background: transparent;
+        `;
+      }
+
+      noteContent.appendChild(svgContainer);
+      noteElement.appendChild(noteHeader);
+      noteElement.appendChild(noteContent);
+
+      // Toggle functionality
+      noteHeader.addEventListener('click', () => {
+        const isExpanded = noteContent.style.display !== 'none';
+        noteContent.style.display = isExpanded ? 'none' : 'block';
+        expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(180deg)';
+      });
+
+      notesList.appendChild(noteElement);
+    }
+
+    deleteNote(noteData) {
+      // Confirm deletion
+      if (!confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
+        return;
+      }
+
+      const customerId = this.getCurrentCustomerId();
+      console.log('Deleting note for customer ID:', customerId, 'Note ID:', noteData.id);
+
+      // Get existing notes for this customer
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const customerNotes = existingNotes[customerId] || [];
+
+      // Find and remove the note
+      const noteIndex = customerNotes.findIndex(note => note.id === noteData.id);
+      if (noteIndex !== -1) {
+        customerNotes.splice(noteIndex, 1);
+        
+        // Update localStorage
+        existingNotes[customerId] = customerNotes;
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        
+        console.log('Note deleted successfully');
+        
+        // Refresh the notes list
+        this.refreshNotesList(customerId);
+      } else {
+        console.error('Note not found for deletion');
+      }
+    }
+
+    refreshNotesList(customerId) {
+      // Clear existing notes
+      const notesList = document.querySelector('.notes-list');
+      if (notesList) {
+        notesList.innerHTML = '';
+      }
+      
+      // Reload notes for this customer
+      loadExistingNotes(customerId);
+    }
+
+    editNote(noteData) {
+      console.log('Editing note:', noteData);
+      
+      // Store the note being edited
+      this.editingNote = noteData;
+      
+      // Parse the SVG to extract stroke data
+      this.loadNoteFromSVG(noteData.svg);
+      
+      // Show the fullscreen canvas
+      this.show();
+      
+      // Update the header to show we're editing
+      const headerTitle = document.querySelector('#fullscreen-notes-overlay .header h2');
+      if (headerTitle) {
+        headerTitle.textContent = `Edit Note ${noteData.noteNumber}`;
+      }
+    }
+
+    loadNoteFromSVG(svgString) {
+      try {
+        // Parse the SVG string
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+        const paths = svgDoc.querySelectorAll('path');
+        
+        // Clear existing strokes
+        this.strokes = [];
+        this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+        
+        // Convert SVG paths back to stroke data
+        paths.forEach(path => {
+          const pathData = path.getAttribute('d');
+          const stroke = path.getAttribute('stroke');
+          const strokeWidth = parseFloat(path.getAttribute('stroke-width'));
+          
+          if (pathData && stroke && strokeWidth) {
+            // Parse the path data to extract points
+            const points = this.parsePathData(pathData);
+            if (points.length > 0) {
+              this.strokes.push({
+                points: points,
+                color: stroke,
+                width: strokeWidth
+              });
+            }
+          }
+        });
+        
+        console.log('Loaded strokes from SVG:', this.strokes.length);
+      } catch (error) {
+        console.error('Error loading note from SVG:', error);
+      }
+    }
+
+    parsePathData(pathData) {
+      // Simple path parser for basic drawing paths
+      const points = [];
+      const commands = pathData.match(/[MmLlHhVvCcSsQqTtAaZz][^MmLlHhVvCcSsQqTtAaZz]*/g) || [];
+      
+      let currentX = 0;
+      let currentY = 0;
+      
+      commands.forEach(command => {
+        const type = command[0];
+        const coords = command.slice(1).trim().split(/[\s,]+/).filter(c => c).map(Number);
+        
+        if (type === 'M' || type === 'm') {
+          // Move to
+          if (coords.length >= 2) {
+            currentX = type === 'm' ? currentX + coords[0] : coords[0];
+            currentY = type === 'm' ? currentY + coords[1] : coords[1];
+            points.push({ x: currentX, y: currentY });
+          }
+        } else if (type === 'L' || type === 'l') {
+          // Line to
+          if (coords.length >= 2) {
+            currentX = type === 'l' ? currentX + coords[0] : coords[0];
+            currentY = type === 'l' ? currentY + coords[1] : coords[1];
+            points.push({ x: currentX, y: currentY });
+          }
+        }
+      });
+      
+      return points;
+    }
+
+    hide() {
+      if (this.overlay) {
+        document.body.removeChild(this.overlay);
+        this.overlay = null;
+      }
+      this.clear();
+      
+      // Reset editing state
+      this.editingNote = null;
+    }
+  }
+
+  // Global instance
+  const fullscreenNotesCanvas = new FullscreenNotesCanvas();
+
+  // Migration function to convert old notesHtml to new SVG notes system
+  async function migrateOldNotes() {
+    try {
+      console.log('Starting migration of old notes system...');
+      
+      // Get all customers from the database
+      const customers = await ChikasDB.getAllCustomers();
+      let migratedCount = 0;
+      
+      for (const customer of customers) {
+        if (customer.notesHtml && customer.notesHtml.trim() !== '' && customer.notesHtml !== '<p><br></p>') {
+          console.log(`Migrating notes for customer ${customer.id}: ${customer.firstName} ${customer.lastName}`);
+          
+          // Convert HTML notes to SVG
+          const svgContent = convertHtmlNotesToSVG(customer.notesHtml);
+          
+          // Create a note entry for the old notes
+          const noteData = {
+            id: Date.now() + Math.random(), // Unique ID
+            svg: svgContent,
+            date: customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+            noteNumber: 1 // First note for this customer
+          };
+          
+          // Get existing notes for this customer
+          const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+          if (!existingNotes[customer.id]) {
+            existingNotes[customer.id] = [];
+          }
+          
+          // Add the migrated note
+          existingNotes[customer.id].push(noteData);
+          
+          // Save back to localStorage
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+          
+          // Remove the old notesHtml from the customer record
+          const updatedCustomer = { ...customer };
+          delete updatedCustomer.notesHtml;
+          await ChikasDB.updateCustomer(updatedCustomer);
+          
+          migratedCount++;
+        }
+      }
+      
+      console.log(`Migration completed. Migrated ${migratedCount} customers' notes.`);
+      
+      if (migratedCount > 0) {
+        // Show a notification to the user
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: var(--brand);
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          z-index: 10000;
+          font-size: 14px;
+          font-weight: 600;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+        notification.textContent = `Migrated ${migratedCount} customers' notes to new system`;
+        document.body.appendChild(notification);
+        
+        // Remove notification after 5 seconds
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+          }
+        }, 5000);
+      }
+      
+    } catch (error) {
+      console.error('Error during notes migration:', error);
+    }
+  }
+
+  // Convert old HTML notes to SVG format
+  function convertHtmlNotesToSVG(htmlContent) {
+    // Create a temporary div to parse the HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    
+    // Extract text content and basic styling
+    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+    
+    if (!textContent.trim()) {
+      return ''; // Return empty if no content
+    }
+    
+    // Calculate dynamic height based on text content
+    const lines = textContent.split('\n').filter(line => line.trim());
+    const lineHeight = 20;
+    const padding = 20;
+    const minHeight = 60;
+    const calculatedHeight = Math.max(minHeight, (lines.length * lineHeight) + padding);
+    
+    // Create SVG with the text content
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '400');
+    svg.setAttribute('height', calculatedHeight);
+    svg.setAttribute('viewBox', `0 0 400 ${calculatedHeight}`);
+    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    
+    // Create text element
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '10');
+    text.setAttribute('y', '30');
+    text.setAttribute('font-family', 'Arial, sans-serif');
+    text.setAttribute('font-size', '16');
+    text.setAttribute('fill', '#ffffff');
+    text.setAttribute('white-space', 'pre-wrap');
+    
+    // Handle line breaks and wrap long lines
+    const allLines = textContent.split('\n');
+    const maxCharsPerLine = 50; // Approximate characters per line
+    let processedLines = [];
+    
+    allLines.forEach(line => {
+      if (line.trim()) {
+        // If line is too long, wrap it
+        if (line.length > maxCharsPerLine) {
+          const words = line.split(' ');
+          let currentLine = '';
+          
+          words.forEach(word => {
+            if ((currentLine + ' ' + word).length > maxCharsPerLine && currentLine.length > 0) {
+              processedLines.push(currentLine.trim());
+              currentLine = word;
+            } else {
+              currentLine += (currentLine.length > 0 ? ' ' : '') + word;
+            }
+          });
+          
+          if (currentLine.trim()) {
+            processedLines.push(currentLine.trim());
+          }
+        } else {
+          processedLines.push(line.trim());
+        }
+      }
+    });
+    
+    // Create tspan elements for each processed line
+    processedLines.forEach((line, index) => {
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      tspan.setAttribute('x', '10');
+      tspan.setAttribute('dy', index === 0 ? '0' : '20');
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+    
+    svg.appendChild(text);
+    
+    return new XMLSerializer().serializeToString(svg);
+  }
+
+  // Load existing notes for a customer
+  function loadExistingNotes(customerId) {
+    console.log('Loading notes for customer ID:', customerId);
+    const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+    const customerNotes = existingNotes[customerId] || [];
+    
+    console.log('Found notes for customer:', customerNotes.length);
+    
+    const notesList = document.querySelector('.notes-list');
+    if (!notesList) {
+      console.log('No notes list found');
+      return;
+    }
+    
+    // Clear existing notes
+    notesList.innerHTML = '';
+    
+    // Ensure proper note numbering and add each note
+    customerNotes.forEach((noteData, index) => {
+      // Ensure note has correct number (1-based indexing)
+      noteData.noteNumber = index + 1;
+      console.log('Loading note:', noteData.noteNumber, noteData.date);
+      fullscreenNotesCanvas.addNoteToUI(noteData);
+    });
+  }
+
+  // Handwriting canvas functionality
+  class HandwritingCanvas {
+    constructor(containerId, options = {}) {
+      this.container = document.querySelector(containerId);
+      this.canvas = document.createElement('canvas');
+      this.ctx = this.canvas.getContext('2d');
+      this.isDrawing = false;
+      this.lastX = 0;
+      this.lastY = 0;
+      this.strokes = [];
+      this.currentStroke = [];
+      
+      // Set up canvas
+      this.setupCanvas(options);
+      this.setupEventListeners();
+    }
+
+    setupCanvas(options = {}) {
+      const { width = 800, height = 500, lineWidth = 2, strokeColor = '#ffffff' } = options;
+      
+      this.canvas.width = width;
+      this.canvas.height = height;
+      this.canvas.style.border = '1px solid rgba(255,255,255,0.2)';
+      this.canvas.style.borderRadius = '4px';
+      this.canvas.style.cursor = 'crosshair';
+      this.canvas.style.backgroundColor = 'rgba(255,255,255,0.03)';
+      
+      this.ctx.lineWidth = lineWidth;
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+      
+      this.container.appendChild(this.canvas);
+    }
+
+    setupEventListeners() {
+      // Mouse events
+      this.canvas.addEventListener('mousedown', this.startDrawing.bind(this));
+      this.canvas.addEventListener('mousemove', this.draw.bind(this));
+      this.canvas.addEventListener('mouseup', this.stopDrawing.bind(this));
+      this.canvas.addEventListener('mouseout', this.stopDrawing.bind(this));
+
+      // Touch events for mobile
+      this.canvas.addEventListener('touchstart', this.handleTouch.bind(this));
+      this.canvas.addEventListener('touchmove', this.handleTouch.bind(this));
+      this.canvas.addEventListener('touchend', this.stopDrawing.bind(this));
+    }
+
+    handleTouch(e) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const mouseEvent = new MouseEvent(e.type === 'touchstart' ? 'mousedown' : 
+                                       e.type === 'touchmove' ? 'mousemove' : 'mouseup', {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+      });
+      this.canvas.dispatchEvent(mouseEvent);
+    }
+
+    startDrawing(e) {
+      this.isDrawing = true;
+      this.currentStroke = [];
+      const rect = this.canvas.getBoundingClientRect();
+      this.lastX = e.clientX - rect.left;
+      this.lastY = e.clientY - rect.top;
+      this.currentStroke.push({ x: this.lastX, y: this.lastY });
+    }
+
+    draw(e) {
+      if (!this.isDrawing) return;
+
+      const rect = this.canvas.getBoundingClientRect();
+      const currentX = e.clientX - rect.left;
+      const currentY = e.clientY - rect.top;
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(this.lastX, this.lastY);
+      this.ctx.lineTo(currentX, currentY);
+      this.ctx.stroke();
+
+      this.currentStroke.push({ x: currentX, y: currentY });
+      this.lastX = currentX;
+      this.lastY = currentY;
+    }
+
+    stopDrawing() {
+      if (this.isDrawing) {
+        this.isDrawing = false;
+        if (this.currentStroke.length > 0) {
+          this.strokes.push([...this.currentStroke]);
+        }
+      }
+    }
+
+    clear() {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.strokes = [];
+    }
+
+    getImageData() {
+      return this.canvas.toDataURL('image/png');
+    }
+
+    getSVG() {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', this.canvas.width);
+      svg.setAttribute('height', this.canvas.height);
+      svg.setAttribute('viewBox', `0 0 ${this.canvas.width} ${this.canvas.height}`);
+
+      this.strokes.forEach(stroke => {
+        if (stroke.length < 2) return;
+        
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        let pathData = `M ${stroke[0].x} ${stroke[0].y}`;
+        
+        for (let i = 1; i < stroke.length; i++) {
+          pathData += ` L ${stroke[i].x} ${stroke[i].y}`;
+        }
+        
+        path.setAttribute('d', pathData);
+        path.setAttribute('stroke', '#ffffff');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        
+        svg.appendChild(path);
+      });
+
+      const svgString = new XMLSerializer().serializeToString(svg);
+      console.log('Generated SVG:', svgString);
+      return svgString;
+    }
+
+    resizeToLineHeight(targetHeight = handwritingSettings.lineHeight) {
+      const currentHeight = this.canvas.height;
+      const scale = targetHeight / currentHeight;
+      const newWidth = Math.round(this.canvas.width * scale);
+      const newHeight = targetHeight;
+
+      // Create a new canvas with the target size
+      const resizedCanvas = document.createElement('canvas');
+      const resizedCtx = resizedCanvas.getContext('2d');
+      resizedCanvas.width = newWidth;
+      resizedCanvas.height = newHeight;
+
+      // Draw the original canvas scaled to the new size
+      resizedCtx.drawImage(this.canvas, 0, 0, newWidth, newHeight);
+
+      return resizedCanvas;
+    }
+  }
+
+
 })();
 
 
