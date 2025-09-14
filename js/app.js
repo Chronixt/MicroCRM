@@ -17,6 +17,143 @@
     }
   }
 
+  // Smart Backup System - Check if daily backup is needed
+  function checkDailyBackup() {
+    const lastBackup = localStorage.getItem('chikas_last_backup');
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    // If no previous backup or last backup was more than 24 hours ago
+    if (!lastBackup || new Date(lastBackup) < oneDayAgo) {
+      showBackupReminder();
+    }
+  }
+
+  function showBackupReminder() {
+    // Don't show if already showing or if user dismissed today
+    const dismissedToday = localStorage.getItem('chikas_backup_dismissed_today');
+    const today = new Date().toDateString();
+    
+    if (dismissedToday === today) {
+      return;
+    }
+
+    // Create backup reminder banner
+    const reminderBanner = document.createElement('div');
+    reminderBanner.id = 'backup-reminder';
+    reminderBanner.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #4ecdc4, #44a08d);
+      color: white;
+      padding: 12px 20px;
+      text-align: center;
+      z-index: 10000;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      font-size: 14px;
+      font-weight: 500;
+    `;
+
+    const lastBackup = localStorage.getItem('chikas_last_backup');
+    const daysSinceBackup = lastBackup ? 
+      Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 
+      'unknown';
+
+    reminderBanner.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+        <span>📥 Daily backup available (${daysSinceBackup} days since last backup)</span>
+        <button id="backup-now-btn" style="
+          background: rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.3);
+          color: white;
+          padding: 6px 12px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 600;
+        ">Backup Now</button>
+        <button id="dismiss-backup-btn" style="
+          background: transparent;
+          border: 1px solid rgba(255,255,255,0.3);
+          color: white;
+          padding: 6px 12px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+        ">Dismiss</button>
+      </div>
+    `;
+
+    document.body.appendChild(reminderBanner);
+
+    // Add event listeners
+    document.getElementById('backup-now-btn').addEventListener('click', async () => {
+      await performDailyBackup();
+      reminderBanner.remove();
+    });
+
+    document.getElementById('dismiss-backup-btn').addEventListener('click', () => {
+      localStorage.setItem('chikas_backup_dismissed_today', today);
+      reminderBanner.remove();
+    });
+  }
+
+  async function performDailyBackup() {
+    try {
+      // Show loading state
+      const backupBtn = document.getElementById('backup-now-btn');
+      if (backupBtn) {
+        backupBtn.textContent = 'Backing up...';
+        backupBtn.disabled = true;
+      }
+
+      // Perform lightweight backup
+      const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+        console.log(`Backup: ${message} (${Math.round(progress)}%)`);
+      });
+
+      // Create and download backup
+      const timestamp = new Date().toISOString().split('T')[0];
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chikas-daily-backup-${timestamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Update last backup time
+      localStorage.setItem('chikas_last_backup', new Date().toISOString());
+      
+      // Show success message
+      const reminderBanner = document.getElementById('backup-reminder');
+      if (reminderBanner) {
+        reminderBanner.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+        reminderBanner.innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+            <span>✅ Daily backup completed! (${result.customers.length} customers, ${result.appointments.length} appointments)</span>
+            <button onclick="this.parentElement.parentElement.remove()" style="
+              background: rgba(255,255,255,0.2);
+              border: 1px solid rgba(255,255,255,0.3);
+              color: white;
+              padding: 6px 12px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 12px;
+            ">Close</button>
+          </div>
+        `;
+      }
+
+    } catch (error) {
+      console.error('Daily backup failed:', error);
+      alert('Backup failed: ' + error.message);
+    }
+  }
+
   // Register Service Worker for PWA functionality
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -180,6 +317,11 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
     adjustSidebarOffset();
     attachLangToggleHandler();
+    
+    // Check if daily backup is needed (only on main pages)
+    if (base === '/' || base === '/find' || base === '/calendar') {
+      setTimeout(checkDailyBackup, 1000); // Small delay to let page render
+    }
   }
 
   // Views
@@ -209,10 +351,15 @@
               <div class="tile-icon" aria-hidden="true">💾</div>
               <div class="tile-label">${t('backup')}</div>
             </a>
-            <a class="menu-tile" href="#/emergency-backup" aria-label="Emergency Backup" style="background: linear-gradient(135deg, #ff6b6b, #ee5a52);">
+            <!-- Emergency Backup tile hidden from main menu but functionality preserved -->
+            <a class="menu-tile" href="#/emergency-backup" aria-label="Emergency Backup" style="display: none; background: linear-gradient(135deg, #ff6b6b, #ee5a52);">
               <div class="tile-icon" aria-hidden="true">🚨</div>
               <div class="tile-label">${t('emergencyBackup')}</div>
             </a>
+            <button class="menu-tile" id="daily-backup-btn" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); border: none; cursor: pointer;">
+              <div class="tile-icon" aria-hidden="true">📥</div>
+              <div class="tile-label">1-tap Backup</div>
+            </button>
           </nav>
           
           <div class="todays-appointments">
@@ -232,6 +379,14 @@
       const refreshBtn = document.getElementById('refresh-appointments');
       if (refreshBtn) {
         refreshBtn.addEventListener('click', loadTodaysAppointments);
+      }
+      
+      // Add event listener for daily backup button
+      const dailyBackupBtn = document.getElementById('daily-backup-btn');
+      if (dailyBackupBtn) {
+        dailyBackupBtn.addEventListener('click', async () => {
+          await performDailyBackup();
+        });
       }
     }, 100);
   }
@@ -4183,6 +4338,17 @@
       const titleText = document.createElement('span');
       titleText.textContent = `Note ${noteData.noteNumber} - ${noteData.date}`;
       
+      // Add migrated indicator if this is a migrated note
+      if (noteData.isMigrated) {
+        const migratedIndicator = document.createElement('span');
+        migratedIndicator.textContent = ' (migrated)';
+        migratedIndicator.style.fontStyle = 'italic';
+        migratedIndicator.style.fontSize = '0.85em';
+        migratedIndicator.style.color = 'var(--muted)';
+        migratedIndicator.style.fontWeight = '400';
+        titleText.appendChild(migratedIndicator);
+      }
+      
       noteTitle.appendChild(titleText);
       
       // Add edited timestamp if the note was edited
@@ -4203,42 +4369,47 @@
         gap: 8px;
       `;
 
-      const editButton = document.createElement('button');
-      editButton.textContent = '✏️';
-      editButton.title = 'Edit Note';
-      editButton.style.cssText = `
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 4px;
-        padding: 4px 8px;
-        cursor: pointer;
-        color: var(--text);
-        font-size: 12px;
-        transition: background 0.2s ease;
-      `;
-      editButton.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent header click
-        this.editNote(noteData);
-      });
-      editButton.addEventListener('mouseenter', () => {
-        editButton.style.background = 'rgba(255,255,255,0.2)';
-      });
-      editButton.addEventListener('mouseleave', () => {
-        editButton.style.background = 'rgba(255,255,255,0.1)';
-      });
+      // Only show edit button for non-migrated notes
+      if (!noteData.isMigrated) {
+        const editButton = document.createElement('button');
+        editButton.textContent = '✏️';
+        editButton.title = 'Edit Note';
+        editButton.style.cssText = `
+          background: rgba(255,255,255,0.1);
+          border: 1px solid rgba(255,255,255,0.2);
+          border-radius: 4px;
+          padding: 4px 8px;
+          cursor: pointer;
+          color: var(--text);
+          font-size: 12px;
+          transition: background 0.2s ease;
+        `;
+        editButton.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent header click
+          this.editNote(noteData);
+        });
+        editButton.addEventListener('mouseenter', () => {
+          editButton.style.background = 'rgba(255,255,255,0.2)';
+        });
+        editButton.addEventListener('mouseleave', () => {
+          editButton.style.background = 'rgba(255,255,255,0.1)';
+        });
+        
+        headerRight.appendChild(editButton);
+      }
 
       const expandIcon = document.createElement('span');
       expandIcon.textContent = '▼';
       expandIcon.style.color = 'var(--muted)';
       expandIcon.style.transition = 'transform 0.2s ease';
 
-      // Add delete button only on edit and new customer screens
+      // Add delete button only on edit and new customer screens, and only for non-migrated notes
       const isEditScreen = window.location.hash.includes('#/customer-edit');
       const isNewCustomerScreen = window.location.hash.includes('#/add') || 
                                  document.querySelector('h2')?.textContent?.includes('New Customer') ||
                                  document.querySelector('h2')?.textContent?.includes('newCustomer');
       
-      if (isEditScreen || isNewCustomerScreen) {
+      if ((isEditScreen || isNewCustomerScreen) && !noteData.isMigrated) {
         const deleteButton = document.createElement('button');
         deleteButton.textContent = '🗑️';
         deleteButton.title = 'Delete Note';
@@ -4265,8 +4436,6 @@
         
         headerRight.appendChild(deleteButton);
       }
-
-      headerRight.appendChild(editButton);
       headerRight.appendChild(expandIcon);
       noteHeader.appendChild(noteTitle);
       noteHeader.appendChild(headerRight);
@@ -4277,6 +4446,8 @@
         padding: 16px;
         display: none;
         background: rgba(255,255,255,0.02);
+        max-height: 80vh;
+        overflow-y: auto;
       `;
 
       const svgContainer = document.createElement('div');
@@ -4290,15 +4461,34 @@
         background: transparent;
         display: flex;
         justify-content: center;
-        align-items: center;
+        align-items: flex-start;
+        min-height: 100px;
       `;
       
-      // Scale the SVG to fit the container
+      // Scale the SVG to fit the container - allow full height for long notes
       const svg = svgContainer.querySelector('svg');
       if (svg) {
+        // Get the original height from the SVG viewBox or height attribute
+        const viewBox = svg.getAttribute('viewBox');
+        const height = svg.getAttribute('height');
+        let originalHeight = 300; // default fallback
+        
+        if (viewBox) {
+          // Extract height from viewBox (format: "0 0 width height")
+          const parts = viewBox.split(' ');
+          if (parts.length >= 4) {
+            originalHeight = parseInt(parts[3]) || 300;
+          }
+        } else if (height) {
+          originalHeight = parseInt(height) || 300;
+        }
+        
+        // Set a reasonable max height but allow longer notes to show fully
+        const maxHeight = Math.max(300, Math.min(800, originalHeight));
+        
         svg.style.cssText = `
           max-width: 100%;
-          max-height: 300px;
+          max-height: ${maxHeight}px;
           width: auto;
           height: auto;
           background: transparent;
@@ -4484,7 +4674,8 @@
             id: Date.now() + Math.random(), // Unique ID
             svg: svgContent,
             date: customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
-            noteNumber: 1 // First note for this customer
+            noteNumber: 1, // First note for this customer
+            isMigrated: true // Flag to identify migrated notes
           };
           
           // Get existing notes for this customer
