@@ -1,8 +1,26 @@
 (function () {
+  // Check for force update parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('force') === 'true' || urlParams.get('v')) {
+    console.log('Force update detected, clearing caches...');
+    // Clear all caches immediately
+    if ('caches' in window) {
+      caches.keys().then(cacheNames => {
+        return Promise.all(cacheNames.map(name => caches.delete(name)));
+      });
+    }
+    // Clear service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        return Promise.all(registrations.map(registration => registration.unregister()));
+      });
+    }
+  }
+
   // Register Service Worker for PWA functionality
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
+      navigator.serviceWorker.register('/sw.js?v=1.0.2')
         .then((registration) => {
           console.log('SW registered: ', registration);
           

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force Update - Chikas DB</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 2.5em;
+        }
+        .button {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+        .button:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        }
+        .button.secondary {
+            background: #4ecdc4;
+            box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3);
+        }
+        .button.secondary:hover {
+            background: #45b7b8;
+            box-shadow: 0 6px 20px rgba(78, 205, 196, 0.4);
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚨 Force App Update</h1>
+        <p>This will clear all caches and force your app to load the latest version.</p>
+        
+        <button id="backup-first" class="button secondary">
+            📥 Backup Data First
+        </button>
+        
+        <button id="force-update" class="button">
+            🔄 Force Update Now
+        </button>
+        
+        <div id="status" class="status" style="display: none;">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <script>
+        // Check if we're in the main app context
+        if (window.location.pathname === '/force-update.html') {
+            // We're on the force-update page, show the interface
+            document.getElementById('backup-first').addEventListener('click', async () => {
+                const status = document.getElementById('status');
+                status.style.display = 'block';
+                status.innerHTML = '<div class="spinner"></div><p>Creating backup...</p>';
+                
+                try {
+                    // Try to access the main app's database
+                    if (window.parent && window.parent.ChikasDB) {
+                        const data = await window.parent.ChikasDB.exportAllData();
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `chikas-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        
+                        status.innerHTML = '<p>✅ Backup downloaded successfully!</p>';
+                    } else {
+                        status.innerHTML = '<p>❌ Cannot access database. Please use the main app to backup first.</p>';
+                    }
+                } catch (error) {
+                    status.innerHTML = `<p>❌ Backup failed: ${error.message}</p>`;
+                }
+            });
+            
+            document.getElementById('force-update').addEventListener('click', async () => {
+                const status = document.getElementById('status');
+                status.style.display = 'block';
+                status.innerHTML = '<div class="spinner"></div><p>Clearing caches and reloading...</p>';
+                
+                try {
+                    // Clear all caches
+                    if ('caches' in window) {
+                        const cacheNames = await caches.keys();
+                        await Promise.all(cacheNames.map(name => caches.delete(name)));
+                    }
+                    
+                    // Clear service worker
+                    if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(registrations.map(registration => registration.unregister()));
+                    }
+                    
+                    // Clear localStorage (keep language)
+                    const lang = localStorage.getItem('chikas_lang');
+                    localStorage.clear();
+                    if (lang) localStorage.setItem('chikas_lang', lang);
+                    
+                    // Force reload with cache busting
+                    const timestamp = Date.now();
+                    window.location.href = `/?v=${timestamp}&force=true`;
+                    
+                } catch (error) {
+                    status.innerHTML = `<p>❌ Update failed: ${error.message}</p>`;
+                }
+            });
+        } else {
+            // We're being loaded in the main app, just run the force update
+            (async () => {
+                try {
+                    // Clear all caches
+                    if ('caches' in window) {
+                        const cacheNames = await caches.keys();
+                        await Promise.all(cacheNames.map(name => caches.delete(name)));
+                    }
+                    
+                    // Clear service worker
+                    if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(registrations.map(registration => registration.unregister()));
+                    }
+                    
+                    // Force reload
+                    window.location.reload(true);
+                } catch (error) {
+                    console.error('Force update failed:', error);
+                    window.location.reload(true);
+                }
+            })();
+        }
+    </script>
+</body>
+</html>
