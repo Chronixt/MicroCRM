@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Emergency Backup - Chikas DB</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #1a1a1a;
+            color: white;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .button {
+            background: #22d3ee;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 8px;
+            display: inline-block;
+            text-decoration: none;
+        }
+        .button:hover {
+            background: #06b6d4;
+        }
+        .button.danger {
+            background: #ef4444;
+            color: white;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            background: #333;
+            border-radius: 8px;
+            border-left: 4px solid #22d3ee;
+        }
+        .error {
+            border-left-color: #ef4444;
+            background: #2d1b1b;
+        }
+        .success {
+            border-left-color: #10b981;
+            background: #1b2d1b;
+        }
+        .data-preview {
+            margin: 20px 0;
+            padding: 15px;
+            background: #333;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚨 Emergency Data Backup</h1>
+        <p><strong>URGENT:</strong> This page will help you backup your customer data before clearing Safari cache.</p>
+        
+        <div id="status" class="status">
+            Ready to backup your data...
+        </div>
+        
+        <div>
+            <button id="backup-btn" class="button">📥 Create Emergency Backup</button>
+            <button id="download-btn" class="button" disabled>💾 Download Backup File</button>
+            <button id="preview-btn" class="button">👁️ Preview Data</button>
+        </div>
+        
+        <div id="preview" class="data-preview hidden"></div>
+        
+        <div style="margin-top: 30px;">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Click "Create Emergency Backup" to export all your data</li>
+                <li>Click "Download Backup File" to save it to your iPad</li>
+                <li>Save the file to Files app or iCloud</li>
+                <li>Now you can safely clear Safari cache</li>
+                <li>After updating, use the restore function to import your data back</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="js/db.js"></script>
+    <script>
+        let backupData = null;
+        let backupBlob = null;
+        const statusEl = document.getElementById('status');
+        const backupBtn = document.getElementById('backup-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const previewBtn = document.getElementById('preview-btn');
+        const previewEl = document.getElementById('preview');
+
+        function updateStatus(message, type = 'info') {
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        async function createBackup() {
+            try {
+                updateStatus('Checking database connection...', 'info');
+                
+                if (typeof ChikasDB === 'undefined') {
+                    throw new Error('Database not loaded. Please refresh the page and try again.');
+                }
+
+                updateStatus('Exporting customers...', 'info');
+                const customers = await ChikasDB.getAllCustomers();
+                
+                updateStatus('Exporting appointments...', 'info');
+                const appointments = await ChikasDB.getAllAppointments();
+                
+                updateStatus('Exporting images...', 'info');
+                const images = await ChikasDB.getAllImages();
+                
+                updateStatus('Creating backup file...', 'info');
+                
+                // Create backup data
+                backupData = {
+                    __meta: {
+                        app: 'chikas-db',
+                        version: 3,
+                        exportedAt: new Date().toISOString(),
+                        emergency: true
+                    },
+                    customers,
+                    appointments,
+                    images: images.map(img => ({
+                        id: img.id,
+                        customerId: img.customerId,
+                        name: img.name,
+                        type: img.type,
+                        createdAt: img.createdAt,
+                        dataUrl: img.dataUrl
+                    }))
+                };
+
+                const json = JSON.stringify(backupData, null, 2);
+                backupBlob = new Blob([json], { type: 'application/json' });
+                
+                downloadBtn.disabled = false;
+                updateStatus(`✅ Backup created successfully! Found ${customers.length} customers, ${appointments.length} appointments, ${images.length} images.`, 'success');
+                
+            } catch (error) {
+                console.error('Backup failed:', error);
+                updateStatus(`❌ Backup failed: ${error.message}`, 'error');
+            }
+        }
+
+        function downloadBackup() {
+            if (!backupBlob) {
+                updateStatus('Please create a backup first!', 'error');
+                return;
+            }
+
+            try {
+                const url = URL.createObjectURL(backupBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chikas-emergency-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                updateStatus('✅ Backup file downloaded! Save it to Files app or iCloud.', 'success');
+            } catch (error) {
+                updateStatus(`❌ Download failed: ${error.message}`, 'error');
+            }
+        }
+
+        function previewData() {
+            if (!backupData) {
+                updateStatus('Please create a backup first!', 'error');
+                return;
+            }
+
+            const preview = {
+                customers: backupData.customers.length,
+                appointments: backupData.appointments.length,
+                images: backupData.images.length,
+                sampleCustomer: backupData.customers[0] || null,
+                exportTime: backupData.__meta.exportedAt
+            };
+
+            previewEl.textContent = JSON.stringify(preview, null, 2);
+            previewEl.classList.remove('hidden');
+            
+            updateStatus('Data preview shown below', 'success');
+        }
+
+        backupBtn.addEventListener('click', createBackup);
+        downloadBtn.addEventListener('click', downloadBackup);
+        previewBtn.addEventListener('click', previewData);
+
+        // Auto-check if database is available
+        window.addEventListener('load', () => {
+            if (typeof ChikasDB !== 'undefined') {
+                updateStatus('Database loaded successfully. Ready to backup!', 'success');
+            } else {
+                updateStatus('Database not loaded. Please refresh the page.', 'error');
+            }
+        });
+    </script>
+</body>
+</html>
