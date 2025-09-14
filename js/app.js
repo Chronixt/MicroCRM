@@ -2294,15 +2294,33 @@
     let loadedBackup = null;
 
     exportBtn.addEventListener('click', async () => {
-      statusEl.textContent = 'Exporting…';
-      const data = await ChikasDB.exportAllData();
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
-      lastExportBlobUrl = URL.createObjectURL(blob);
-      lastExportFileName = `chikas-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
-      downloadBtn.disabled = false;
-      statusEl.textContent = `Backup ready: ${lastExportFileName}`;
+      try {
+        statusEl.textContent = 'Starting export...';
+        exportBtn.disabled = true;
+        exportBtn.textContent = 'Exporting...';
+        
+        const data = await ChikasDB.safeExportAllData((message, progress) => {
+          statusEl.textContent = `${message} (${Math.round(progress)}%)`;
+        });
+        
+        statusEl.textContent = 'Creating backup file...';
+        
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
+        lastExportBlobUrl = URL.createObjectURL(blob);
+        lastExportFileName = `chikas-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        downloadBtn.disabled = false;
+        statusEl.textContent = `✅ Backup ready: ${lastExportFileName}`;
+        
+        exportBtn.disabled = false;
+        exportBtn.textContent = t('export');
+      } catch (error) {
+        console.error('Export error:', error);
+        statusEl.textContent = `❌ Export failed: ${error.message}`;
+        exportBtn.disabled = false;
+        exportBtn.textContent = t('export');
+      }
     });
 
     downloadBtn.addEventListener('click', () => {
@@ -2482,10 +2500,24 @@
 
     exportBtn.addEventListener('click', async () => {
       try {
-        statusEl.textContent = 'Creating backup...';
-        const data = await ChikasDB.exportAllData();
+        statusEl.textContent = 'Starting backup...';
+        statusEl.style.color = '#4ecdc4';
         
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        // Disable button during backup
+        exportBtn.disabled = true;
+        exportBtn.textContent = 'Backing up...';
+        
+        const data = await ChikasDB.safeExportAllData((message, progress) => {
+          statusEl.textContent = `${message} (${Math.round(progress)}%)`;
+        });
+        
+        statusEl.textContent = 'Creating download...';
+        
+        // Create blob in smaller chunks to avoid memory issues
+        const jsonString = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        
+        // Create download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -2497,10 +2529,19 @@
         
         statusEl.textContent = `✅ Backup downloaded! ${data.customers.length} customers, ${data.appointments.length} appointments, ${data.images.length} images`;
         statusEl.style.color = '#4ecdc4';
+        
+        // Re-enable button
+        exportBtn.disabled = false;
+        exportBtn.textContent = t('downloadBackupNow');
+        
       } catch (error) {
         console.error('Backup error:', error);
         statusEl.textContent = `❌ Backup failed: ${error.message}`;
         statusEl.style.color = '#ff6b6b';
+        
+        // Re-enable button
+        exportBtn.disabled = false;
+        exportBtn.textContent = t('downloadBackupNow');
       }
     });
 

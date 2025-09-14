@@ -511,19 +511,52 @@
   }
 
   async function exportAllData() {
-    const [customers, appointments, images] = await Promise.all([
-      getAllCustomers(),
-      getAllAppointments(),
-      getAllImages(),
-    ]);
-    const imagesSerialized = await Promise.all(images.map(async (img) => ({
-      id: img.id,
-      customerId: img.customerId,
-      name: img.name,
-      type: img.type,
-      createdAt: img.createdAt,
-      dataUrl: img.dataUrl, // Use dataUrl directly instead of converting from blob
-    })));
+    console.log('Starting data export...');
+    
+    // Export customers first (usually small)
+    const customers = await getAllCustomers();
+    console.log(`Exported ${customers.length} customers`);
+    
+    // Export appointments (usually small)
+    const appointments = await getAllAppointments();
+    console.log(`Exported ${appointments.length} appointments`);
+    
+    // Export images in chunks to avoid memory issues
+    const images = await getAllImages();
+    console.log(`Found ${images.length} images, processing in chunks...`);
+    
+    const imagesSerialized = [];
+    const chunkSize = 10; // Process 10 images at a time
+    
+    for (let i = 0; i < images.length; i += chunkSize) {
+      const chunk = images.slice(i, i + chunkSize);
+      console.log(`Processing image chunk ${Math.floor(i/chunkSize) + 1}/${Math.ceil(images.length/chunkSize)}`);
+      
+      const chunkProcessed = await Promise.all(chunk.map(async (img) => {
+        try {
+          return {
+            id: img.id,
+            customerId: img.customerId,
+            name: img.name,
+            type: img.type,
+            createdAt: img.createdAt,
+            dataUrl: img.dataUrl, // Use dataUrl directly instead of converting from blob
+          };
+        } catch (error) {
+          console.error(`Error processing image ${img.id}:`, error);
+          return null;
+        }
+      }));
+      
+      // Filter out null results and add to main array
+      imagesSerialized.push(...chunkProcessed.filter(img => img !== null));
+      
+      // Small delay to prevent memory pressure
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    console.log(`Successfully processed ${imagesSerialized.length} images`);
+    
     return {
       __meta: {
         app: 'chikas-db',
@@ -740,6 +773,81 @@
     });
   }
 
+  // Safe backup function with progress callback
+  async function safeExportAllData(progressCallback = null) {
+    try {
+      if (progressCallback) progressCallback('Starting backup...', 0);
+      
+      // Export customers first (usually small)
+      const customers = await getAllCustomers();
+      if (progressCallback) progressCallback(`Exported ${customers.length} customers`, 20);
+      
+      // Export appointments (usually small)
+      const appointments = await getAllAppointments();
+      if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 40);
+      
+      // Export images in smaller chunks to avoid memory issues
+      const images = await getAllImages();
+      if (progressCallback) progressCallback(`Found ${images.length} images, processing...`, 50);
+      
+      const imagesSerialized = [];
+      const chunkSize = 5; // Smaller chunks for iPad
+      const totalChunks = Math.ceil(images.length / chunkSize);
+      
+      for (let i = 0; i < images.length; i += chunkSize) {
+        const chunk = images.slice(i, i + chunkSize);
+        const chunkNumber = Math.floor(i / chunkSize) + 1;
+        
+        if (progressCallback) {
+          progressCallback(`Processing images ${chunkNumber}/${totalChunks}`, 50 + (chunkNumber / totalChunks) * 40);
+        }
+        
+        const chunkProcessed = [];
+        for (const img of chunk) {
+          try {
+            chunkProcessed.push({
+              id: img.id,
+              customerId: img.customerId,
+              name: img.name,
+              type: img.type,
+              createdAt: img.createdAt,
+              dataUrl: img.dataUrl,
+            });
+          } catch (error) {
+            console.error(`Error processing image ${img.id}:`, error);
+            // Continue with other images
+          }
+        }
+        
+        imagesSerialized.push(...chunkProcessed);
+        
+        // Longer delay for iPad memory management
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      if (progressCallback) progressCallback('Creating backup file...', 90);
+      
+      const result = {
+        __meta: {
+          app: 'chikas-db',
+          version: 3,
+          exportedAt: new Date().toISOString(),
+        },
+        customers,
+        appointments,
+        images: imagesSerialized,
+      };
+      
+      if (progressCallback) progressCallback('Backup complete!', 100);
+      
+      return result;
+    } catch (error) {
+      console.error('Backup failed:', error);
+      if (progressCallback) progressCallback(`Backup failed: ${error.message}`, 0);
+      throw error;
+    }
+  }
+
   // Expose API
   window.ChikasDB = {
     createCustomer,
@@ -763,6 +871,7 @@
     getAppointmentById,
     fileListToEntries,
     exportAllData,
+    safeExportAllData, // NEW - safer backup function
     importAllData,
     clearAllStores,
   };
