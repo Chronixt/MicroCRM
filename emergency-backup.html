@@ -162,6 +162,19 @@
                         updateStatus('Warning: Could not export images, but customers and appointments are safe', 'error');
                     }
                     
+                    // Process images correctly - they should already be in dataURL format
+                    const processedImages = images.map(img => {
+                        // Images are already stored as dataURL, no conversion needed
+                        return {
+                            id: img.id,
+                            customerId: img.customerId,
+                            name: img.name,
+                            type: img.type,
+                            createdAt: img.createdAt,
+                            dataUrl: img.dataUrl // Keep as-is, no conversion needed
+                        };
+                    });
+                    
                     backupData = {
                         __meta: {
                             app: 'chikas-db',
@@ -171,14 +184,7 @@
                         },
                         customers,
                         appointments,
-                        images: images.map(img => ({
-                            id: img.id,
-                            customerId: img.customerId,
-                            name: img.name,
-                            type: img.type,
-                            createdAt: img.createdAt,
-                            dataUrl: img.dataUrl
-                        }))
+                        images: processedImages
                     };
                 }
 
@@ -227,6 +233,12 @@
                 appointments: backupData.appointments.length,
                 images: backupData.images.length,
                 sampleCustomer: backupData.customers[0] || null,
+                sampleImage: backupData.images[0] ? {
+                    id: backupData.images[0].id,
+                    name: backupData.images[0].name,
+                    hasDataUrl: !!backupData.images[0].dataUrl,
+                    dataUrlLength: backupData.images[0].dataUrl ? backupData.images[0].dataUrl.length : 0
+                } : null,
                 exportTime: backupData.__meta.exportedAt
             };
 
