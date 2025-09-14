@@ -120,42 +120,73 @@
                     throw new Error('Database not loaded. Please refresh the page and try again.');
                 }
 
-                updateStatus('Exporting customers...', 'info');
-                const customers = await ChikasDB.getAllCustomers();
+                // Check what functions are available
+                const availableFunctions = Object.keys(ChikasDB);
+                console.log('Available ChikasDB functions:', availableFunctions);
                 
-                updateStatus('Exporting appointments...', 'info');
-                const appointments = await ChikasDB.getAllAppointments();
+                updateStatus('Creating backup using exportAllData...', 'info');
                 
-                updateStatus('Exporting images...', 'info');
-                const images = await ChikasDB.getAllImages();
-                
-                updateStatus('Creating backup file...', 'info');
-                
-                // Create backup data
-                backupData = {
-                    __meta: {
-                        app: 'chikas-db',
-                        version: 3,
-                        exportedAt: new Date().toISOString(),
-                        emergency: true
-                    },
-                    customers,
-                    appointments,
-                    images: images.map(img => ({
-                        id: img.id,
-                        customerId: img.customerId,
-                        name: img.name,
-                        type: img.type,
-                        createdAt: img.createdAt,
-                        dataUrl: img.dataUrl
-                    }))
-                };
+                // Use the exportAllData function which should work
+                if (typeof ChikasDB.exportAllData === 'function') {
+                    backupData = await ChikasDB.exportAllData();
+                    updateStatus('Backup data retrieved successfully!', 'success');
+                } else {
+                    // Fallback: try to get data manually
+                    updateStatus('exportAllData not available, trying manual export...', 'info');
+                    
+                    const customers = await ChikasDB.getAllCustomers();
+                    const appointments = await ChikasDB.getAllAppointments();
+                    
+                    // Try to get images if possible
+                    let images = [];
+                    try {
+                        // Try different ways to get images
+                        if (typeof ChikasDB.getAllImages === 'function') {
+                            images = await ChikasDB.getAllImages();
+                        } else {
+                            // Try to get images by iterating through customers
+                            updateStatus('Getting images for each customer...', 'info');
+                            for (const customer of customers) {
+                                try {
+                                    if (typeof ChikasDB.getImagesByCustomerId === 'function') {
+                                        const customerImages = await ChikasDB.getImagesByCustomerId(customer.id);
+                                        images = images.concat(customerImages);
+                                    }
+                                } catch (err) {
+                                    console.warn(`Could not get images for customer ${customer.id}:`, err);
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('Could not get images:', err);
+                        updateStatus('Warning: Could not export images, but customers and appointments are safe', 'error');
+                    }
+                    
+                    backupData = {
+                        __meta: {
+                            app: 'chikas-db',
+                            version: 3,
+                            exportedAt: new Date().toISOString(),
+                            emergency: true
+                        },
+                        customers,
+                        appointments,
+                        images: images.map(img => ({
+                            id: img.id,
+                            customerId: img.customerId,
+                            name: img.name,
+                            type: img.type,
+                            createdAt: img.createdAt,
+                            dataUrl: img.dataUrl
+                        }))
+                    };
+                }
 
                 const json = JSON.stringify(backupData, null, 2);
                 backupBlob = new Blob([json], { type: 'application/json' });
                 
                 downloadBtn.disabled = false;
-                updateStatus(`✅ Backup created successfully! Found ${customers.length} customers, ${appointments.length} appointments, ${images.length} images.`, 'success');
+                updateStatus(`✅ Backup created successfully! Found ${backupData.customers.length} customers, ${backupData.appointments.length} appointments, ${backupData.images.length} images.`, 'success');
                 
             } catch (error) {
                 console.error('Backup failed:', error);
@@ -212,7 +243,8 @@
         // Auto-check if database is available
         window.addEventListener('load', () => {
             if (typeof ChikasDB !== 'undefined') {
-                updateStatus('Database loaded successfully. Ready to backup!', 'success');
+                const availableFunctions = Object.keys(ChikasDB);
+                updateStatus(`Database loaded successfully. Available functions: ${availableFunctions.join(', ')}`, 'success');
             } else {
                 updateStatus('Database not loaded. Please refresh the page.', 'error');
             }
