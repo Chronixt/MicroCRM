@@ -124,75 +124,67 @@
                 const availableFunctions = Object.keys(ChikasDB);
                 console.log('Available ChikasDB functions:', availableFunctions);
                 
-                updateStatus('Creating backup using exportAllData...', 'info');
+                updateStatus('Getting customers and appointments...', 'info');
                 
-                // Use the exportAllData function which should work
-                if (typeof ChikasDB.exportAllData === 'function') {
-                    backupData = await ChikasDB.exportAllData();
-                    updateStatus('Backup data retrieved successfully!', 'success');
-                } else {
-                    // Fallback: try to get data manually
-                    updateStatus('exportAllData not available, trying manual export...', 'info');
-                    
-                    const customers = await ChikasDB.getAllCustomers();
-                    const appointments = await ChikasDB.getAllAppointments();
-                    
-                    // Try to get images if possible
-                    let images = [];
+                // Get customers and appointments directly
+                const customers = await ChikasDB.getAllCustomers();
+                const appointments = await ChikasDB.getAllAppointments();
+                
+                updateStatus('Getting images for each customer...', 'info');
+                
+                // Get images by iterating through customers (safer approach)
+                let allImages = [];
+                let imageCount = 0;
+                
+                for (const customer of customers) {
                     try {
-                        // Try different ways to get images
-                        if (typeof ChikasDB.getAllImages === 'function') {
-                            images = await ChikasDB.getAllImages();
-                        } else {
-                            // Try to get images by iterating through customers
-                            updateStatus('Getting images for each customer...', 'info');
-                            for (const customer of customers) {
-                                try {
-                                    if (typeof ChikasDB.getImagesByCustomerId === 'function') {
-                                        const customerImages = await ChikasDB.getImagesByCustomerId(customer.id);
-                                        images = images.concat(customerImages);
+                        if (typeof ChikasDB.getImagesByCustomerId === 'function') {
+                            const customerImages = await ChikasDB.getImagesByCustomerId(customer.id);
+                            if (customerImages && customerImages.length > 0) {
+                                // Process each image safely
+                                for (const img of customerImages) {
+                                    try {
+                                        // Images should already be in the correct format
+                                        allImages.push({
+                                            id: img.id,
+                                            customerId: img.customerId,
+                                            name: img.name,
+                                            type: img.type,
+                                            createdAt: img.createdAt,
+                                            dataUrl: img.dataUrl // Keep as-is
+                                        });
+                                        imageCount++;
+                                    } catch (imgError) {
+                                        console.warn(`Error processing image ${img.id}:`, imgError);
                                     }
-                                } catch (err) {
-                                    console.warn(`Could not get images for customer ${customer.id}:`, err);
                                 }
                             }
                         }
                     } catch (err) {
-                        console.warn('Could not get images:', err);
-                        updateStatus('Warning: Could not export images, but customers and appointments are safe', 'error');
+                        console.warn(`Could not get images for customer ${customer.id}:`, err);
                     }
-                    
-                    // Process images correctly - they should already be in dataURL format
-                    const processedImages = images.map(img => {
-                        // Images are already stored as dataURL, no conversion needed
-                        return {
-                            id: img.id,
-                            customerId: img.customerId,
-                            name: img.name,
-                            type: img.type,
-                            createdAt: img.createdAt,
-                            dataUrl: img.dataUrl // Keep as-is, no conversion needed
-                        };
-                    });
-                    
-                    backupData = {
-                        __meta: {
-                            app: 'chikas-db',
-                            version: 3,
-                            exportedAt: new Date().toISOString(),
-                            emergency: true
-                        },
-                        customers,
-                        appointments,
-                        images: processedImages
-                    };
                 }
+                
+                updateStatus(`Found ${imageCount} images, creating backup...`, 'info');
+                
+                // Create backup data
+                backupData = {
+                    __meta: {
+                        app: 'chikas-db',
+                        version: 3,
+                        exportedAt: new Date().toISOString(),
+                        emergency: true
+                    },
+                    customers,
+                    appointments,
+                    images: allImages
+                };
 
                 const json = JSON.stringify(backupData, null, 2);
                 backupBlob = new Blob([json], { type: 'application/json' });
                 
                 downloadBtn.disabled = false;
-                updateStatus(`✅ Backup created successfully! Found ${backupData.customers.length} customers, ${backupData.appointments.length} appointments, ${backupData.images.length} images.`, 'success');
+                updateStatus(`✅ Backup created successfully! Found ${customers.length} customers, ${appointments.length} appointments, ${allImages.length} images.`, 'success');
                 
             } catch (error) {
                 console.error('Backup failed:', error);
