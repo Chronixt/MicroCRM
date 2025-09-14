@@ -105,52 +105,58 @@
             }
         }
 
-        // Simple backup function that won't crash
+        // Direct IndexedDB access - bypasses the ChikasDB wrapper
         async function createBackup() {
             try {
-                updateStatus('Starting backup process...', 'info');
+                updateStatus('Opening IndexedDB directly...', 'info');
                 
-                // Wait a moment for any pending operations
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Open IndexedDB directly
+                const dbName = 'chikas-db';
+                const dbVersion = 3;
                 
-                updateStatus('Checking if database is available...', 'info');
+                const request = indexedDB.open(dbName, dbVersion);
                 
-                if (typeof ChikasDB === 'undefined') {
-                    throw new Error('Database not loaded. Please refresh the page and try again.');
-                }
-
-                updateStatus('Getting customers...', 'info');
-                const customers = await ChikasDB.getAllCustomers();
+                const db = await new Promise((resolve, reject) => {
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                
+                updateStatus('Database opened, getting customers...', 'info');
+                
+                // Get customers
+                const customers = await new Promise((resolve, reject) => {
+                    const transaction = db.transaction(['customers'], 'readonly');
+                    const store = transaction.objectStore('customers');
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result || []);
+                    request.onerror = () => reject(request.error);
+                });
                 
                 updateStatus('Getting appointments...', 'info');
-                const appointments = await ChikasDB.getAllAppointments();
+                
+                // Get appointments
+                const appointments = await new Promise((resolve, reject) => {
+                    const transaction = db.transaction(['appointments'], 'readonly');
+                    const store = transaction.objectStore('appointments');
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result || []);
+                    request.onerror = () => reject(request.error);
+                });
                 
                 updateStatus('Getting images...', 'info');
-                let allImages = [];
                 
-                // Get images safely, one customer at a time
-                for (let i = 0; i < customers.length; i++) {
-                    const customer = customers[i];
-                    try {
-                        if (ChikasDB.getImagesByCustomerId) {
-                            const customerImages = await ChikasDB.getImagesByCustomerId(customer.id);
-                            if (customerImages && Array.isArray(customerImages)) {
-                                allImages = allImages.concat(customerImages);
-                            }
-                        }
-                    } catch (err) {
-                        console.warn(`Could not get images for customer ${customer.id}:`, err);
-                    }
-                    
-                    // Update progress
-                    if (i % 5 === 0) {
-                        updateStatus(`Getting images... ${i + 1}/${customers.length} customers`, 'info');
-                    }
-                }
+                // Get images
+                const images = await new Promise((resolve, reject) => {
+                    const transaction = db.transaction(['images'], 'readonly');
+                    const store = transaction.objectStore('images');
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result || []);
+                    request.onerror = () => reject(request.error);
+                });
                 
                 updateStatus('Creating backup file...', 'info');
                 
-                // Create simple backup data
+                // Create backup data
                 backupData = {
                     __meta: {
                         app: 'chikas-db',
@@ -160,14 +166,14 @@
                     },
                     customers: customers || [],
                     appointments: appointments || [],
-                    images: allImages || []
+                    images: images || []
                 };
 
                 const json = JSON.stringify(backupData, null, 2);
                 backupBlob = new Blob([json], { type: 'application/json' });
                 
                 downloadBtn.disabled = false;
-                updateStatus(`✅ Backup created! Found ${customers.length} customers, ${appointments.length} appointments, ${allImages.length} images.`, 'success');
+                updateStatus(`✅ Backup created! Found ${customers.length} customers, ${appointments.length} appointments, ${images.length} images.`, 'success');
                 
             } catch (error) {
                 console.error('Backup failed:', error);
@@ -179,15 +185,13 @@
         backupBtn.addEventListener('click', createBackup);
         downloadBtn.addEventListener('click', downloadBackup);
 
-        // Check if database is available on load
+        // Check if IndexedDB is available on load
         window.addEventListener('load', () => {
-            setTimeout(() => {
-                if (typeof ChikasDB !== 'undefined') {
-                    updateStatus('Database loaded successfully. Ready to backup!', 'success');
-                } else {
-                    updateStatus('Database not loaded. Please refresh the page.', 'error');
-                }
-            }, 2000);
+            if ('indexedDB' in window) {
+                updateStatus('IndexedDB is available. Ready to backup!', 'success');
+            } else {
+                updateStatus('IndexedDB not supported in this browser.', 'error');
+            }
         });
     </script>
 </body>
