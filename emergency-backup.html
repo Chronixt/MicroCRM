@@ -3,8 +3,6 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Emergency Backup - Chikas DB</title>
     <style>
         body {
@@ -31,13 +29,6 @@
             display: inline-block;
             text-decoration: none;
         }
-        .button:hover {
-            background: #06b6d4;
-        }
-        .button.danger {
-            background: #ef4444;
-            color: white;
-        }
         .status {
             margin: 20px 0;
             padding: 15px;
@@ -53,19 +44,6 @@
             border-left-color: #10b981;
             background: #1b2d1b;
         }
-        .data-preview {
-            margin: 20px 0;
-            padding: 15px;
-            background: #333;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        .hidden {
-            display: none;
-        }
     </style>
 </head>
 <body>
@@ -80,10 +58,7 @@
         <div>
             <button id="backup-btn" class="button">📥 Create Emergency Backup</button>
             <button id="download-btn" class="button" disabled>💾 Download Backup File</button>
-            <button id="preview-btn" class="button">👁️ Preview Data</button>
         </div>
-        
-        <div id="preview" class="data-preview hidden"></div>
         
         <div style="margin-top: 30px;">
             <h3>Instructions:</h3>
@@ -92,104 +67,20 @@
                 <li>Click "Download Backup File" to save it to your iPad</li>
                 <li>Save the file to Files app or iCloud</li>
                 <li>Now you can safely clear Safari cache</li>
-                <li>After updating, use the restore function to import your data back</li>
             </ol>
         </div>
     </div>
 
-    <script src="js/db.js"></script>
     <script>
         let backupData = null;
         let backupBlob = null;
         const statusEl = document.getElementById('status');
         const backupBtn = document.getElementById('backup-btn');
         const downloadBtn = document.getElementById('download-btn');
-        const previewBtn = document.getElementById('preview-btn');
-        const previewEl = document.getElementById('preview');
 
         function updateStatus(message, type = 'info') {
             statusEl.textContent = message;
             statusEl.className = `status ${type}`;
-        }
-
-        async function createBackup() {
-            try {
-                updateStatus('Checking database connection...', 'info');
-                
-                if (typeof ChikasDB === 'undefined') {
-                    throw new Error('Database not loaded. Please refresh the page and try again.');
-                }
-
-                // Check what functions are available
-                const availableFunctions = Object.keys(ChikasDB);
-                console.log('Available ChikasDB functions:', availableFunctions);
-                
-                updateStatus('Getting customers and appointments...', 'info');
-                
-                // Get customers and appointments directly
-                const customers = await ChikasDB.getAllCustomers();
-                const appointments = await ChikasDB.getAllAppointments();
-                
-                updateStatus('Getting images for each customer...', 'info');
-                
-                // Get images by iterating through customers (safer approach)
-                let allImages = [];
-                let imageCount = 0;
-                
-                for (const customer of customers) {
-                    try {
-                        if (typeof ChikasDB.getImagesByCustomerId === 'function') {
-                            const customerImages = await ChikasDB.getImagesByCustomerId(customer.id);
-                            if (customerImages && customerImages.length > 0) {
-                                // Process each image safely
-                                for (const img of customerImages) {
-                                    try {
-                                        // Images should already be in the correct format
-                                        allImages.push({
-                                            id: img.id,
-                                            customerId: img.customerId,
-                                            name: img.name,
-                                            type: img.type,
-                                            createdAt: img.createdAt,
-                                            dataUrl: img.dataUrl // Keep as-is
-                                        });
-                                        imageCount++;
-                                    } catch (imgError) {
-                                        console.warn(`Error processing image ${img.id}:`, imgError);
-                                    }
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.warn(`Could not get images for customer ${customer.id}:`, err);
-                    }
-                }
-                
-                updateStatus(`Found ${imageCount} images, creating backup...`, 'info');
-                
-                // Create backup data
-                backupData = {
-                    __meta: {
-                        app: 'chikas-db',
-                        version: 3,
-                        exportedAt: new Date().toISOString(),
-                        emergency: true
-                    },
-                    customers,
-                    appointments,
-                    images: allImages
-                };
-
-                const json = JSON.stringify(backupData, null, 2);
-                backupBlob = new Blob([json], { type: 'application/json' });
-                
-                downloadBtn.disabled = false;
-                updateStatus(`✅ Backup created successfully! Found ${customers.length} customers, ${appointments.length} appointments, ${allImages.length} images.`, 'success');
-                
-            } catch (error) {
-                console.error('Backup failed:', error);
-                updateStatus(`❌ Backup failed: ${error.message}`, 'error');
-            }
         }
 
         function downloadBackup() {
@@ -214,44 +105,89 @@
             }
         }
 
-        function previewData() {
-            if (!backupData) {
-                updateStatus('Please create a backup first!', 'error');
-                return;
+        // Simple backup function that won't crash
+        async function createBackup() {
+            try {
+                updateStatus('Starting backup process...', 'info');
+                
+                // Wait a moment for any pending operations
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                updateStatus('Checking if database is available...', 'info');
+                
+                if (typeof ChikasDB === 'undefined') {
+                    throw new Error('Database not loaded. Please refresh the page and try again.');
+                }
+
+                updateStatus('Getting customers...', 'info');
+                const customers = await ChikasDB.getAllCustomers();
+                
+                updateStatus('Getting appointments...', 'info');
+                const appointments = await ChikasDB.getAllAppointments();
+                
+                updateStatus('Getting images...', 'info');
+                let allImages = [];
+                
+                // Get images safely, one customer at a time
+                for (let i = 0; i < customers.length; i++) {
+                    const customer = customers[i];
+                    try {
+                        if (ChikasDB.getImagesByCustomerId) {
+                            const customerImages = await ChikasDB.getImagesByCustomerId(customer.id);
+                            if (customerImages && Array.isArray(customerImages)) {
+                                allImages = allImages.concat(customerImages);
+                            }
+                        }
+                    } catch (err) {
+                        console.warn(`Could not get images for customer ${customer.id}:`, err);
+                    }
+                    
+                    // Update progress
+                    if (i % 5 === 0) {
+                        updateStatus(`Getting images... ${i + 1}/${customers.length} customers`, 'info');
+                    }
+                }
+                
+                updateStatus('Creating backup file...', 'info');
+                
+                // Create simple backup data
+                backupData = {
+                    __meta: {
+                        app: 'chikas-db',
+                        version: 3,
+                        exportedAt: new Date().toISOString(),
+                        emergency: true
+                    },
+                    customers: customers || [],
+                    appointments: appointments || [],
+                    images: allImages || []
+                };
+
+                const json = JSON.stringify(backupData, null, 2);
+                backupBlob = new Blob([json], { type: 'application/json' });
+                
+                downloadBtn.disabled = false;
+                updateStatus(`✅ Backup created! Found ${customers.length} customers, ${appointments.length} appointments, ${allImages.length} images.`, 'success');
+                
+            } catch (error) {
+                console.error('Backup failed:', error);
+                updateStatus(`❌ Backup failed: ${error.message}`, 'error');
             }
-
-            const preview = {
-                customers: backupData.customers.length,
-                appointments: backupData.appointments.length,
-                images: backupData.images.length,
-                sampleCustomer: backupData.customers[0] || null,
-                sampleImage: backupData.images[0] ? {
-                    id: backupData.images[0].id,
-                    name: backupData.images[0].name,
-                    hasDataUrl: !!backupData.images[0].dataUrl,
-                    dataUrlLength: backupData.images[0].dataUrl ? backupData.images[0].dataUrl.length : 0
-                } : null,
-                exportTime: backupData.__meta.exportedAt
-            };
-
-            previewEl.textContent = JSON.stringify(preview, null, 2);
-            previewEl.classList.remove('hidden');
-            
-            updateStatus('Data preview shown below', 'success');
         }
 
+        // Event listeners
         backupBtn.addEventListener('click', createBackup);
         downloadBtn.addEventListener('click', downloadBackup);
-        previewBtn.addEventListener('click', previewData);
 
-        // Auto-check if database is available
+        // Check if database is available on load
         window.addEventListener('load', () => {
-            if (typeof ChikasDB !== 'undefined') {
-                const availableFunctions = Object.keys(ChikasDB);
-                updateStatus(`Database loaded successfully. Available functions: ${availableFunctions.join(', ')}`, 'success');
-            } else {
-                updateStatus('Database not loaded. Please refresh the page.', 'error');
-            }
+            setTimeout(() => {
+                if (typeof ChikasDB !== 'undefined') {
+                    updateStatus('Database loaded successfully. Ready to backup!', 'success');
+                } else {
+                    updateStatus('Database not loaded. Please refresh the page.', 'error');
+                }
+            }, 2000);
         });
     </script>
 </body>
