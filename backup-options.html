@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Options - Chikas DB</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 2.5em;
+        }
+        .button {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+        .button:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+        }
+        .button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .button.lightweight {
+            background: #4ecdc4;
+            box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3);
+        }
+        .button.lightweight:hover {
+            background: #45b7b8;
+            box-shadow: 0 6px 20px rgba(78, 205, 196, 0.4);
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4ecdc4, #44a08d);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .option {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px 0;
+            text-align: left;
+        }
+        .option h3 {
+            margin-top: 0;
+            color: #4ecdc4;
+        }
+        .option p {
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📥 Backup Options</h1>
+        <p>Choose what type of backup you want to create:</p>
+        
+        <div class="option">
+            <h3>🚀 Lightweight Backup (Recommended)</h3>
+            <p>Exports customers, appointments, and notes only. No images. Fast and reliable on iPad Safari.</p>
+            <button id="lightweight-btn" class="button lightweight">
+                📥 Lightweight Backup
+            </button>
+        </div>
+        
+        <div class="option">
+            <h3>📸 Full Backup (With Images)</h3>
+            <p>Exports everything including all images. May be slow or crash on iPad Safari with many images.</p>
+            <button id="full-btn" class="button">
+                📥 Full Backup
+            </button>
+        </div>
+        
+        <div class="progress" id="progress-container" style="display: none;">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        
+        <div id="status" class="status">
+            <p>Choose a backup option above</p>
+        </div>
+    </div>
+
+    <script src="js/db.js?v=1.0.1"></script>
+    <script>
+        const lightweightBtn = document.getElementById('lightweight-btn');
+        const fullBtn = document.getElementById('full-btn');
+        const statusEl = document.getElementById('status');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        
+        function setButtonState(disabled) {
+            lightweightBtn.disabled = disabled;
+            fullBtn.disabled = disabled;
+        }
+        
+        function updateStatus(message, progress = null) {
+            statusEl.innerHTML = `<p>${message}</p>`;
+            if (progress !== null) {
+                progressBar.style.width = `${progress}%`;
+            }
+        }
+        
+        lightweightBtn.addEventListener('click', async () => {
+            try {
+                setButtonState(true);
+                lightweightBtn.textContent = 'Backing up...';
+                progressContainer.style.display = 'block';
+                
+                const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+                    updateStatus(message, progress);
+                });
+                
+                updateStatus('Creating download...', 95);
+                
+                const url = URL.createObjectURL(result.blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chikas-lightweight-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                updateStatus(`
+                    <p>✅ Lightweight Backup Complete!</p>
+                    <p>${result.customers.length} customers, ${result.appointments.length} appointments, 0 images</p>
+                `, 100);
+                progressBar.style.background = 'linear-gradient(90deg, #4ecdc4, #44a08d)';
+                
+                lightweightBtn.textContent = 'Backup Again';
+                setButtonState(false);
+                
+            } catch (error) {
+                console.error('Lightweight backup failed:', error);
+                updateStatus(`❌ Lightweight backup failed: ${error.message}`, 0);
+                lightweightBtn.textContent = 'Try Again';
+                setButtonState(false);
+                progressContainer.style.display = 'none';
+            }
+        });
+        
+        fullBtn.addEventListener('click', async () => {
+            try {
+                setButtonState(true);
+                fullBtn.textContent = 'Backing up...';
+                progressContainer.style.display = 'block';
+                
+                const result = await ChikasDB.safeExportAllData((message, progress) => {
+                    updateStatus(message, progress);
+                });
+                
+                updateStatus('Creating download...', 95);
+                
+                const url = URL.createObjectURL(result.blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chikas-full-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                updateStatus(`
+                    <p>✅ Full Backup Complete!</p>
+                    <p>${result.customers.length} customers, ${result.appointments.length} appointments, ${result.imageCount} images</p>
+                `, 100);
+                progressBar.style.background = 'linear-gradient(90deg, #4ecdc4, #44a08d)';
+                
+                fullBtn.textContent = 'Backup Again';
+                setButtonState(false);
+                
+            } catch (error) {
+                console.error('Full backup failed:', error);
+                updateStatus(`❌ Full backup failed: ${error.message}`, 0);
+                fullBtn.textContent = 'Try Again';
+                setButtonState(false);
+                progressContainer.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

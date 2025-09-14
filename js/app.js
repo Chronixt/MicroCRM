@@ -2506,7 +2506,7 @@
         exportBtn.disabled = true;
         exportBtn.textContent = 'Backing up...';
         
-        const result = await ChikasDB.safeExportAllData((message, progress) => {
+        const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         

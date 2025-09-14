@@ -773,6 +773,53 @@
     });
   }
 
+  // Lightweight backup function - customers, appointments, and notes only (no images)
+  async function exportDataWithoutImages(progressCallback = null) {
+    try {
+      if (progressCallback) progressCallback('Starting lightweight backup...', 0);
+      
+      // Export customers first (usually small)
+      const customers = await getAllCustomers();
+      if (progressCallback) progressCallback(`Exported ${customers.length} customers`, 30);
+      
+      // Export appointments (usually small)
+      const appointments = await getAllAppointments();
+      if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 60);
+      
+      if (progressCallback) progressCallback('Creating backup file...', 90);
+      
+      const result = {
+        __meta: {
+          app: 'chikas-db',
+          version: 3,
+          exportedAt: new Date().toISOString(),
+          backupType: 'lightweight-no-images'
+        },
+        customers,
+        appointments,
+        images: [] // Empty images array
+      };
+      
+      // Create blob directly
+      const jsonString = JSON.stringify(result, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      
+      if (progressCallback) progressCallback('Lightweight backup complete!', 100);
+      
+      return {
+        blob: blob,
+        customers: customers,
+        appointments: appointments,
+        imageCount: 0
+      };
+      
+    } catch (error) {
+      console.error('Lightweight backup failed:', error);
+      if (progressCallback) progressCallback(`Backup failed: ${error.message}`, 0);
+      throw error;
+    }
+  }
+
   // Ultra-safe backup function with streaming JSON creation
   async function safeExportAllData(progressCallback = null) {
     try {
@@ -920,6 +967,7 @@
     fileListToEntries,
     exportAllData,
     safeExportAllData, // NEW - safer backup function
+    exportDataWithoutImages, // NEW - lightweight backup (no images)
     importAllData,
     clearAllStores,
   };
