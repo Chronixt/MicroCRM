@@ -5,6 +5,23 @@
       navigator.serviceWorker.register('/sw.js')
         .then((registration) => {
           console.log('SW registered: ', registration);
+          
+          // Check for updates every time the app loads
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // New version available, prompt user to update
+                if (confirm('A new version of the app is available. Reload to update?')) {
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  window.location.reload();
+                }
+              }
+            });
+          });
+          
+          // Check for updates
+          registration.update();
         })
         .catch((registrationError) => {
           console.log('SW registration failed: ', registrationError);
@@ -23,6 +40,7 @@
     '/backup': renderBackup,
     '/customer': renderCustomer, // expects id query ?id=123
     '/customer-edit': renderCustomerEdit,
+    '/emergency-backup': renderEmergencyBackup,
   };
 
   // i18n
@@ -51,6 +69,7 @@
       todaysAppointments: 'Today\'s Appointments', noAppointmentsToday: 'No appointments today',
       loading: 'Loading', nextAppointment: 'Next Appointment', noUpcomingAppointments: 'No upcoming appointments', errorLoadingAppointment: 'Error loading appointment',
       delete: 'Delete', confirmDelete: 'Are you sure you want to delete this appointment?', appointmentDetails: 'Appointment Details', pleaseSelectDateTime: 'Please select date and time',
+      emergencyBackup: 'Emergency Backup', backupBeforeCacheClear: 'Backup Before Cache Clear', downloadBackupNow: 'Download Backup Now', cacheCleared: 'Cache Cleared - App Will Reload', clearCacheAndReload: 'Clear Cache & Reload App',
     },
     ja: {
               add: '新規顧客', find: '検索', customers: '顧客', calendar: 'カレンダー', backup: 'バックアップ',
@@ -76,6 +95,7 @@
       todaysAppointments: '今日の予約', noAppointmentsToday: '予約はありません',
       loading: '読み込み中', nextAppointment: '次の予約', noUpcomingAppointments: '予約はありません', errorLoadingAppointment: '予約の読み込みエラー',
               delete: '削除', confirmDelete: 'この予約を削除してもよろしいですか？', appointmentDetails: '予約詳細', pleaseSelectDateTime: '日時を選択してください',
+      emergencyBackup: '緊急バックアップ', backupBeforeCacheClear: 'キャッシュクリア前のバックアップ', downloadBackupNow: '今すぐバックアップをダウンロード', cacheCleared: 'キャッシュクリア完了 - アプリが再読み込みされます', clearCacheAndReload: 'キャッシュクリア＆アプリ再読み込み',
     }
   };
 
@@ -170,6 +190,10 @@
             <a class="menu-tile" href="#/backup" aria-label="Backup and Restore">
               <div class="tile-icon" aria-hidden="true">💾</div>
               <div class="tile-label">${t('backup')}</div>
+            </a>
+            <a class="menu-tile" href="#/emergency-backup" aria-label="Emergency Backup" style="background: linear-gradient(135deg, #ff6b6b, #ee5a52);">
+              <div class="tile-icon" aria-hidden="true">🚨</div>
+              <div class="tile-label">${t('emergencyBackup')}</div>
             </a>
           </nav>
           
@@ -2395,6 +2419,103 @@
       if (!confirm('This will permanently delete all local data. Continue?')) return;
       await ChikasDB.clearAllStores();
       alert('All local data deleted');
+    });
+  }
+
+  async function renderEmergencyBackup() {
+    appRoot.innerHTML = wrapWithSidebar(`
+      <div class="space-between" style="margin-bottom: 8px;">
+        <h2>${t('emergencyBackup')}</h2>
+      </div>
+      <div class="card">
+        <div class="form">
+          <div style="background: #ff6b6b; color: white; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <h3 style="margin-top: 0; color: white;">⚠️ CRITICAL: Backup Your Data First!</h3>
+            <p style="margin-bottom: 0;">Before clearing Safari's cache, you MUST backup your database or you will lose all customer data!</p>
+          </div>
+          
+          <div class="row">
+            <button id="emergency-export-btn" class="button" style="background: #ff6b6b; color: white; font-weight: bold;">
+              ${t('downloadBackupNow')}
+            </button>
+          </div>
+          
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
+          <div style="background: #4ecdc4; color: white; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <h3 style="margin-top: 0; color: white;">🔄 Force App Update</h3>
+            <p style="margin-bottom: 0;">After backing up, use this to force the app to update to the latest version:</p>
+          </div>
+          
+          <div class="row">
+            <button id="clear-cache-btn" class="button" style="background: #4ecdc4; color: white; font-weight: bold;">
+              ${t('clearCacheAndReload')}
+            </button>
+          </div>
+          
+          <div class="muted" id="emergency-status" style="margin-top: 16px;"></div>
+        </div>
+      </div>
+    `);
+
+    const exportBtn = document.getElementById('emergency-export-btn');
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
+    const statusEl = document.getElementById('emergency-status');
+
+    exportBtn.addEventListener('click', async () => {
+      try {
+        statusEl.textContent = 'Creating backup...';
+        const data = await ChikasDB.exportAllData();
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chikas-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        statusEl.textContent = `✅ Backup downloaded! ${data.customers.length} customers, ${data.appointments.length} appointments, ${data.images.length} images`;
+        statusEl.style.color = '#4ecdc4';
+      } catch (error) {
+        console.error('Backup error:', error);
+        statusEl.textContent = `❌ Backup failed: ${error.message}`;
+        statusEl.style.color = '#ff6b6b';
+      }
+    });
+
+    clearCacheBtn.addEventListener('click', async () => {
+      try {
+        statusEl.textContent = 'Clearing cache and reloading...';
+        
+        // Clear all caches
+        if ('caches' in window) {
+          const cacheNames = await caches.keys();
+          await Promise.all(cacheNames.map(name => caches.delete(name)));
+        }
+        
+        // Clear service worker cache
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(registration => registration.unregister()));
+        }
+        
+        // Clear localStorage (but keep language preference)
+        const lang = localStorage.getItem('chikas_lang');
+        localStorage.clear();
+        if (lang) localStorage.setItem('chikas_lang', lang);
+        
+        // Force reload with cache busting
+        const timestamp = Date.now();
+        window.location.href = `${window.location.origin}${window.location.pathname}?v=${timestamp}`;
+        
+      } catch (error) {
+        console.error('Cache clear error:', error);
+        statusEl.textContent = `❌ Cache clear failed: ${error.message}`;
+        statusEl.style.color = '#ff6b6b';
+      }
     });
   }
 
