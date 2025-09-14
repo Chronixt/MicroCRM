@@ -88,15 +88,36 @@
 
     document.body.appendChild(reminderBanner);
 
-    // Add event listeners
-    document.getElementById('backup-now-btn').addEventListener('click', async () => {
-      await performDailyBackup();
-      reminderBanner.remove();
-    });
+    // Add event listeners with a small delay to ensure DOM is ready
+    setTimeout(() => {
+      const backupBtn = document.getElementById('backup-now-btn');
+      const dismissBtn = document.getElementById('dismiss-backup-btn');
+      
+      if (backupBtn) {
+        backupBtn.addEventListener('click', async () => {
+          await performDailyBackup();
+          reminderBanner.remove();
+        });
+      }
+      
+      if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+          console.log('Dismiss button clicked');
+          localStorage.setItem('chikas_backup_dismissed_today', today);
+          reminderBanner.remove();
+        });
+      } else {
+        console.error('Dismiss button not found');
+      }
+    }, 100);
 
-    document.getElementById('dismiss-backup-btn').addEventListener('click', () => {
-      localStorage.setItem('chikas_backup_dismissed_today', today);
-      reminderBanner.remove();
+    // Fallback: Use event delegation for the dismiss button
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'dismiss-backup-btn') {
+        console.log('Dismiss button clicked via delegation');
+        localStorage.setItem('chikas_backup_dismissed_today', today);
+        reminderBanner.remove();
+      }
     });
   }
 
