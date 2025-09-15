@@ -3447,6 +3447,27 @@
 
   }
 
+  // Check if a note is a migrated note by content analysis
+  function isMigratedNoteByContent(noteData) {
+    // If explicitly flagged as migrated, return true
+    if (noteData.isMigrated === true) {
+      return true;
+    }
+    
+    // If the note has SVG content but no isMigrated flag, it might be an old migrated note
+    // Check if it's SVG content (migrated notes are always SVG)
+    if (noteData.svg && typeof noteData.svg === 'string') {
+      // Check if it contains SVG markup and has text elements (typical of migrated notes)
+      if (noteData.svg.includes('<svg') && noteData.svg.includes('<text')) {
+        // This looks like a migrated note - mark it as such for future reference
+        noteData.isMigrated = true;
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   // Fullscreen Notes Canvas functionality
   class FullscreenNotesCanvas {
     constructor() {
@@ -3461,6 +3482,7 @@
       this.isErasing = false;
       this.eraserWidth = 10;
     }
+
 
     show() {
       this.createOverlay();
@@ -4267,6 +4289,9 @@
         border-bottom: 1px solid rgba(255,255,255,0.1);
       `;
 
+      // Check if this is a migrated note (either explicitly flagged or by content analysis)
+      const isMigratedNote = noteData.isMigrated || isMigratedNoteByContent(noteData);
+
       const noteTitle = document.createElement('span');
       noteTitle.style.color = 'var(--text)';
       noteTitle.style.fontWeight = '600';
@@ -4276,7 +4301,7 @@
       titleText.textContent = `Note ${noteData.noteNumber} - ${noteData.date}`;
       
       // Add migrated indicator if this is a migrated note
-      if (noteData.isMigrated) {
+      if (isMigratedNote) {
         const migratedIndicator = document.createElement('span');
         migratedIndicator.textContent = ' (migrated)';
         migratedIndicator.style.fontStyle = 'italic';
@@ -4307,7 +4332,7 @@
       `;
 
       // Only show edit button for non-migrated notes
-      if (!noteData.isMigrated) {
+      if (!isMigratedNote) {
         const editButton = document.createElement('button');
         editButton.textContent = '✏️';
         editButton.title = 'Edit Note';
@@ -4340,13 +4365,14 @@
       expandIcon.style.color = 'var(--muted)';
       expandIcon.style.transition = 'transform 0.2s ease';
 
-      // Add delete button only on edit and new customer screens, and only for non-migrated notes
+      // Add delete button only on edit and new customer screens, for all notes
       const isEditScreen = window.location.hash.includes('#/customer-edit');
       const isNewCustomerScreen = window.location.hash.includes('#/add') || 
                                  document.querySelector('h2')?.textContent?.includes('New Customer') ||
                                  document.querySelector('h2')?.textContent?.includes('newCustomer');
       
-      if ((isEditScreen || isNewCustomerScreen) && !noteData.isMigrated) {
+      // Show delete button only on edit/new customer screens for all notes
+      if (isEditScreen || isNewCustomerScreen) {
         const deleteButton = document.createElement('button');
         deleteButton.textContent = '🗑️';
         deleteButton.title = 'Delete Note';
@@ -4383,7 +4409,7 @@
         padding: 16px;
         display: none;
         background: rgba(255,255,255,0.02);
-        max-height: 80vh;
+        max-height: 90vh;
         overflow-y: auto;
       `;
 
@@ -4391,43 +4417,82 @@
       svgContainer.innerHTML = noteData.svg;
       svgContainer.style.cssText = `
         max-width: 100%;
-        overflow: auto;
+        overflow: visible;
         border: 1px solid rgba(255,255,255,0.1);
         border-radius: 4px;
         padding: 8px;
         background: transparent;
         display: flex;
-        justify-content: center;
+        justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
         align-items: flex-start;
         min-height: 100px;
       `;
       
-      // Scale the SVG to fit the container - allow full height for long notes
+      // Scale the SVG to fit the container - calculate proper dimensions for content
       const svg = svgContainer.querySelector('svg');
       if (svg) {
-        // Get the original height from the SVG viewBox or height attribute
-        const viewBox = svg.getAttribute('viewBox');
-        const height = svg.getAttribute('height');
-        let originalHeight = 300; // default fallback
+        // Get the original viewBox to understand the intended dimensions
+        const originalViewBox = svg.getAttribute('viewBox');
+        const originalWidth = svg.getAttribute('width');
+        const originalHeight = svg.getAttribute('height');
         
-        if (viewBox) {
-          // Extract height from viewBox (format: "0 0 width height")
-          const parts = viewBox.split(' ');
+        let contentWidth = 500; // default width
+        let contentHeight = 60; // default height
+        
+        // Parse original dimensions
+        if (originalViewBox) {
+          const parts = originalViewBox.split(' ');
           if (parts.length >= 4) {
-            originalHeight = parseInt(parts[3]) || 300;
+            contentWidth = parseInt(parts[2]) || 500;
+            contentHeight = parseInt(parts[3]) || 60;
           }
-        } else if (height) {
-          originalHeight = parseInt(height) || 300;
+        } else if (originalWidth && originalHeight) {
+          contentWidth = parseInt(originalWidth) || 500;
+          contentHeight = parseInt(originalHeight) || 60;
         }
         
-        // Set a reasonable max height but allow longer notes to show fully
-        const maxHeight = Math.max(300, Math.min(800, originalHeight));
+        // Calculate the actual content height needed by analyzing all text elements
+        const textElements = svg.querySelectorAll('text, tspan');
+        let maxY = 0;
+        let fontSize = 16; // default font size
+        
+        textElements.forEach(textEl => {
+          // Get font size from the element
+          const computedFontSize = textEl.getAttribute('font-size');
+          if (computedFontSize) {
+            fontSize = parseInt(computedFontSize) || 16;
+          }
+          
+          // Get y position
+          const y = parseFloat(textEl.getAttribute('y')) || 0;
+          
+          // Get dy offset for tspan elements
+          const dy = parseFloat(textEl.getAttribute('dy')) || 0;
+          const actualY = y + dy;
+          
+          // Calculate approximate height needed for this text element
+          const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
+          const textHeight = actualY + lineHeight;
+          
+          if (textHeight > maxY) {
+            maxY = textHeight;
+          }
+        });
+        
+        // Use the calculated height if it's larger than the original
+        if (maxY > 0) {
+          contentHeight = Math.max(contentHeight, maxY + 20); // Add some padding
+        }
+        
+        // Update the SVG viewBox and dimensions to match content
+        svg.setAttribute('viewBox', `0 0 ${contentWidth} ${contentHeight}`);
+        svg.setAttribute('width', contentWidth);
+        svg.setAttribute('height', contentHeight);
         
         svg.style.cssText = `
           max-width: 100%;
-          max-height: ${maxHeight}px;
-          width: auto;
-          height: auto;
+          width: ${contentWidth}px;
+          height: ${contentHeight}px;
           background: transparent;
         `;
       }
@@ -4589,6 +4654,37 @@
 
   // Global instance
   const fullscreenNotesCanvas = new FullscreenNotesCanvas();
+
+  // Function to retroactively mark migrated notes with the isMigrated flag
+  function markExistingMigratedNotes() {
+    try {
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      let updatedCount = 0;
+      
+      Object.keys(existingNotes).forEach(customerId => {
+        const customerNotes = existingNotes[customerId];
+        customerNotes.forEach(note => {
+          // If note has SVG content but no isMigrated flag, mark it as migrated
+          if (note.svg && typeof note.svg === 'string' && note.isMigrated !== true) {
+            if (note.svg.includes('<svg') && note.svg.includes('<text')) {
+              note.isMigrated = true;
+              updatedCount++;
+            }
+          }
+        });
+      });
+      
+      if (updatedCount > 0) {
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        console.log(`Marked ${updatedCount} existing notes as migrated`);
+      }
+    } catch (error) {
+      console.error('Error marking migrated notes:', error);
+    }
+  }
+
+  // Run the migration marking on page load
+  markExistingMigratedNotes();
 
   // Migration function to convert old notesHtml to new SVG notes system
   async function migrateOldNotes() {
