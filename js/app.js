@@ -368,9 +368,9 @@
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
-            <a class="menu-tile" href="#/backup" aria-label="Backup and Restore">
-              <div class="tile-icon" aria-hidden="true">💾</div>
-              <div class="tile-label">${t('backup')}</div>
+            <a class="menu-tile" href="#/backup" aria-label="Options">
+              <div class="tile-icon" aria-hidden="true">⚙️</div>
+              <div class="tile-label">Options</div>
             </a>
             <!-- Emergency Backup tile hidden from main menu but functionality preserved -->
             <a class="menu-tile" href="#/emergency-backup" aria-label="Emergency Backup" style="display: none; background: linear-gradient(135deg, #ff6b6b, #ee5a52);">
@@ -509,9 +509,9 @@
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
-            <a class="menu-tile small" href="#/backup" aria-label="Backup and Restore">
-              <div class="tile-icon" aria-hidden="true">💾</div>
-              <div class="tile-label">${t('backup')}</div>
+            <a class="menu-tile small" href="#/backup" aria-label="Options">
+              <div class="tile-icon" aria-hidden="true">⚙️</div>
+              <div class="tile-label">Options</div>
             </a>
           </nav>
         </aside>
@@ -2409,7 +2409,7 @@
   async function renderBackup() {
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
-        <h2>${t('backupRestore')}</h2>
+        <h2>Options</h2>
       </div>
       <div class="card">
         <div class="form">
@@ -2445,6 +2445,18 @@
           <div class="row">
             <button id="wipe-btn" class="button danger">${t('wipeAllData')}</button>
           </div>
+          
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
+          <div class="row">
+            <button id="refresh-app-btn" class="button" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+              🔄 Refresh App (PWA)
+            </button>
+          </div>
+          <div class="muted" style="font-size: 12px; margin-top: 8px;">
+            Use this if notes don't appear after migration, especially when using the app from home screen.
+          </div>
+          
           <div class="muted" id="backup-status"></div>
         </div>
       </div>
@@ -2631,6 +2643,17 @@
       await ChikasDB.clearAllStores();
       alert('All local data deleted');
     });
+
+    // Add event listener for refresh app button
+    const refreshAppBtn = document.getElementById('refresh-app-btn');
+    if (refreshAppBtn) {
+      refreshAppBtn.addEventListener('click', () => {
+        // Clear migration completed flag to force re-migration
+        localStorage.removeItem('chikas_migration_completed');
+        // Reload the page
+        window.location.reload();
+      });
+    }
   }
 
   async function renderEmergencyBackup() {
