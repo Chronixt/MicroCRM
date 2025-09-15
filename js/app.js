@@ -409,6 +409,14 @@
           await performDailyBackup();
         });
       }
+      
+      // Add event listener for vertical menu daily backup button
+      const dailyBackupBtnVertical = document.getElementById('daily-backup-btn-vertical');
+      if (dailyBackupBtnVertical) {
+        dailyBackupBtnVertical.addEventListener('click', async () => {
+          await performDailyBackup();
+        });
+      }
     }, 100);
   }
   
@@ -513,6 +521,10 @@
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
             </a>
+            <button class="menu-tile small" id="daily-backup-btn-vertical" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); border: none; cursor: pointer;">
+              <div class="tile-icon" aria-hidden="true">📥</div>
+              <div class="tile-label">1-tap Backup</div>
+            </button>
           </nav>
         </aside>
         <section class="content">
@@ -2599,11 +2611,12 @@
             const chunkAppointments = appointments.filter(a => chunkCustomerIds.includes(a.customerId));
             const chunkImages = images.filter(img => chunkCustomerIds.includes(img.customerId));
             
-            const payload = { 
-              __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, 
+            const payload = {
+              __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 },
               customers: chunk, 
               appointments: chunkAppointments, 
-              images: chunkImages 
+              images: chunkImages,
+              customerNotes: loadedBackup.customerNotes || {} // Include customer notes
             };
             
             await ChikasDB.importAllData(payload, { mode });
@@ -2625,7 +2638,13 @@
         }
       } else {
         // Small dataset, import normally
-        const payload = { __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, customers, appointments, images };
+        const payload = { 
+          __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, 
+          customers, 
+          appointments, 
+          images,
+          customerNotes: loadedBackup.customerNotes || {} // Include customer notes
+        };
         try {
           statusEl.textContent = 'Importing...';
           await ChikasDB.importAllData(payload, { mode });
@@ -4859,8 +4878,9 @@
 
   // Load existing notes for a customer
   function loadExistingNotes(customerId) {
-    console.log('Loading notes for customer ID:', customerId);
+    console.log('Loading notes for customer ID:', customerId, 'Type:', typeof customerId);
     const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+    console.log('All customer notes in localStorage:', Object.keys(existingNotes));
     const customerNotes = existingNotes[customerId] || [];
     
     console.log('Found notes for customer:', customerNotes.length);

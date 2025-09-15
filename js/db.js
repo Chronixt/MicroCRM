@@ -521,6 +521,10 @@
     const appointments = await getAllAppointments();
     console.log(`Exported ${appointments.length} appointments`);
     
+    // Export notes from localStorage (new SVG notes)
+    const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+    console.log(`Exported notes for ${Object.keys(customerNotes).length} customers`);
+    
     // Export images in chunks to avoid memory issues
     const images = await getAllImages();
     console.log(`Found ${images.length} images, processing in chunks...`);
@@ -565,6 +569,7 @@
       },
       customers,
       appointments,
+      customerNotes, // Include the new SVG notes from localStorage
       images: imagesSerialized,
     };
   }
@@ -581,7 +586,7 @@
 
   function importAllData(payload, options = { mode: 'replace' }) {
     const mode = options.mode || 'replace';
-    const { customers = [], appointments = [], images = [], __meta = {} } = payload || {};
+    const { customers = [], appointments = [], images = [], customerNotes = {}, __meta = {} } = payload || {};
     if (!__meta || __meta.app !== 'chikas-db') {
       // Allow import anyway, but basic validation failed
     }
@@ -594,6 +599,13 @@
       await runTransaction(['appointments'], 'readwrite', (appointmentsStore) => {
         appointments.forEach((a) => appointmentsStore.put(a));
       });
+      
+      // Import customer notes from localStorage
+      if (customerNotes && Object.keys(customerNotes).length > 0) {
+        console.log(`Importing notes for ${Object.keys(customerNotes).length} customers...`);
+        localStorage.setItem('customerNotes', JSON.stringify(customerNotes));
+        console.log('Customer notes imported successfully');
+      }
       // Images need dataUrl -> blob
       console.log(`Importing ${images.length} images...`);
       let successCount = 0;
@@ -780,11 +792,15 @@
       
       // Export customers first (usually small)
       const customers = await getAllCustomers();
-      if (progressCallback) progressCallback(`Exported ${customers.length} customers`, 30);
+      if (progressCallback) progressCallback(`Exported ${customers.length} customers`, 20);
       
       // Export appointments (usually small)
       const appointments = await getAllAppointments();
-      if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 60);
+      if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 40);
+      
+      // Export notes from localStorage (new SVG notes)
+      const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      if (progressCallback) progressCallback(`Exported notes for ${Object.keys(customerNotes).length} customers`, 60);
       
       if (progressCallback) progressCallback('Creating backup file...', 90);
       
@@ -797,6 +813,7 @@
         },
         customers,
         appointments,
+        customerNotes, // Include the new SVG notes from localStorage
         images: [] // Empty images array
       };
       
@@ -833,6 +850,10 @@
       const appointments = await getAllAppointments();
       if (progressCallback) progressCallback(`Exported ${appointments.length} appointments`, 20);
       
+      // Export notes from localStorage (new SVG notes)
+      const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      if (progressCallback) progressCallback(`Exported notes for ${Object.keys(customerNotes).length} customers`, 25);
+      
       // Get image count first
       const images = await getAllImages();
       if (progressCallback) progressCallback(`Found ${images.length} images, processing...`, 30);
@@ -856,6 +877,11 @@
       // Add appointments
       jsonParts.push('  "appointments": ');
       jsonParts.push(JSON.stringify(appointments, null, 2));
+      jsonParts.push(',\n');
+      
+      // Add customer notes
+      jsonParts.push('  "customerNotes": ');
+      jsonParts.push(JSON.stringify(customerNotes, null, 2));
       jsonParts.push(',\n');
       
       // Process images in very small chunks and add to JSON directly
