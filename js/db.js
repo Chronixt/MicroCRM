@@ -206,7 +206,6 @@
           };
           req.onerror = () => reject(req.error);
         } catch (error) {
-          console.error('Error adding image:', error);
           reject(error);
         }
       })))
@@ -246,7 +245,6 @@
         // Convert to blob with quality compression
         canvas.toBlob((compressedBlob) => {
           if (compressedBlob && compressedBlob.size < blob.size) {
-            console.log(`Image compressed: ${(blob.size / 1024).toFixed(1)}KB -> ${(compressedBlob.size / 1024).toFixed(1)}KB`);
             resolve(compressedBlob);
           } else {
             resolve(blob); // Use original if compression didn't help
@@ -280,19 +278,14 @@
                     blob: blob,
                     dataUrl: imageData.dataUrl // Keep dataUrl for iPad Safari fallback
                   });
-                  console.log(`Successfully converted image ${imageData.id}: ${(blob.size / 1024).toFixed(1)}KB`);
                 } else {
-                  console.error(`Failed to convert image ${imageData.id}: empty or invalid blob`);
                 }
               } catch (error) {
-                console.error(`Error converting image ${imageData.id}:`, error);
               }
             } else {
-              console.error(`Image ${imageData.id} has no dataUrl`);
             }
             cursor.continue(); 
           } else {
-            console.log(`Loaded ${results.length} images for customer ${customerId}`);
             resolve(results);
           }
         };
@@ -511,30 +504,24 @@
   }
 
   async function exportAllData() {
-    console.log('Starting data export...');
     
     // Export customers first (usually small)
     const customers = await getAllCustomers();
-    console.log(`Exported ${customers.length} customers`);
     
     // Export appointments (usually small)
     const appointments = await getAllAppointments();
-    console.log(`Exported ${appointments.length} appointments`);
     
     // Export notes from localStorage (new SVG notes)
     const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-    console.log(`Exported notes for ${Object.keys(customerNotes).length} customers`);
     
     // Export images in chunks to avoid memory issues
     const images = await getAllImages();
-    console.log(`Found ${images.length} images, processing in chunks...`);
     
     const imagesSerialized = [];
     const chunkSize = 10; // Process 10 images at a time
     
     for (let i = 0; i < images.length; i += chunkSize) {
       const chunk = images.slice(i, i + chunkSize);
-      console.log(`Processing image chunk ${Math.floor(i/chunkSize) + 1}/${Math.ceil(images.length/chunkSize)}`);
       
       const chunkProcessed = await Promise.all(chunk.map(async (img) => {
         try {
@@ -547,7 +534,6 @@
             dataUrl: img.dataUrl, // Use dataUrl directly instead of converting from blob
           };
         } catch (error) {
-          console.error(`Error processing image ${img.id}:`, error);
           return null;
         }
       }));
@@ -559,7 +545,6 @@
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     
-    console.log(`Successfully processed ${imagesSerialized.length} images`);
     
     return {
       __meta: {
@@ -602,12 +587,9 @@
       
       // Import customer notes from localStorage
       if (customerNotes && Object.keys(customerNotes).length > 0) {
-        console.log(`Importing notes for ${Object.keys(customerNotes).length} customers...`);
         localStorage.setItem('customerNotes', JSON.stringify(customerNotes));
-        console.log('Customer notes imported successfully');
       }
       // Images need dataUrl -> blob
-      console.log(`Importing ${images.length} images...`);
       let successCount = 0;
       let errorCount = 0;
       
@@ -626,13 +608,11 @@
             imagesStore.put(imageData);
             successCount++;
           } catch (error) {
-            console.error(`Error processing image ${index + 1}: ${img.name}`, error);
             errorCount++;
           }
         });
       });
       
-      console.log(`Image import complete: ${successCount} successful, ${errorCount} failed`);
     };
     return perform();
   }
@@ -644,7 +624,6 @@
       const base64 = parts[1] || '';
       
       if (!base64) {
-        console.warn('Empty base64 data in dataURL');
         return new Blob([], { type: fallbackType || 'application/octet-stream' });
       }
       
@@ -653,7 +632,6 @@
       
       // Check if base64 is too large (iPad memory limit)
       if (base64.length > 50 * 1024 * 1024) { // 50MB limit
-        console.warn('Base64 data too large for iPad, skipping image');
         return new Blob([], { type: mime });
       }
       
@@ -663,7 +641,6 @@
       for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
       return new Blob([bytes], { type: mime });
     } catch (e) {
-      console.error('Error converting dataURL to blob:', e);
       return new Blob([], { type: fallbackType || 'application/octet-stream' });
     }
   }
@@ -684,7 +661,6 @@
       };
       localStorage.setItem(key, JSON.stringify(dataToStore));
     } catch (error) {
-      console.warn('Failed to store image reference in localStorage:', error);
     }
   }
 
@@ -743,7 +719,6 @@
       }
       return images;
     } catch (error) {
-      console.warn('Failed to get images from localStorage:', error);
       return [];
     }
   }
@@ -752,7 +727,6 @@
     try {
       localStorage.removeItem(`chikas_image_${imageId}`);
     } catch (error) {
-      console.warn('Failed to clear image from localStorage:', error);
     }
   }
 
@@ -831,7 +805,6 @@
       };
       
     } catch (error) {
-      console.error('Lightweight backup failed:', error);
       if (progressCallback) progressCallback(`Backup failed: ${error.message}`, 0);
       throw error;
     }
@@ -925,7 +898,6 @@
             img.dataUrl = null;
             
           } catch (error) {
-            console.error(`Error processing image ${img.id}:`, error);
             // Continue with other images
           }
         }
@@ -963,7 +935,6 @@
       };
       
     } catch (error) {
-      console.error('Backup failed:', error);
       if (progressCallback) progressCallback(`Backup failed: ${error.message}`, 0);
       throw error;
     }

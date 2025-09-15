@@ -2,7 +2,6 @@
   // Check for force update parameter
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('force') === 'true' || urlParams.get('v')) {
-    console.log('Force update detected, clearing caches...');
     // Clear all caches immediately
     if ('caches' in window) {
       caches.keys().then(cacheNames => {
@@ -102,19 +101,16 @@
       
       if (dismissBtn) {
         dismissBtn.addEventListener('click', () => {
-          console.log('Dismiss button clicked');
           localStorage.setItem('chikas_backup_dismissed_today', today);
           reminderBanner.remove();
         });
       } else {
-        console.error('Dismiss button not found');
       }
     }, 100);
 
     // Fallback: Use event delegation for the dismiss button
     document.addEventListener('click', (e) => {
       if (e.target && e.target.id === 'dismiss-backup-btn') {
-        console.log('Dismiss button clicked via delegation');
         localStorage.setItem('chikas_backup_dismissed_today', today);
         reminderBanner.remove();
       }
@@ -132,7 +128,6 @@
 
       // Perform lightweight backup
       const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
-        console.log(`Backup: ${message} (${Math.round(progress)}%)`);
       });
 
       // Create and download backup
@@ -170,7 +165,6 @@
       }
 
     } catch (error) {
-      console.error('Daily backup failed:', error);
       alert('Backup failed: ' + error.message);
     }
   }
@@ -180,7 +174,6 @@
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js?v=1.0.2')
         .then((registration) => {
-          console.log('SW registered: ', registration);
           
           // Check for updates every time the app loads
           registration.addEventListener('updatefound', () => {
@@ -200,7 +193,6 @@
           registration.update();
         })
         .catch((registrationError) => {
-          console.log('SW registration failed: ', registrationError);
         });
     });
   }
@@ -443,7 +435,6 @@
                   customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : 'Unknown Customer'
                 };
               } catch (error) {
-                console.error('Error fetching customer for appointment:', error);
                 return {
                   ...apt,
                   customerName: 'Unknown Customer'
@@ -485,7 +476,6 @@
         }
       }
     } catch (error) {
-      console.error('Error loading appointments:', error);
       // Keep the "no appointments" message if there's an error
     }
   }
@@ -650,7 +640,6 @@
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
       const tempNotes = existingNotes['temp-new-customer'] || [];
       if (tempNotes.length > 0) {
-        console.log(`Transferring ${tempNotes.length} temporary notes to customer ${newId}`);
         existingNotes[newId] = tempNotes;
         delete existingNotes['temp-new-customer'];
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
@@ -891,7 +880,6 @@
         // Set up alphabet scrollbar functionality
         setupAlphabetScrollbar();
       } catch (error) {
-        console.error('Error loading all customers:', error);
         allCustomersList.innerHTML = '<div class="muted">Error loading customers</div>';
       }
     }
@@ -1034,14 +1022,8 @@
     
     async function renderImageThumbHtml(img) {
       try {
-        console.log(`Rendering image ${img.id}:`, {
-          name: img.name,
-          blobSize: img.blob ? img.blob.size : 'no blob',
-          blobType: img.blob ? img.blob.type : 'no blob'
-        });
         
         if (!img.blob || img.blob.size === 0) {
-          console.warn('Invalid or empty blob for image:', img.name);
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
         
@@ -1055,25 +1037,20 @@
             if (isIpadSafari && img.dataUrl) {
               // Use dataURL directly for iPad Safari (more reliable)
               url = img.dataUrl;
-              console.log(`Using dataURL directly for iPad Safari image ${img.id}`);
             } else {
               // Use object URL for other browsers
               url = URL.createObjectURL(img.blob);
-              console.log(`Created object URL for image ${img.id}:`, url);
             }
             window.currentImageCache.set(img.id, url);
           } catch (urlError) {
-            console.error(`Failed to create object URL for image ${img.id}:`, urlError);
             // Fallback to dataURL if available
             if (img.dataUrl) {
               url = img.dataUrl;
-              console.log(`Fallback to dataURL for image ${img.id}`);
             } else {
               return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Failed to create image URL</div>`;
             }
           }
         } else {
-          console.log(`Using cached URL for image ${img.id}:`, url);
         }
         
         return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
@@ -1082,7 +1059,6 @@
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
-        console.error('Error rendering image:', img.name, error);
         return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
       }
     }
@@ -1106,7 +1082,6 @@
     // Lazy loading setup with intersection observer
     function setupLazyLoading(imgs) {
       const lazyImages = imageGrid.querySelectorAll('.lazy-image');
-      console.log('Setting up lazy loading for', lazyImages.length, 'images');
       
       if ('IntersectionObserver' in window) {
         const imageObserver = new IntersectionObserver((entries, observer) => {
@@ -1116,19 +1091,16 @@
               const container = img.closest('.lazy-image-container');
               const placeholder = container.querySelector('.image-placeholder');
               
-              console.log('Loading image:', img.dataset.src);
               
               // Load the image
               img.src = img.dataset.src;
               img.style.display = 'block';
               
               img.onload = () => {
-                console.log('Image loaded successfully');
                 if (placeholder) placeholder.style.display = 'none';
               };
               
               img.onerror = () => {
-                console.error('Image failed to load:', img.dataset.src);
                 if (placeholder) placeholder.style.display = 'none';
                 const errorDiv = container.querySelector('.image-error');
                 if (errorDiv) errorDiv.style.display = 'block';
@@ -1154,13 +1126,11 @@
         });
         
         lazyImages.forEach((img, index) => {
-          console.log('Observing image', index, img.dataset.src);
           imageObserver.observe(img);
           
           // Fallback: load image after 2 seconds if intersection observer doesn't trigger
           setTimeout(() => {
             if (img.style.display === 'none' || !img.src) {
-              console.log('Fallback loading image', index);
               img.src = img.dataset.src;
               img.style.display = 'block';
               const container = img.closest('.lazy-image-container');
@@ -1171,7 +1141,6 @@
         });
       } else {
         // Fallback for browsers without IntersectionObserver
-        console.log('IntersectionObserver not supported, loading all images immediately');
         lazyImages.forEach((img, index) => {
           img.src = img.dataset.src;
           img.style.display = 'block';
@@ -1228,7 +1197,6 @@
           nextAppointmentContent.innerHTML = `<div class="no-next-apt">${t('noUpcomingAppointments')}</div>`;
         }
       } catch (error) {
-        console.error('Error loading next appointment:', error);
         const nextAppointmentContent = document.getElementById('next-appointment-content');
         nextAppointmentContent.innerHTML = `<div class="error">${t('errorLoadingAppointment')}</div>`;
       }
@@ -1330,7 +1298,6 @@
         alert('Customer deleted successfully');
         navigate('/find');
       } catch (error) {
-        console.error('Error deleting customer:', error);
         alert('Error deleting customer. Please try again.');
       }
     });
@@ -1463,7 +1430,6 @@
     async function renderImageThumbHtml(img) {
       try {
         if (!img.blob || img.blob.size === 0) {
-          console.warn('Invalid or empty blob for image:', img.name);
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
         
@@ -1480,7 +1446,6 @@
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
-        console.error('Error rendering image:', img.name, error);
         return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
       }
     }
@@ -1498,7 +1463,6 @@
         // Set up lazy loading for images in edit view
         setupEditLazyLoading(imgs);
       } catch (error) {
-        console.error('Error loading existing images:', error);
         existingImagesGrid.innerHTML = '<div class="error">Error loading images</div>';
       }
     }
@@ -1506,7 +1470,6 @@
     // Lazy loading setup for edit view
     function setupEditLazyLoading(imgs) {
       const lazyImages = existingImagesGrid.querySelectorAll('.lazy-image');
-      console.log('Setting up lazy loading for edit view:', lazyImages.length, 'images');
       
       if ('IntersectionObserver' in window) {
         const imageObserver = new IntersectionObserver((entries, observer) => {
@@ -1516,19 +1479,16 @@
               const container = img.closest('.lazy-image-container');
               const placeholder = container.querySelector('.image-placeholder');
               
-              console.log('Loading edit image:', img.dataset.src);
               
               // Load the image
               img.src = img.dataset.src;
               img.style.display = 'block';
               
               img.onload = () => {
-                console.log('Edit image loaded successfully');
                 if (placeholder) placeholder.style.display = 'none';
               };
               
               img.onerror = () => {
-                console.error('Edit image failed to load:', img.dataset.src);
                 if (placeholder) placeholder.style.display = 'none';
                 const errorDiv = container.querySelector('.image-error');
                 if (errorDiv) errorDiv.style.display = 'block';
@@ -1554,13 +1514,11 @@
         });
         
         lazyImages.forEach((img, index) => {
-          console.log('Observing edit image', index, img.dataset.src);
           imageObserver.observe(img);
           
           // Fallback: load image after 2 seconds if intersection observer doesn't trigger
           setTimeout(() => {
             if (img.style.display === 'none' || !img.src) {
-              console.log('Fallback loading edit image', index);
               img.src = img.dataset.src;
               img.style.display = 'block';
               const container = img.closest('.lazy-image-container');
@@ -1571,7 +1529,6 @@
         });
       } else {
         // Fallback for browsers without IntersectionObserver
-        console.log('IntersectionObserver not supported, loading all edit images immediately');
         lazyImages.forEach((img, index) => {
           img.src = img.dataset.src;
           img.style.display = 'block';
@@ -1619,7 +1576,6 @@
         
         navigate(`/customer?id=${encodeURIComponent(id)}`);
       } catch (error) {
-        console.error('Error saving customer:', error);
         alert('Error saving customer. Please try again.');
       }
     });
@@ -1690,7 +1646,6 @@
           });
           successCallback(mapped);
         } catch (err) { 
-          console.error('Error loading events:', err);
           failureCallback(err); 
         }
       },
@@ -1759,7 +1714,6 @@
             }, 500);
           }
         } catch (error) {
-          console.error('Error opening appointment:', error);
         }
       };
       
@@ -1952,14 +1906,12 @@
     // Get customer details for the appointment
     
     if (!event.extendedProps.customerId) {
-      console.error('No customerId found in event.extendedProps');
       alert('Error: Appointment data is corrupted. Cannot load appointment details.');
       return;
     }
     
     ChikasDB.getCustomerById(event.extendedProps.customerId).then(customer => {
       if (!customer) {
-        console.error('Customer not found for ID:', event.extendedProps.customerId);
         alert('Customer not found');
         return;
       }
@@ -2138,7 +2090,6 @@
             });
           });
         } else {
-          console.error('No type options found for event listeners');
         }
 
         // Close menu when clicking outside
@@ -2175,7 +2126,6 @@
             // Get customerId from the event object
             const customerId = event.extendedProps?.customerId;
             if (!customerId) {
-              console.error('No customerId found in event.extendedProps:', event.extendedProps);
               alert('Error: Cannot find customer information for this appointment.');
               return;
             }
@@ -2204,13 +2154,11 @@
             
             // Validate that we have all required fields
             if (!updatedAppointment.id) {
-              console.error('Missing appointment ID for update');
               alert('Error: Missing appointment ID. Cannot update appointment.');
               return;
             }
             
             if (!updatedAppointment.customerId) {
-              console.error('Missing customer ID for update');
               alert('Error: Missing customer ID. Cannot update appointment.');
               return;
             }
@@ -2222,12 +2170,10 @@
                 globalCalendar.refetchEvents();
               }
             } catch (error) {
-              console.error('Error updating appointment:', error);
               alert('Error updating appointment: ' + error.message);
             }
           });
         } else {
-          console.error('Save button not found!');
         }
 
         // Delete appointment
@@ -2242,13 +2188,11 @@
                   globalCalendar.refetchEvents();
                 }
               } catch (error) {
-                console.error('Error deleting appointment:', error);
                 alert('Error deleting appointment');
               }
             }
           });
         } else {
-          console.error('Delete button not found!');
         }
         
 
@@ -2260,16 +2204,11 @@
             hideModal();
           });
         } else {
-          console.error('Cancel button not found!');
         }
         
 
       }, 100); // Small delay to ensure DOM is ready
     }).catch(error => {
-      console.error('Error loading customer details:', error);
-      console.error('Event object that caused error:', event);
-      console.error('Event ID:', event.id);
-      console.error('Event extendedProps:', event.extendedProps);
       alert('Error loading appointment details. Check console for details.');
     });
   }
@@ -2389,7 +2328,6 @@
         exportBtn.disabled = false;
         exportBtn.textContent = t('export');
       } catch (error) {
-        console.error('Export error:', error);
         statusEl.textContent = `❌ Export failed: ${error.message}`;
         exportBtn.disabled = false;
         exportBtn.textContent = t('export');
@@ -2438,19 +2376,6 @@
       customerList.querySelectorAll('.select-customer').forEach((cb) => { cb.checked = false; });
     });
 
-    // Add a "Select First 10" button for testing
-    const selectFirst10Btn = document.createElement('button');
-    selectFirst10Btn.textContent = 'Select First 10';
-    selectFirst10Btn.className = 'button secondary';
-    selectFirst10Btn.style.marginLeft = '8px';
-    selectAllBtn.parentNode.insertBefore(selectFirst10Btn, selectNoneBtn.nextSibling);
-    
-    selectFirst10Btn.addEventListener('click', () => {
-      const checkboxes = customerList.querySelectorAll('.select-customer');
-      checkboxes.forEach((cb, index) => {
-        cb.checked = index < 10;
-      });
-    });
 
     importSelectedBtn.addEventListener('click', async () => {
       if (!loadedBackup) { alert('Load a backup first'); return; }
@@ -2622,7 +2547,6 @@
         exportBtn.textContent = t('downloadBackupNow');
         
       } catch (error) {
-        console.error('Backup error:', error);
         statusEl.textContent = `❌ Backup failed: ${error.message}`;
         statusEl.style.color = '#ff6b6b';
         
@@ -2658,7 +2582,6 @@
         window.location.href = `${window.location.origin}${window.location.pathname}?v=${timestamp}`;
         
       } catch (error) {
-        console.error('Cache clear error:', error);
         statusEl.textContent = `❌ Cache clear failed: ${error.message}`;
         statusEl.style.color = '#ff6b6b';
       }
@@ -2748,7 +2671,6 @@
 
   // Image viewer modal
   function showImageViewer(images, currentIndex = 0) {
-    console.log('showImageViewer called with:', images?.length, 'images, index:', currentIndex);
     if (!images || images.length === 0) return;
     
     const modalId = 'image-viewer-' + Date.now();
@@ -2839,7 +2761,6 @@
         // Refresh the image grid by triggering a page refresh
         window.location.reload();
       } catch (error) {
-        console.error('Error deleting image:', error);
         alert('Error deleting image');
       }
     });
@@ -3086,7 +3007,6 @@
         currentContent = content;
       }
       
-      console.log('Saving handwriting content:', currentContent);
       
       if (onSave) {
         onSave(currentContent);
@@ -3177,19 +3097,6 @@
     }
   }
 
-  // Add a global function to clear all data (for development/testing)
-  window.clearAllData = async () => {
-    if (confirm('This will permanently delete ALL data including customers, appointments, and images. This action cannot be undone. Are you sure?')) {
-      try {
-        await ChikasDB.clearAllStores();
-        alert('All data has been cleared successfully. The page will now refresh.');
-        window.location.reload();
-      } catch (error) {
-        console.error('Error clearing data:', error);
-        alert('Error clearing data: ' + error.message);
-      }
-    }
-  };
 
   window.addEventListener('hashchange', render);
   window.addEventListener('load', () => {
@@ -4160,7 +4067,6 @@
       const svgData = this.canvasToSVG();
       const customerId = this.getCurrentCustomerId();
       
-      console.log('Saving note for customer ID:', customerId);
       
       // Get existing notes for this customer
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
@@ -4168,7 +4074,6 @@
       
       if (this.editingNote) {
         // Editing existing note - update it
-        console.log('Updating existing note:', this.editingNote.id);
         
         const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
         if (noteIndex !== -1) {
@@ -4182,7 +4087,6 @@
           existingNotes[customerId] = customerNotes;
           localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
           
-          console.log('Updated note data:', customerNotes[noteIndex]);
           
           // Refresh the notes list
           loadExistingNotes(customerId);
@@ -4194,7 +4098,6 @@
         // Creating new note
         const nextNoteNumber = customerNotes.length + 1;
         
-        console.log('Existing notes for customer:', customerNotes.length, 'Next note number:', nextNoteNumber);
         
         const noteData = {
           id: Date.now(),
@@ -4210,7 +4113,6 @@
         existingNotes[customerId].push(noteData);
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
 
-        console.log('Saved note data:', noteData);
 
         // Add note to UI
         this.addNoteToUI(noteData);
@@ -4224,13 +4126,11 @@
       const urlParams = new URLSearchParams(window.location.search);
       const id = urlParams.get('id');
       if (id) {
-        console.log('Found customer ID from URL:', id);
         return id;
       }
       
       // Try to get from the current customer data if available
       if (window.currentCustomer && window.currentCustomer.id) {
-        console.log('Found customer ID from currentCustomer:', window.currentCustomer.id);
         return window.currentCustomer.id;
       }
       
@@ -4238,14 +4138,12 @@
       // Check if we're on a customer view page by looking for customer data in the DOM
       const currentId = window.currentCustomerId || window.customerId;
       if (currentId) {
-        console.log('Found customer ID from page context:', currentId);
         return currentId;
       }
       
       // If editing, try to get from form
       const form = document.querySelector('form');
       if (form && form.dataset.customerId) {
-        console.log('Found customer ID from form dataset:', form.dataset.customerId);
         return form.dataset.customerId;
       }
       
@@ -4255,11 +4153,9 @@
                                document.querySelector('h2')?.textContent?.includes('newCustomer');
       
       if (isNewCustomerPage) {
-        console.log('On new customer page, using temporary ID');
         return 'temp-new-customer';
       }
       
-      console.log('No customer ID found, using default');
       // Default fallback
       return 'default';
     }
@@ -4451,9 +4347,10 @@
           contentHeight = parseInt(originalHeight) || 60;
         }
         
-        // Calculate the actual content height needed by analyzing all text elements
+        // Calculate the actual content dimensions needed by analyzing all text elements
         const textElements = svg.querySelectorAll('text, tspan');
         let maxY = 0;
+        let maxX = 0;
         let fontSize = 16; // default font size
         
         textElements.forEach(textEl => {
@@ -4463,7 +4360,8 @@
             fontSize = parseInt(computedFontSize) || 16;
           }
           
-          // Get y position
+          // Get x and y positions
+          const x = parseFloat(textEl.getAttribute('x')) || 0;
           const y = parseFloat(textEl.getAttribute('y')) || 0;
           
           // Get dy offset for tspan elements
@@ -4474,15 +4372,33 @@
           const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
           const textHeight = actualY + lineHeight;
           
+          // Estimate text width based on content and font size
+          const textContent = textEl.textContent || '';
+          const estimatedTextWidth = textContent.length * fontSize * 0.6; // rough estimate
+          const textWidth = x + estimatedTextWidth;
+          
           if (textHeight > maxY) {
             maxY = textHeight;
           }
+          
+          if (textWidth > maxX) {
+            maxX = textWidth;
+          }
         });
         
-        // Use the calculated height if it's larger than the original
+        // Use the calculated dimensions if they're larger than the original
         if (maxY > 0) {
           contentHeight = Math.max(contentHeight, maxY + 20); // Add some padding
         }
+        
+        if (maxX > 0) {
+          contentWidth = Math.max(contentWidth, maxX + 20); // Add some padding
+        }
+        
+        // Ensure width doesn't exceed container bounds (with some margin)
+        const containerWidth = svgContainer.parentElement?.offsetWidth || 500;
+        const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
+        contentWidth = Math.min(contentWidth, maxAllowedWidth);
         
         // Update the SVG viewBox and dimensions to match content
         svg.setAttribute('viewBox', `0 0 ${contentWidth} ${contentHeight}`);
@@ -4518,7 +4434,6 @@
       }
 
       const customerId = this.getCurrentCustomerId();
-      console.log('Deleting note for customer ID:', customerId, 'Note ID:', noteData.id);
 
       // Get existing notes for this customer
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
@@ -4533,12 +4448,10 @@
         existingNotes[customerId] = customerNotes;
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
         
-        console.log('Note deleted successfully');
         
         // Refresh the notes list
         this.refreshNotesList(customerId);
       } else {
-        console.error('Note not found for deletion');
       }
     }
 
@@ -4554,7 +4467,6 @@
     }
 
     editNote(noteData) {
-      console.log('Editing note:', noteData);
       
       // Store the note being edited
       this.editingNote = noteData;
@@ -4602,9 +4514,7 @@
           }
         });
         
-        console.log('Loaded strokes from SVG:', this.strokes.length);
       } catch (error) {
-        console.error('Error loading note from SVG:', error);
       }
     }
 
@@ -4676,10 +4586,8 @@
       
       if (updatedCount > 0) {
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-        console.log(`Marked ${updatedCount} existing notes as migrated`);
       }
     } catch (error) {
-      console.error('Error marking migrated notes:', error);
     }
   }
 
@@ -4689,7 +4597,6 @@
   // Migration function to convert old notesHtml to new SVG notes system
   async function migrateOldNotes() {
     try {
-      console.log('Starting migration of old notes system...');
       
       // Get all customers from the database
       const customers = await ChikasDB.getAllCustomers();
@@ -4697,7 +4604,6 @@
       
       for (const customer of customers) {
         if (customer.notesHtml && customer.notesHtml.trim() !== '' && customer.notesHtml !== '<p><br></p>') {
-          console.log(`Migrating notes for customer ${customer.id}: ${customer.firstName} ${customer.lastName}`);
           
           // Convert HTML notes to SVG
           const svgContent = convertHtmlNotesToSVG(customer.notesHtml);
@@ -4732,7 +4638,6 @@
         }
       }
       
-      console.log(`Migration completed. Migrated ${migratedCount} customers' notes.`);
       
       if (migratedCount > 0) {
         // Show a notification to the user
@@ -4762,7 +4667,6 @@
       }
       
     } catch (error) {
-      console.error('Error during notes migration:', error);
     }
   }
 
@@ -4848,16 +4752,12 @@
 
   // Load existing notes for a customer
   function loadExistingNotes(customerId) {
-    console.log('Loading notes for customer ID:', customerId, 'Type:', typeof customerId);
     const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-    console.log('All customer notes in localStorage:', Object.keys(existingNotes));
     const customerNotes = existingNotes[customerId] || [];
     
-    console.log('Found notes for customer:', customerNotes.length);
     
     const notesList = document.querySelector('.notes-list');
     if (!notesList) {
-      console.log('No notes list found');
       return;
     }
     
@@ -4868,7 +4768,6 @@
     customerNotes.forEach((noteData, index) => {
       // Ensure note has correct number (1-based indexing)
       noteData.noteNumber = index + 1;
-      console.log('Loading note:', noteData.noteNumber, noteData.date);
       fullscreenNotesCanvas.addNoteToUI(noteData);
     });
   }
@@ -5003,7 +4902,6 @@
       });
 
       const svgString = new XMLSerializer().serializeToString(svg);
-      console.log('Generated SVG:', svgString);
       return svgString;
     }
 
