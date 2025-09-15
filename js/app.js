@@ -4395,13 +4395,29 @@
           contentWidth = Math.max(contentWidth, maxX + 20); // Add some padding
         }
         
-        // Ensure width doesn't exceed container bounds (with some margin)
+        // Ensure dimensions don't exceed container bounds (with some margin)
         const containerWidth = svgContainer.parentElement?.offsetWidth || 500;
+        const containerHeight = svgContainer.parentElement?.offsetHeight || 400;
         const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
-        contentWidth = Math.min(contentWidth, maxAllowedWidth);
+        const maxAllowedHeight = containerHeight - 40; // Account for padding and borders
+        
+        // Calculate scale factor to fit within bounds while maintaining aspect ratio
+        const widthScale = maxAllowedWidth / contentWidth;
+        const heightScale = maxAllowedHeight / contentHeight;
+        const scale = Math.min(widthScale, heightScale, 1); // Don't scale up, only down
+        
+        // Apply scaling if needed
+        if (scale < 1) {
+          contentWidth = contentWidth * scale;
+          contentHeight = contentHeight * scale;
+        } else {
+          // Still respect max bounds even if no scaling needed
+          contentWidth = Math.min(contentWidth, maxAllowedWidth);
+          contentHeight = Math.min(contentHeight, maxAllowedHeight);
+        }
         
         // Update the SVG viewBox and dimensions to match content
-        svg.setAttribute('viewBox', `0 0 ${contentWidth} ${contentHeight}`);
+        svg.setAttribute('viewBox', `0 0 ${contentWidth / scale} ${contentHeight / scale}`);
         svg.setAttribute('width', contentWidth);
         svg.setAttribute('height', contentHeight);
         
