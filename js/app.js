@@ -338,6 +338,7 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
     adjustSidebarOffset();
     attachLangToggleHandler();
+    attachVerticalBackupHandler();
     
     // Check if daily backup is needed (only on main pages)
     if (base === '/' || base === '/find' || base === '/calendar') {
@@ -410,13 +411,7 @@
         });
       }
       
-      // Add event listener for vertical menu daily backup button
-      const dailyBackupBtnVertical = document.getElementById('daily-backup-btn-vertical');
-      if (dailyBackupBtnVertical) {
-        dailyBackupBtnVertical.addEventListener('click', async () => {
-          await performDailyBackup();
-        });
-      }
+      // Note: Vertical backup button event listener is handled globally
     }, 100);
   }
   
@@ -2276,6 +2271,14 @@
       console.error('Event ID:', event.id);
       console.error('Event extendedProps:', event.extendedProps);
       alert('Error loading appointment details. Check console for details.');
+    });
+  }
+
+  function attachVerticalBackupHandler() {
+    const btn = document.getElementById('daily-backup-btn-vertical');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      await performDailyBackup();
     });
   }
 
