@@ -3388,6 +3388,8 @@
       this.overlay = null;
       this.isErasing = false;
       this.eraserWidth = 10;
+      this.pencilBtn = null;
+      this.eraserBtn = null;
     }
 
 
@@ -3480,9 +3482,7 @@
 
       // Event listeners
       doneBtn.addEventListener('click', () => this.handleDone());
-      this.overlay.addEventListener('click', (e) => {
-        if (e.target === this.overlay) this.hide();
-      });
+      // Removed click-outside-to-close functionality to prevent accidental data loss
 
       document.body.appendChild(this.overlay);
     }
@@ -3622,9 +3622,9 @@
         align-items: center;
       `;
       
-      const pencilBtn = document.createElement('button');
-      pencilBtn.innerHTML = '✏️ Pencil';
-      pencilBtn.style.cssText = `
+      this.pencilBtn = document.createElement('button');
+      this.pencilBtn.innerHTML = '✏️ Pencil';
+      this.pencilBtn.style.cssText = `
         background: ${!this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)'};
         border: 1px solid ${!this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)'};
         color: ${!this.isErasing ? '#3b82f6' : 'var(--text)'};
@@ -3636,9 +3636,9 @@
         transition: all 0.2s ease;
       `;
 
-      const eraserBtn = document.createElement('button');
-      eraserBtn.innerHTML = '🧽 Eraser';
-      eraserBtn.style.cssText = `
+      this.eraserBtn = document.createElement('button');
+      this.eraserBtn.innerHTML = '🧽 Eraser';
+      this.eraserBtn.style.cssText = `
         background: ${this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)'};
         border: 1px solid ${this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)'};
         color: ${this.isErasing ? '#3b82f6' : 'var(--text)'};
@@ -3692,8 +3692,8 @@
       sizeContainer.appendChild(sizeSlider);
       sizeContainer.appendChild(sizeValue);
       
-      drawingToolsContainer.appendChild(pencilBtn);
-      drawingToolsContainer.appendChild(eraserBtn);
+      drawingToolsContainer.appendChild(this.pencilBtn);
+      drawingToolsContainer.appendChild(this.eraserBtn);
       actionToolsContainer.appendChild(undoBtn);
       actionToolsContainer.appendChild(clearBtn);
       
@@ -3718,8 +3718,8 @@
       
       clearBtn.addEventListener('click', () => this.clear());
       undoBtn.addEventListener('click', () => this.undo());
-      pencilBtn.addEventListener('click', () => this.setDrawingMode());
-      eraserBtn.addEventListener('click', () => this.setEraserMode());
+      this.pencilBtn.addEventListener('click', () => this.setDrawingMode());
+      this.eraserBtn.addEventListener('click', () => this.setEraserMode());
     }
 
     setupEventListeners() {
@@ -3869,23 +3869,117 @@
     }
 
     updateToolButtons() {
-      const pencilBtn = this.overlay.querySelector('button[innerHTML*="Pencil"]');
-      const eraserBtn = this.overlay.querySelector('button[innerHTML*="Eraser"]');
-      
-      if (pencilBtn) {
-        pencilBtn.style.background = !this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
-        pencilBtn.style.borderColor = !this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
-        pencilBtn.style.color = !this.isErasing ? '#3b82f6' : 'var(--text)';
+      // Use stored button references for immediate updates
+      if (this.pencilBtn) {
+        this.pencilBtn.style.background = !this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
+        this.pencilBtn.style.borderColor = !this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
+        this.pencilBtn.style.color = !this.isErasing ? '#3b82f6' : 'var(--text)';
       }
       
-      if (eraserBtn) {
-        eraserBtn.style.background = this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
-        eraserBtn.style.borderColor = this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
-        eraserBtn.style.color = this.isErasing ? '#3b82f6' : 'var(--text)';
+      if (this.eraserBtn) {
+        this.eraserBtn.style.background = this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
+        this.eraserBtn.style.borderColor = this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
+        this.eraserBtn.style.color = this.isErasing ? '#3b82f6' : 'var(--text)';
       }
     }
 
     canvasToSVG() {
+      // Check if there are any eraser strokes - if so, we need to use a different approach
+      const hasEraserStrokes = this.strokes.some(stroke => stroke.color === 'eraser');
+      
+      // Check if we're editing an image-based note (no strokes but editing)
+      const isEditingImageNote = this.editingNote && this.strokes.length === 0;
+      
+      if (hasEraserStrokes || isEditingImageNote) {
+        // When eraser strokes are present OR we're editing an image-based note,
+        // capture the final canvas state as an image
+        
+        // Calculate bounding box of all strokes (including eraser strokes for bounds)
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let hasStrokes = false;
+        
+        this.strokes.forEach(stroke => {
+          if (stroke.points && stroke.points.length > 0) {
+            hasStrokes = true;
+            stroke.points.forEach(point => {
+              minX = Math.min(minX, point.x);
+              minY = Math.min(minY, point.y);
+              maxX = Math.max(maxX, point.x);
+              maxY = Math.max(maxY, point.y);
+            });
+          }
+        });
+        
+        // If we're editing an image-based note and have no new strokes,
+        // use the entire canvas since it already contains the full image
+        if (!hasStrokes && isEditingImageNote) {
+          const canvasData = this.canvas.toDataURL('image/png');
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('width', this.canvas.width);
+          svg.setAttribute('height', this.canvas.height);
+          svg.setAttribute('viewBox', `0 0 ${this.canvas.width} ${this.canvas.height}`);
+          
+          const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+          image.setAttribute('href', canvasData);
+          image.setAttribute('width', this.canvas.width);
+          image.setAttribute('height', this.canvas.height);
+          image.setAttribute('x', '0');
+          image.setAttribute('y', '0');
+          svg.appendChild(image);
+          
+          return new XMLSerializer().serializeToString(svg);
+        }
+        
+        // If no strokes and not editing, return empty SVG
+        if (!hasStrokes) {
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('width', '1');
+          svg.setAttribute('height', '1');
+          svg.setAttribute('viewBox', '0 0 1 1');
+          return new XMLSerializer().serializeToString(svg);
+        }
+        
+        // Add some padding around the content
+        const padding = 10;
+        minX = Math.max(0, minX - padding);
+        minY = Math.max(0, minY - padding);
+        maxX = Math.min(this.canvas.width, maxX + padding);
+        maxY = Math.min(this.canvas.height, maxY + padding);
+        
+        // Calculate dimensions
+        const width = maxX - minX;
+        const height = maxY - minY;
+        
+        // Create a temporary canvas to crop the image
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // Draw the cropped portion of the original canvas
+        tempCtx.drawImage(this.canvas, minX, minY, width, height, 0, 0, width, height);
+        
+        // Get the cropped image data
+        const canvasData = tempCanvas.toDataURL('image/png');
+        
+        // Create SVG with the cropped dimensions
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', width);
+        svg.setAttribute('height', height);
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', canvasData);
+        image.setAttribute('width', width);
+        image.setAttribute('height', height);
+        image.setAttribute('x', '0');
+        image.setAttribute('y', '0');
+        svg.appendChild(image);
+        
+        return new XMLSerializer().serializeToString(svg);
+      }
+      
+      // Original logic for non-eraser strokes
       // Calculate bounding box of all strokes
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       let hasStrokes = false;
@@ -4505,6 +4599,30 @@
         // Parse the SVG string
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+        
+        // Check if this is an image-based SVG (from eraser strokes)
+        const image = svgDoc.querySelector('image');
+        if (image) {
+          // Handle image-based SVG
+          const imageData = image.getAttribute('href');
+          if (imageData) {
+            // Clear existing strokes
+            this.strokes = [];
+            this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+            
+            // Create a temporary image to load the data
+            const tempImg = new Image();
+            tempImg.onload = () => {
+              // Draw the image onto the canvas
+              this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+              this.ctx.drawImage(tempImg, 0, 0);
+            };
+            tempImg.src = imageData;
+          }
+          return;
+        }
+        
+        // Handle vector-based SVG
         const paths = svgDoc.querySelectorAll('path');
         
         // Clear existing strokes
@@ -4530,7 +4648,11 @@
           }
         });
         
+        // Redraw the strokes
+        this.redrawStrokes();
+        
       } catch (error) {
+        console.error('Error loading note from SVG:', error);
       }
     }
 
