@@ -219,7 +219,7 @@
       selectAll: 'Select All', selectNone: 'Select None', includeAppointments: 'Include appointments', includeImages: 'Include images',
       mergeAppendUpdate: 'Merge (append/update)', replaceWipeThenImport: 'Replace (wipe then import)', importSelected: 'Import Selected', wipeAllData: 'Wipe All Data',
       goHome: 'Go Home', notFound: 'Not found',
-      newCustomer: 'New Customer', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
+        newCustomer: 'New Customer', newAppointment: 'New Appointment', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
       firstName: 'First Name', lastName: 'Last Name', contactNumber: 'Contact Number', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'Social Media Name', socialMediaNamePlaceholder: 'Enter social media username',
       referralType: 'Referral Type', referralNotes: 'Referral notes', referralNotesPlaceholder: 'Details related to referral', notes: 'Notes', attachImages: 'Attach Images',
       save: 'Save', saveChanges: 'Save Changes', cancel: 'Cancel', open: 'Open', select: 'Select',
@@ -245,7 +245,7 @@
       selectAll: '全選択', selectNone: '全解除', includeAppointments: '予約を含む', includeImages: '画像を含む',
       mergeAppendUpdate: 'マージ（追加/更新）', replaceWipeThenImport: '置換（削除して取り込み）', importSelected: '選択を取り込み', wipeAllData: '全データを削除',
       goHome: 'ホームへ', notFound: '見つかりません',
-      newCustomer: '新規顧客', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
+        newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
       firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
       referralType: '紹介区分', referralNotes: '紹介メモ', referralNotesPlaceholder: '紹介に関する詳細', notes: 'ノート', attachImages: '画像を追加',
       save: '保存', saveChanges: '変更を保存', cancel: 'キャンセル', open: '開く', select: '選択',
@@ -1272,12 +1272,13 @@
     typeDisplay.addEventListener('click', toggleTypeMenu);
     typeDisplay.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTypeMenu(); } });
     typeMenu.addEventListener('change', updateTypeSummary);
-    document.addEventListener('click', (e) => {
-      if (!document.getElementById('appt-type-dropdown').contains(e.target)) {
-        typeMenu.classList.add('hidden');
-        typeDropdown.classList.remove('open');
-      }
-    });
+      document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('appt-type-dropdown');
+        if (dropdown && !dropdown.contains(e.target)) {
+          typeMenu.classList.add('hidden');
+          typeDropdown.classList.remove('open');
+        }
+      });
     updateTypeSummary();
 
 
@@ -1588,9 +1589,26 @@
     const appointmentId = appointmentMatch ? appointmentMatch[1] : null;
     
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between" style="margin-bottom: 8px;">
-        <h2>${t('calendar')}</h2>
-      </div>
+        <div class="space-between" style="margin-bottom: 8px;">
+          <h2>${t('calendar')}</h2>
+          <button id="new-appointment-btn" style="
+            background: var(--brand);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+          ">
+            <span>+</span>
+            <span>${t('newAppointment')}</span>
+          </button>
+        </div>
       <div class="card">
         <div id="calendar"></div>
       </div>
@@ -1615,8 +1633,7 @@
         day: t('day'),
         list: t('list')
       },
-      dayHeaderFormat: { weekday: 'short' },
-      dayHeaderNames: [t('sun'), t('mon'), t('tue'), t('wed'), t('thu'), t('fri'), t('sat')],
+        dayHeaderFormat: { weekday: 'short' },
       headerToolbar: {
         left: 'prev,next today',
         center: 'title',
@@ -1646,6 +1663,7 @@
           });
           successCallback(mapped);
         } catch (err) { 
+          console.error('Error loading calendar events:', err);
           failureCallback(err); 
         }
       },
@@ -1694,6 +1712,17 @@
     globalCalendar = calendar;
     
     calendar.render();
+    
+    // Add event listener for new appointment button
+    document.getElementById('new-appointment-btn').addEventListener('click', () => {
+      // Open quick book modal with today's date (local timezone)
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+      openQuickBookModal(todayStr);
+    });
     
     // If we have an appointment ID, open it after calendar loads
     if (appointmentId) {
@@ -1861,7 +1890,8 @@
       typeDisplay.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTypeMenu(); } });
       typeMenu.addEventListener('change', updateTypeSummary);
       document.addEventListener('click', (e) => {
-        if (!document.getElementById('qb-type-dropdown').contains(e.target)) {
+        const dropdown = document.getElementById('qb-type-dropdown');
+        if (dropdown && !dropdown.contains(e.target)) {
           typeMenu.classList.add('hidden');
           typeDropdown.classList.remove('open');
         }
@@ -1882,14 +1912,43 @@
         const fullName = `${selectedCustomer.firstName || ''} ${selectedCustomer.lastName || ''}`.trim();
         const title = typeLabel || titleInput || 'No service type';
         const roundedStartLocal = roundDatetimeLocalToStep(startStr, 15);
-        const startISO = new Date(roundedStartLocal).toISOString();
-        const endISO = new Date(new Date(startStr).getTime() + durationMin * 60000).toISOString();
+        
+        // Convert to ISO string properly, preserving the local date/time
+        const startDate = new Date(roundedStartLocal);
+        const startISO = startDate.toISOString();
+        const endDate = new Date(startDate.getTime() + durationMin * 60000);
+        const endISO = endDate.toISOString();
+        
         const appointmentId = await ChikasDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, createdAt: new Date().toISOString() });
+        
         hideModal();
+        
+        // Refresh calendar if it exists
         if (globalCalendar) {
           globalCalendar.refetchEvents();
         }
+        
+        // Refresh customer pages if they're open
+        refreshCustomerPages();
+        
+        // Show success message
+        alert(t('appointmentBooked'));
       };
+    }
+  }
+
+  // Function to refresh customer pages when appointments are created
+  function refreshCustomerPages() {
+    // Check if we're currently on a customer page and refresh it
+    const currentPath = window.location.hash;
+    const customerMatch = currentPath.match(/[?&]id=([^&]+)/);
+    
+    if (customerMatch) {
+      const customerId = customerMatch[1];
+      // Re-render the customer page to show the new appointment
+      const query = new URLSearchParams(window.location.search);
+      query.set('id', customerId);
+      renderCustomer({ query });
     }
   }
 
