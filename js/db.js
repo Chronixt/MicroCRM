@@ -211,49 +211,91 @@
       })))
     ));
   }
+
+  // Add a single image - avoids transaction timeout issues
+  async function addImage(customerId, entry) {
+    try {
+      // Process image outside of transaction
+      const compressedBlob = await compressImage(entry.blob, entry.type);
+      const dataUrl = await blobToDataURL(compressedBlob);
+      
+      const toStore = {
+        customerId,
+        name: entry.name,
+        type: entry.type,
+        dataUrl: dataUrl,
+        createdAt: new Date().toISOString(),
+      };
+      
+      // Now do the database operation in a transaction
+      return runTransaction(['images'], 'readwrite', (images) => (
+        new Promise((resolve, reject) => {
+          const req = images.add(toStore);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        })
+      ));
+    } catch (error) {
+      throw error;
+    }
+  }
   
   // Image compression function for iPad memory optimization
   async function compressImage(blob, type) {
-    return new Promise((resolve) => {
-      // Check if image is already small enough
-      if (blob.size <= 500 * 1024) { // 500KB limit
-        resolve(blob);
-        return;
-      }
-      
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      
-      img.onload = () => {
-        // Calculate new dimensions (max 1200px width/height)
-        const maxSize = 1200;
-        let { width, height } = img;
-        
-        if (width > maxSize || height > maxSize) {
-          const ratio = Math.min(maxSize / width, maxSize / height);
-          width *= ratio;
-          height *= ratio;
+    return new Promise((resolve, reject) => {
+      try {
+        // Check if image is already small enough
+        if (blob.size <= 500 * 1024) { // 500KB limit
+          resolve(blob);
+          return;
         }
         
-        canvas.width = width;
-        canvas.height = height;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
         
-        // Draw compressed image
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Convert to blob with quality compression
-        canvas.toBlob((compressedBlob) => {
-          if (compressedBlob && compressedBlob.size < blob.size) {
-            resolve(compressedBlob);
-          } else {
-            resolve(blob); // Use original if compression didn't help
+        img.onload = () => {
+          try {
+            // Calculate new dimensions (max 1200px width/height)
+            const maxSize = 1200;
+            let { width, height } = img;
+            
+            if (width > maxSize || height > maxSize) {
+              const ratio = Math.min(maxSize / width, maxSize / height);
+              width *= ratio;
+              height *= ratio;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Draw compressed image
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to blob with quality compression
+            canvas.toBlob((compressedBlob) => {
+              if (compressedBlob && compressedBlob.size < blob.size) {
+                resolve(compressedBlob);
+              } else {
+                resolve(blob); // Use original if compression didn't help
+              }
+            }, type || 'image/jpeg', 0.8); // 80% quality
+          } catch (error) {
+            console.error('Error during image compression:', error);
+            resolve(blob); // Fallback to original
           }
-        }, type || 'image/jpeg', 0.8); // 80% quality
-      };
-      
-      img.onerror = () => resolve(blob); // Fallback to original
-      img.src = URL.createObjectURL(blob);
+        };
+        
+        img.onerror = (error) => {
+          console.error('Error loading image for compression:', error);
+          resolve(blob); // Fallback to original
+        };
+        
+        img.src = URL.createObjectURL(blob);
+      } catch (error) {
+        console.error('Error in compressImage:', error);
+        reject(error);
+      }
     });
   }
 
@@ -950,6 +992,7 @@
     getAllAppointments,
     searchCustomers,
     addImages,
+    addImage,
     getImagesByCustomerId,
     deleteImage,
     createAppointment,

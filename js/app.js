@@ -1572,12 +1572,16 @@
         const imageFiles = form.querySelector('input[name="images"]').files;
         if (imageFiles && imageFiles.length > 0) {
           const entries = await ChikasDB.fileListToEntries(imageFiles);
-          await ChikasDB.addImages(id, entries);
+          // Process images one by one to avoid transaction timeout
+          for (const entry of entries) {
+            await ChikasDB.addImage(id, entry);
+          }
         }
         
         navigate(`/customer?id=${encodeURIComponent(id)}`);
       } catch (error) {
-        alert('Error saving customer. Please try again.');
+        console.error('Error saving customer:', error);
+        alert(`Error saving customer: ${error.message || 'Please try again.'}`);
       }
     });
   }
