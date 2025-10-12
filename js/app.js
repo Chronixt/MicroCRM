@@ -4299,26 +4299,51 @@
           // Editing existing note - update it
           console.log('Updating existing note:', this.editingNote.id);
           
-          const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
-          if (noteIndex !== -1) {
-            customerNotes[noteIndex] = {
-              ...this.editingNote,
-              svg: svgData,
-              editedDate: new Date().toLocaleString()
-            };
-            
-            // Update localStorage
-            existingNotes[customerId] = customerNotes;
-            localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-            
-            console.log('Note updated successfully');
-            
-            // Refresh the notes list
-            if (typeof loadExistingNotes === 'function') {
-              loadExistingNotes(customerId);
+          // Update the note data
+          const updatedNote = {
+            ...this.editingNote,
+            svg: svgData,
+            editedDate: new Date().toLocaleString()
+          };
+          
+          // Determine which storage method to use based on the note's source
+          if (this.editingNote.source === 'indexeddb-fallback' || this.editingNote.source === 'indexeddb') {
+            // Update in IndexedDB
+            try {
+              await ChikasDB.updateNote(updatedNote);
+              console.log('Note updated successfully in IndexedDB');
+            } catch (error) {
+              throw new Error(`Failed to update note in IndexedDB: ${error.message}`);
             }
           } else {
-            throw new Error('Could not find existing note to update');
+            // Update in localStorage
+            const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+            const customerNotes = existingNotes[customerId] || [];
+            
+            const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
+            if (noteIndex !== -1) {
+              customerNotes[noteIndex] = updatedNote;
+              
+              // Update localStorage
+              existingNotes[customerId] = customerNotes;
+              localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+              
+              console.log('Note updated successfully in localStorage');
+            } else {
+              throw new Error('Could not find existing note to update in localStorage');
+            }
+          }
+          
+          // Refresh the notes list using hybrid loading
+          try {
+            if (typeof loadExistingNotes === 'function') {
+              loadExistingNotes(customerId);
+            } else {
+              // Fallback: reload notes using hybrid method
+              await this.refreshNotesDisplay(customerId);
+            }
+          } catch (refreshError) {
+            console.warn('Note updated but failed to refresh display:', refreshError);
           }
           
           // Clear editing state
@@ -5006,6 +5031,29 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       return allNotes;
     }
 
+    // Refresh the notes display using hybrid loading
+    async refreshNotesDisplay(customerId) {
+      try {
+        const allNotes = await this.loadNotesHybrid(customerId);
+        
+        // Clear existing notes from UI
+        const notesList = document.querySelector('.notes-list');
+        if (notesList) {
+          notesList.innerHTML = '';
+        }
+        
+        // Add all notes to UI
+        allNotes.forEach(note => {
+          this.addNoteToUI(note);
+        });
+        
+        console.log(`Refreshed display with ${allNotes.length} notes`);
+        
+      } catch (error) {
+        console.error('Error refreshing notes display:', error);
+      }
+    }
+
     getCurrentCustomerId() {
       
       // Try to get customer ID from URL parameters
@@ -5355,7 +5403,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       notesList.appendChild(noteElement);
     }
 
-    deleteNote(noteData) {
+    async deleteNote(noteData) {
       // Confirm deletion
       if (!confirm('Are you sure you want to delete this note? This action cannot be undone.')) {
         return;
@@ -5363,35 +5411,54 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       const customerId = this.getCurrentCustomerId();
 
-      // Get existing notes for this customer
-      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      const customerNotes = existingNotes[customerId] || [];
+      try {
+        // Determine which storage method to use based on the note's source
+        if (noteData.source === 'indexeddb-fallback' || noteData.source === 'indexeddb') {
+          // Delete from IndexedDB
+          await ChikasDB.deleteNote(noteData.id);
+          console.log('Note deleted successfully from IndexedDB');
+        } else {
+          // Delete from localStorage
+          const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+          const customerNotes = existingNotes[customerId] || [];
 
-      // Find and remove the note
-      const noteIndex = customerNotes.findIndex(note => note.id === noteData.id);
-      if (noteIndex !== -1) {
-        customerNotes.splice(noteIndex, 1);
+          // Find and remove the note
+          const noteIndex = customerNotes.findIndex(note => note.id === noteData.id);
+          if (noteIndex !== -1) {
+            customerNotes.splice(noteIndex, 1);
+            
+            // Update localStorage
+            existingNotes[customerId] = customerNotes;
+            localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+            
+            console.log('Note deleted successfully from localStorage');
+          } else {
+            throw new Error('Note not found in localStorage');
+          }
+        }
         
-        // Update localStorage
-        existingNotes[customerId] = customerNotes;
-        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        // Refresh the notes list using hybrid loading
+        await this.refreshNotesList(customerId);
         
-        
-        // Refresh the notes list
-        this.refreshNotesList(customerId);
-      } else {
+      } catch (error) {
+        console.error('Error deleting note:', error);
+        alert(`Failed to delete note: ${error.message}`);
       }
     }
 
-    refreshNotesList(customerId) {
-      // Clear existing notes
-      const notesList = document.querySelector('.notes-list');
-      if (notesList) {
-        notesList.innerHTML = '';
+    async refreshNotesList(customerId) {
+      try {
+        // Use hybrid loading to refresh the notes list
+        await this.refreshNotesDisplay(customerId);
+      } catch (error) {
+        console.error('Error refreshing notes list:', error);
+        
+        // Fallback to basic refresh
+        const notesList = document.querySelector('.notes-list');
+        if (notesList) {
+          notesList.innerHTML = '';
+        }
       }
-      
-      // Reload notes for this customer
-      loadExistingNotes(customerId);
     }
 
     editNote(noteData) {
@@ -5777,6 +5844,51 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
       
       return dbStatus;
+    },
+    
+    // Test editing functionality
+    testEdit: async () => {
+      console.log('=== Testing Note Editing ===');
+      
+      const canvas = fullscreenNotesCanvas;
+      const customerId = canvas.getCurrentCustomerId();
+      
+      if (!customerId || customerId === 'default') {
+        console.error('❌ Cannot test - no valid customer ID');
+        return;
+      }
+      
+      try {
+        // Load all notes
+        const allNotes = await canvas.loadNotesHybrid(customerId);
+        console.log(`Found ${allNotes.length} notes`);
+        
+        if (allNotes.length === 0) {
+          console.log('ℹ️ No notes to test editing with');
+          return;
+        }
+        
+        // Test with the first note
+        const testNote = allNotes[0];
+        console.log(`Testing edit on note ID: ${testNote.id}, Source: ${testNote.source}`);
+        
+        // Simulate editing
+        canvas.editingNote = testNote;
+        console.log('✅ Set editing note successfully');
+        
+        // Show which storage method would be used
+        if (testNote.source === 'indexeddb-fallback' || testNote.source === 'indexeddb') {
+          console.log('✅ Would use IndexedDB for editing');
+        } else {
+          console.log('✅ Would use localStorage for editing');
+        }
+        
+        return { noteId: testNote.id, source: testNote.source, editingSet: true };
+        
+      } catch (error) {
+        console.error('❌ Edit test failed:', error);
+        return { error: error.message };
+      }
     }
   };
 
@@ -5975,25 +6087,49 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
   }
 
   // Load existing notes for a customer
-  function loadExistingNotes(customerId) {
-    const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-    const customerNotes = existingNotes[customerId] || [];
-    
-    
-    const notesList = document.querySelector('.notes-list');
-    if (!notesList) {
-      return;
+  async function loadExistingNotes(customerId) {
+    try {
+      // Use hybrid loading to get notes from both localStorage and IndexedDB
+      const allNotes = await fullscreenNotesCanvas.loadNotesHybrid(customerId);
+      
+      const notesList = document.querySelector('.notes-list');
+      if (!notesList) {
+        return;
+      }
+      
+      // Clear existing notes
+      notesList.innerHTML = '';
+      
+      // Add all notes to UI (already properly numbered by loadNotesHybrid)
+      allNotes.forEach((noteData) => {
+        fullscreenNotesCanvas.addNoteToUI(noteData);
+      });
+      
+      console.log(`Loaded ${allNotes.length} notes using hybrid storage`);
+      
+    } catch (error) {
+      console.error('Error loading notes with hybrid storage:', error);
+      
+      // Fallback to localStorage only
+      console.log('Falling back to localStorage-only loading...');
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const customerNotes = existingNotes[customerId] || [];
+      
+      const notesList = document.querySelector('.notes-list');
+      if (!notesList) {
+        return;
+      }
+      
+      // Clear existing notes
+      notesList.innerHTML = '';
+      
+      // Ensure proper note numbering and add each note
+      customerNotes.forEach((noteData, index) => {
+        // Ensure note has correct number (1-based indexing)
+        noteData.noteNumber = index + 1;
+        fullscreenNotesCanvas.addNoteToUI(noteData);
+      });
     }
-    
-    // Clear existing notes
-    notesList.innerHTML = '';
-    
-    // Ensure proper note numbering and add each note
-    customerNotes.forEach((noteData, index) => {
-      // Ensure note has correct number (1-based indexing)
-      noteData.noteNumber = index + 1;
-      fullscreenNotesCanvas.addNoteToUI(noteData);
-    });
   }
 
   // Handwriting canvas functionality
