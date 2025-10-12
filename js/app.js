@@ -4336,14 +4336,14 @@
             noteNumber: nextNoteNumber
           };
 
-          // Use enhanced save with quota handling
-          const saveSuccess = await this.saveNoteWithQuotaHandling(noteData, customerId, existingNotes, customerNotes);
+          // Use hybrid storage (localStorage first, IndexedDB fallback)
+          const saveResult = await this.saveNoteHybrid(noteData, customerId);
           
-          if (!saveSuccess) {
-            throw new Error('Failed to save note after multiple attempts');
+          if (!saveResult.success) {
+            throw new Error('Failed to save note with hybrid storage');
           }
 
-          console.log('New note created successfully');
+          console.log(`New note saved successfully using ${saveResult.method}`);
 
           // Add note to UI
           try {
@@ -4640,9 +4640,10 @@ Browser: ${navigator.userAgent}`;
 Stroke Count: ${strokeCount}
 SVG Generation: ${svgStatus}
 LocalStorage: ${localStorageStatus}
-Storage Usage: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)
+Storage Usage: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}% of ~${storageInfo.estimatedLimitMB}MB limit)
 Storage Items: ${storageInfo.itemCount}
 Near Limit: ${storageInfo.isNearLimit ? 'YES' : 'NO'}
+iPad Detected: ${storageInfo.isIPad ? 'YES' : 'NO'}
 Existing Notes: ${customerNotes.length}
 Canvas Visible: ${this.overlay ? this.overlay.style.display !== 'none' : 'No overlay'}
 Current URL: ${window.location.href}
@@ -4677,8 +4678,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         largestItems.sort((a, b) => b.size - a.size);
         largestItems = largestItems.slice(0, 10); // Top 10 largest items
         
-        // Estimate if we're near the limit (iOS Safari typically has 5-10MB limit)
-        const estimatedLimit = 10 * 1024 * 1024; // 10MB estimate
+        // Detect iPad and adjust storage limit estimate
+        const isIPad = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const estimatedLimit = isIPad ? 2.5 * 1024 * 1024 : 10 * 1024 * 1024; // iPad: 2.5MB, Others: 10MB
         const usagePercentage = (totalSize / estimatedLimit) * 100;
         const isNearLimit = usagePercentage > 80; // 80% threshold
         
@@ -4687,6 +4689,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
           itemCount,
           usagePercentage: usagePercentage.toFixed(1),
+          estimatedLimitMB: (estimatedLimit / (1024 * 1024)).toFixed(1),
+          isIPad,
           isNearLimit,
           largestItems: largestItems.slice(0, 5) // Top 5 for logging
         };
@@ -4862,6 +4866,108 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       } catch (error) {
         console.error('Error during aggressive cleanup:', error);
       }
+    }
+
+    // Hybrid storage manager - tries localStorage first, falls back to IndexedDB
+    async saveNoteHybrid(noteData, customerId) {
+      console.log('Attempting hybrid save for customer:', customerId);
+      
+      try {
+        // First, try localStorage (existing method)
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        if (!existingNotes[customerId]) {
+          existingNotes[customerId] = [];
+        }
+        existingNotes[customerId].push(noteData);
+        
+        const dataToSave = JSON.stringify(existingNotes);
+        localStorage.setItem('customerNotes', dataToSave);
+        
+        console.log('✅ Note saved to localStorage successfully');
+        return { method: 'localStorage', success: true };
+        
+      } catch (localStorageError) {
+        console.log('❌ localStorage failed:', localStorageError.message);
+        console.log('🔄 Attempting IndexedDB fallback...');
+        
+        try {
+          // Fallback to IndexedDB
+          const noteForDB = {
+            customerId: parseInt(customerId),
+            svg: noteData.svg,
+            date: noteData.date,
+            noteNumber: noteData.noteNumber,
+            createdAt: new Date().toISOString(),
+            source: 'indexeddb-fallback' // Mark as fallback save
+          };
+          
+          const savedId = await ChikasDB.createNote(noteForDB);
+          console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
+          
+          // Update the noteData with the database ID for UI consistency
+          noteData.id = savedId;
+          noteData.source = 'indexeddb-fallback';
+          
+          return { method: 'indexeddb', success: true, id: savedId };
+          
+        } catch (indexedDBError) {
+          console.error('❌ IndexedDB fallback also failed:', indexedDBError.message);
+          throw new Error(`Both storage methods failed:\nLocalStorage: ${localStorageError.message}\nIndexedDB: ${indexedDBError.message}`);
+        }
+      }
+    }
+
+    // Load notes from both localStorage and IndexedDB
+    async loadNotesHybrid(customerId) {
+      const allNotes = [];
+      
+      try {
+        // Load from localStorage
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const localStorageNotes = existingNotes[customerId] || [];
+        
+        // Mark localStorage notes
+        localStorageNotes.forEach(note => {
+          note.source = note.source || 'localStorage';
+        });
+        
+        allNotes.push(...localStorageNotes);
+        console.log(`Loaded ${localStorageNotes.length} notes from localStorage`);
+        
+      } catch (error) {
+        console.warn('Error loading from localStorage:', error);
+      }
+      
+      try {
+        // Load from IndexedDB
+        const indexedDBNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        
+        // Mark IndexedDB notes
+        indexedDBNotes.forEach(note => {
+          note.source = note.source || 'indexeddb';
+        });
+        
+        allNotes.push(...indexedDBNotes);
+        console.log(`Loaded ${indexedDBNotes.length} notes from IndexedDB`);
+        
+      } catch (error) {
+        console.warn('Error loading from IndexedDB:', error);
+      }
+      
+      // Sort all notes by creation time (newest first)
+      allNotes.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.id || 0);
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.id || 0);
+        return timeB - timeA;
+      });
+      
+      // Re-number notes for display consistency
+      allNotes.forEach((note, index) => {
+        note.noteNumber = index + 1;
+      });
+      
+      console.log(`Total notes loaded: ${allNotes.length}`);
+      return allNotes;
     }
 
     getCurrentCustomerId() {
@@ -5543,6 +5649,74 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const storageInfo = fullscreenNotesCanvas.getStorageInfo();
       console.log(`Aggressive cleanup completed. Storage now: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)`);
       return storageInfo;
+    },
+    
+    // Test hybrid storage system
+    testHybridSave: async () => {
+      console.log('=== Testing Hybrid Storage System ===');
+      
+      const canvas = fullscreenNotesCanvas;
+      const customerId = canvas.getCurrentCustomerId();
+      
+      if (!customerId || customerId === 'default') {
+        console.error('❌ Cannot test - no valid customer ID');
+        return;
+      }
+      
+      // Create test note data
+      const testNote = {
+        id: Date.now(),
+        svg: '<svg><text>Test Note</text></svg>',
+        date: new Date().toLocaleDateString(),
+        noteNumber: 999
+      };
+      
+      try {
+        const result = await canvas.saveNoteHybrid(testNote, customerId);
+        console.log(`✅ Hybrid save test successful using ${result.method}`);
+        
+        // Test loading
+        const loadedNotes = await canvas.loadNotesHybrid(customerId);
+        console.log(`✅ Loaded ${loadedNotes.length} notes from hybrid storage`);
+        
+        return { saveResult: result, loadedCount: loadedNotes.length };
+        
+      } catch (error) {
+        console.error('❌ Hybrid save test failed:', error);
+        return { error: error.message };
+      }
+    },
+    
+    // Show storage method breakdown
+    showStorageMethods: async () => {
+      const canvas = fullscreenNotesCanvas;
+      const customerId = canvas.getCurrentCustomerId();
+      
+      if (!customerId || customerId === 'default') {
+        console.error('❌ Cannot show storage methods - no valid customer ID');
+        return;
+      }
+      
+      try {
+        const allNotes = await canvas.loadNotesHybrid(customerId);
+        
+        const breakdown = allNotes.reduce((acc, note) => {
+          const method = note.source || 'unknown';
+          acc[method] = (acc[method] || 0) + 1;
+          return acc;
+        }, {});
+        
+        console.log('=== Storage Method Breakdown ===');
+        Object.entries(breakdown).forEach(([method, count]) => {
+          console.log(`${method}: ${count} notes`);
+        });
+        
+        return breakdown;
+        
+      } catch (error) {
+        console.error('Error showing storage methods:', error);
+        return { error: error.message };
+      }
     }
   };
 

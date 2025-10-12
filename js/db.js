@@ -45,6 +45,11 @@
         // Create images store with indexes
         const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
         imagesStore.createIndex('customerId', 'customerId', { unique: false });
+        
+        // Create notes store for localStorage fallback
+        const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+        notesStore.createIndex('customerId', 'customerId', { unique: false });
+        notesStore.createIndex('createdAt', 'createdAt', { unique: false });
       };
 
       request.onsuccess = () => {
@@ -601,12 +606,86 @@
     };
   }
 
+  // Notes functions for localStorage fallback
+  function createNote(note) {
+    return runTransaction(['notes'], 'readwrite', (notes) => (
+      new Promise((resolve, reject) => {
+        const noteToStore = {
+          ...note,
+          createdAt: note.createdAt || new Date().toISOString()
+        };
+        const req = notes.add(noteToStore);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getNotesByCustomerId(customerId) {
+    return runTransaction(['notes'], 'readonly', (notes) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = notes.index('customerId');
+        const range = IDBKeyRange.only(parseInt(customerId));
+        const req = index.openCursor(range);
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { 
+            results.push(cursor.value);
+            cursor.continue(); 
+          } else {
+            // Sort by creation time, newest first
+            results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function updateNote(updatedNote) {
+    return runTransaction(['notes'], 'readwrite', (notes) => (
+      new Promise((resolve, reject) => {
+        const req = notes.put(updatedNote);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function deleteNote(noteId) {
+    return runTransaction(['notes'], 'readwrite', (notes) => (
+      new Promise((resolve, reject) => {
+        const req = notes.delete(parseInt(noteId));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getAllNotes() {
+    return runTransaction(['notes'], 'readonly', (notes) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = notes.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else resolve(items);
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
   function clearAllStores() {
-    return runTransaction(['customers', 'appointments', 'images'], 'readwrite', (customers, appointments, images) => (
+    return runTransaction(['customers', 'appointments', 'images', 'notes'], 'readwrite', (customers, appointments, images, notes) => (
       Promise.all([
         new Promise((resolve, reject) => { const r = customers.clear(); r.onsuccess = () => resolve(null); r.onerror = () => reject(r.error); }),
         new Promise((resolve, reject) => { const r = appointments.clear(); r.onsuccess = () => resolve(null); r.onerror = () => reject(r.error); }),
         new Promise((resolve, reject) => { const r = images.clear(); r.onsuccess = () => resolve(null); r.onerror = () => reject(r.error); }),
+        new Promise((resolve, reject) => { const r = notes.clear(); r.onsuccess = () => resolve(null); r.onerror = () => reject(r.error); }),
       ])
     ));
   }
@@ -1010,6 +1089,12 @@
     exportDataWithoutImages, // NEW - lightweight backup (no images)
     importAllData,
     clearAllStores,
+    // Notes functions for localStorage fallback
+    createNote,
+    getNotesByCustomerId,
+    updateNote,
+    deleteNote,
+    getAllNotes,
   };
 })();
 
