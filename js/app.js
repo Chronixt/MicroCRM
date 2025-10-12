@@ -4868,6 +4868,22 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
     }
 
+    // Check if IndexedDB is ready for notes storage
+    async checkIndexedDBReady() {
+      try {
+        if (!window.ChikasDB) {
+          return { ready: false, error: 'ChikasDB not available' };
+        }
+        
+        // Try to access the notes store by attempting a simple operation
+        const testNotes = await ChikasDB.getNotesByCustomerId(999999); // Non-existent customer
+        return { ready: true, error: null };
+        
+      } catch (error) {
+        return { ready: false, error: error.message };
+      }
+    }
+
     // Hybrid storage manager - tries localStorage first, falls back to IndexedDB
     async saveNoteHybrid(noteData, customerId) {
       console.log('Attempting hybrid save for customer:', customerId);
@@ -4892,6 +4908,14 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         
         try {
           // Fallback to IndexedDB
+          console.log('🔄 Initializing IndexedDB for notes fallback...');
+          
+          // Check if IndexedDB is ready
+          const dbStatus = await this.checkIndexedDBReady();
+          if (!dbStatus.ready) {
+            throw new Error(`IndexedDB not ready: ${dbStatus.error}`);
+          }
+          
           const noteForDB = {
             customerId: parseInt(customerId),
             svg: noteData.svg,
@@ -4901,6 +4925,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             source: 'indexeddb-fallback' // Mark as fallback save
           };
           
+          console.log('Attempting to save note to IndexedDB...', noteForDB);
           const savedId = await ChikasDB.createNote(noteForDB);
           console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
           
@@ -4911,8 +4936,19 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           return { method: 'indexeddb', success: true, id: savedId };
           
         } catch (indexedDBError) {
-          console.error('❌ IndexedDB fallback also failed:', indexedDBError.message);
-          throw new Error(`Both storage methods failed:\nLocalStorage: ${localStorageError.message}\nIndexedDB: ${indexedDBError.message}`);
+          console.error('❌ IndexedDB fallback also failed:', indexedDBError);
+          
+          // Provide specific guidance based on the error
+          let errorDetails = `Both storage methods failed:\nLocalStorage: ${localStorageError.message}\nIndexedDB: ${indexedDBError.message}`;
+          
+          if (indexedDBError.message.includes('object stores was not found') || 
+              indexedDBError.message.includes('IndexedDB not ready')) {
+            errorDetails += '\n\n🔧 Fix: Please refresh the page to update the database schema.';
+          } else if (indexedDBError.message.includes('ChikasDB not available')) {
+            errorDetails += '\n\n🔧 Fix: Please refresh the page to initialize the database.';
+          }
+          
+          throw new Error(errorDetails);
         }
       }
     }
@@ -5717,6 +5753,30 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         console.error('Error showing storage methods:', error);
         return { error: error.message };
       }
+    },
+    
+    // Check IndexedDB readiness
+    checkDatabase: async () => {
+      console.log('=== Checking IndexedDB Status ===');
+      
+      const canvas = fullscreenNotesCanvas;
+      const dbStatus = await canvas.checkIndexedDBReady();
+      
+      console.log(`Database Ready: ${dbStatus.ready ? '✅ YES' : '❌ NO'}`);
+      if (!dbStatus.ready) {
+        console.log(`Error: ${dbStatus.error}`);
+      }
+      
+      // Also check if ChikasDB is available
+      console.log(`ChikasDB Available: ${window.ChikasDB ? '✅ YES' : '❌ NO'}`);
+      
+      if (window.ChikasDB) {
+        // List available functions
+        const functions = Object.keys(window.ChikasDB);
+        console.log(`Available functions: ${functions.join(', ')}`);
+      }
+      
+      return dbStatus;
     }
   };
 

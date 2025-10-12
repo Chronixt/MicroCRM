@@ -1,7 +1,7 @@
 /* IndexedDB wrapper for Chikas DB */
 (function () {
   const DB_NAME = 'chikas-db';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4; // Increment version to add notes store
 
   /** @type {IDBDatabase | null} */
   let database = null;
@@ -15,41 +15,56 @@
         const db = /** @type {IDBDatabase} */ (request.result);
         const oldVersion = event.oldVersion;
         
-        // For version 3, we'll recreate the database structure with all indexes
-        // This ensures a clean upgrade from any previous version
+        console.log(`Upgrading database from version ${oldVersion} to ${DB_VERSION}`);
         
-        // Delete existing stores if they exist (for clean upgrade)
-        if (db.objectStoreNames.contains('customers')) {
-          db.deleteObjectStore('customers');
+        // Handle upgrade from version 3 to 4 (add notes store)
+        if (oldVersion < 4) {
+          // For version 4, we need to add the notes store
+          if (!db.objectStoreNames.contains('notes')) {
+            console.log('Creating notes store...');
+            const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+            notesStore.createIndex('customerId', 'customerId', { unique: false });
+            notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+          }
         }
-        if (db.objectStoreNames.contains('appointments')) {
-          db.deleteObjectStore('appointments');
+        
+        // For version 3 and below, recreate all stores (existing logic)
+        if (oldVersion < 3) {
+          console.log('Performing full database recreation for version < 3');
+          
+          // Delete existing stores if they exist (for clean upgrade)
+          if (db.objectStoreNames.contains('customers')) {
+            db.deleteObjectStore('customers');
+          }
+          if (db.objectStoreNames.contains('appointments')) {
+            db.deleteObjectStore('appointments');
+          }
+          if (db.objectStoreNames.contains('images')) {
+            db.deleteObjectStore('images');
+          }
+          
+          // Create customers store with all indexes
+          const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
+          customerStore.createIndex('lastName', 'lastName', { unique: false });
+          customerStore.createIndex('firstName', 'firstName', { unique: false });
+          customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
+          customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          
+          // Create appointments store with all indexes
+          const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
+          appointmentStore.createIndex('customerId', 'customerId', { unique: false });
+          appointmentStore.createIndex('start', 'start', { unique: false });
+          appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
+          
+          // Create images store with indexes
+          const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+          imagesStore.createIndex('customerId', 'customerId', { unique: false });
+          
+          // Create notes store for localStorage fallback
+          const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+          notesStore.createIndex('customerId', 'customerId', { unique: false });
+          notesStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
-        if (db.objectStoreNames.contains('images')) {
-          db.deleteObjectStore('images');
-        }
-        
-        // Create customers store with all indexes
-        const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
-        customerStore.createIndex('lastName', 'lastName', { unique: false });
-        customerStore.createIndex('firstName', 'firstName', { unique: false });
-        customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
-        customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
-        
-        // Create appointments store with all indexes
-        const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
-        appointmentStore.createIndex('customerId', 'customerId', { unique: false });
-        appointmentStore.createIndex('start', 'start', { unique: false });
-        appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
-        
-        // Create images store with indexes
-        const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
-        imagesStore.createIndex('customerId', 'customerId', { unique: false });
-        
-        // Create notes store for localStorage fallback
-        const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
-        notesStore.createIndex('customerId', 'customerId', { unique: false });
-        notesStore.createIndex('createdAt', 'createdAt', { unique: false });
       };
 
       request.onsuccess = () => {
