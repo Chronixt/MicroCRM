@@ -4130,8 +4130,15 @@
         return;
       }
 
+      // Prevent multiple dialogs
+      if (document.querySelector('.save-note-prompt')) {
+        console.log('Save dialog already open, ignoring request');
+        return;
+      }
+
       // Show save prompt
       const savePrompt = document.createElement('div');
+      savePrompt.className = 'save-note-prompt'; // Add class for identification
       savePrompt.style.cssText = `
         position: fixed;
         top: 50%;
@@ -4205,89 +4212,446 @@
       document.body.appendChild(savePrompt);
 
       cancelBtn.addEventListener('click', () => {
-        document.body.removeChild(savePrompt);
+        if (document.body.contains(savePrompt)) {
+          document.body.removeChild(savePrompt);
+        }
         // Don't hide the overlay, just close the dialog
       });
 
       dontSaveBtn.addEventListener('click', () => {
-        document.body.removeChild(savePrompt);
+        if (document.body.contains(savePrompt)) {
+          document.body.removeChild(savePrompt);
+        }
         this.hide();
       });
 
-      saveBtn.addEventListener('click', () => {
-        document.body.removeChild(savePrompt);
-        this.saveNote();
+      saveBtn.addEventListener('click', async () => {
+        try {
+          // Disable button to prevent double-clicks
+          saveBtn.disabled = true;
+          saveBtn.textContent = 'Saving...';
+          saveBtn.style.opacity = '0.6';
+          
+          if (document.body.contains(savePrompt)) {
+            document.body.removeChild(savePrompt);
+          }
+          await this.saveNote();
+        } catch (error) {
+          console.error('Error during save operation:', error);
+          // Re-enable button if save failed
+          if (document.body.contains(savePrompt)) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save';
+            saveBtn.style.opacity = '1';
+          }
+          // Show detailed error popup instead of simple alert
+          this.showErrorPopup(error, 'Save Note');
+        }
       });
     }
 
-    saveNote() {
-      const svgData = this.canvasToSVG();
+    async saveNote() {
+      try {
+        console.log('Starting save note operation...');
+        
+        // Validate canvas state
+        if (!this.canvas || !this.strokes || this.strokes.length === 0) {
+          throw new Error('No drawing data to save');
+        }
+        
+        // Generate SVG data
+        const svgData = this.canvasToSVG();
+        if (!svgData || svgData.trim().length === 0) {
+          throw new Error('Failed to generate SVG data');
+        }
+        
+        // Get customer ID with validation
+        const customerId = this.getCurrentCustomerId();
+        if (!customerId || customerId === 'default') {
+          throw new Error('Cannot determine customer ID for saving note');
+        }
+        
+        console.log(`Saving note for customer ID: ${customerId}`);
+        
+        // Check localStorage availability
+        try {
+          localStorage.setItem('test', 'test');
+          localStorage.removeItem('test');
+        } catch (e) {
+          throw new Error('LocalStorage is not available or is full');
+        }
+        
+        // Get existing notes for this customer
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const customerNotes = existingNotes[customerId] || [];
+        
+        if (this.editingNote) {
+          // Editing existing note - update it
+          console.log('Updating existing note:', this.editingNote.id);
+          
+          const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
+          if (noteIndex !== -1) {
+            customerNotes[noteIndex] = {
+              ...this.editingNote,
+              svg: svgData,
+              editedDate: new Date().toLocaleString()
+            };
+            
+            // Update localStorage
+            existingNotes[customerId] = customerNotes;
+            localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+            
+            console.log('Note updated successfully');
+            
+            // Refresh the notes list
+            if (typeof loadExistingNotes === 'function') {
+              loadExistingNotes(customerId);
+            }
+          } else {
+            throw new Error('Could not find existing note to update');
+          }
+          
+          // Clear editing state
+          this.editingNote = null;
+        } else {
+          // Creating new note
+          const nextNoteNumber = customerNotes.length + 1;
+          
+          console.log(`Creating new note #${nextNoteNumber}`);
+          
+          const noteData = {
+            id: Date.now(),
+            svg: svgData,
+            date: new Date().toLocaleDateString(),
+            noteNumber: nextNoteNumber
+          };
+
+          // Store in localStorage
+          if (!existingNotes[customerId]) {
+            existingNotes[customerId] = [];
+          }
+          existingNotes[customerId].push(noteData);
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+
+          console.log('New note created successfully');
+
+          // Add note to UI
+          try {
+            this.addNoteToUI(noteData);
+          } catch (uiError) {
+            console.warn('Note saved but failed to update UI:', uiError);
+            // Don't throw - the save was successful
+          }
+        }
+        
+        console.log('Save note operation completed successfully');
+        this.hide();
+        
+      } catch (error) {
+        console.error('Error in saveNote():', error);
+        
+        // Show detailed error popup instead of simple alert
+        this.showErrorPopup(error, 'Save Note');
+        throw error; // Re-throw for the calling function
+      }
+    }
+
+    // Show detailed error popup for iPad debugging
+    showErrorPopup(error, context = 'Save Note') {
+      console.error(`${context} Error:`, error);
+      
+      // Create error modal
+      const errorModal = document.createElement('div');
+      errorModal.className = 'error-popup-modal';
+      errorModal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10002;
+        padding: 20px;
+        box-sizing: border-box;
+      `;
+
+      const errorContent = document.createElement('div');
+      errorContent.style.cssText = `
+        background: var(--bg);
+        border: 2px solid #ef4444;
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 500px;
+        width: 100%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+      `;
+
+      const title = document.createElement('h3');
+      title.textContent = `${context} Failed`;
+      title.style.cssText = `
+        margin: 0 0 16px 0;
+        color: #ef4444;
+        font-size: 20px;
+        font-weight: 600;
+      `;
+
+      const message = document.createElement('p');
+      message.style.cssText = `
+        margin: 0 0 16px 0;
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.5;
+      `;
+
+      // Create user-friendly error message
+      let userMessage = 'An error occurred while saving your note. ';
+      let technicalDetails = '';
+
+      if (error.message) {
+        if (error.message.includes('customer ID')) {
+          userMessage += 'The app could not determine which customer this note belongs to. Please make sure you are viewing a specific customer page.';
+        } else if (error.message.includes('LocalStorage')) {
+          userMessage += 'Your device storage is full or unavailable. Please free up some space and try again.';
+        } else if (error.message.includes('SVG')) {
+          userMessage += 'There was a problem processing your drawing. Please try drawing again.';
+        } else if (error.message.includes('drawing data')) {
+          userMessage += 'No drawing was detected. Please make sure you have drawn something before saving.';
+        } else {
+          userMessage += 'Please try again. If the problem persists, try refreshing the page.';
+        }
+        technicalDetails = error.message;
+      } else {
+        userMessage += 'An unknown error occurred. Please try again.';
+        technicalDetails = 'Unknown error - no error message available';
+      }
+
+      message.textContent = userMessage;
+
+      // Technical details section (collapsible)
+      const detailsContainer = document.createElement('div');
+      detailsContainer.style.cssText = `
+        margin: 16px 0;
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px;
+        overflow: hidden;
+      `;
+
+      const detailsHeader = document.createElement('button');
+      detailsHeader.textContent = 'Show Technical Details';
+      detailsHeader.style.cssText = `
+        width: 100%;
+        padding: 12px;
+        background: rgba(255,255,255,0.05);
+        border: none;
+        color: var(--text);
+        font-size: 14px;
+        cursor: pointer;
+        text-align: left;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      `;
+
+      const detailsContent = document.createElement('div');
+      detailsContent.style.cssText = `
+        padding: 12px;
+        background: rgba(0,0,0,0.3);
+        font-family: monospace;
+        font-size: 12px;
+        color: #fbbf24;
+        white-space: pre-wrap;
+        word-break: break-word;
+        display: none;
+      `;
+
+      // Add current state information for debugging
+      const debugInfo = this.getDebugInfo();
+      detailsContent.textContent = `Error: ${technicalDetails}
+
+Debug Information:
+${debugInfo}
+
+Browser: ${navigator.userAgent}
+Time: ${new Date().toISOString()}`;
+
+      let detailsVisible = false;
+      detailsHeader.addEventListener('click', () => {
+        detailsVisible = !detailsVisible;
+        detailsContent.style.display = detailsVisible ? 'block' : 'none';
+        detailsHeader.textContent = detailsVisible ? 'Hide Technical Details' : 'Show Technical Details';
+      });
+
+      detailsContainer.appendChild(detailsHeader);
+      detailsContainer.appendChild(detailsContent);
+
+      // Buttons
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = `
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 20px;
+      `;
+
+      const copyButton = document.createElement('button');
+      copyButton.textContent = 'Copy Error Info';
+      copyButton.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+      `;
+
+      const closeButton = document.createElement('button');
+      closeButton.textContent = 'Close';
+      closeButton.style.cssText = `
+        background: var(--brand);
+        border: none;
+        color: white;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
+      // Copy functionality
+      copyButton.addEventListener('click', async () => {
+        const errorInfo = `Chikas DB - Save Error Report
+Time: ${new Date().toISOString()}
+Error: ${technicalDetails}
+
+${debugInfo}
+
+Browser: ${navigator.userAgent}`;
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(errorInfo);
+            copyButton.textContent = 'Copied!';
+            setTimeout(() => {
+              copyButton.textContent = 'Copy Error Info';
+            }, 2000);
+          } else {
+            // Fallback for older browsers/iPad
+            const textArea = document.createElement('textarea');
+            textArea.value = errorInfo;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            copyButton.textContent = 'Copied!';
+            setTimeout(() => {
+              copyButton.textContent = 'Copy Error Info';
+            }, 2000);
+          }
+        } catch (err) {
+          console.error('Failed to copy error info:', err);
+          copyButton.textContent = 'Copy Failed';
+          setTimeout(() => {
+            copyButton.textContent = 'Copy Error Info';
+          }, 2000);
+        }
+      });
+
+      closeButton.addEventListener('click', () => {
+        if (document.body.contains(errorModal)) {
+          document.body.removeChild(errorModal);
+        }
+      });
+
+      buttonContainer.appendChild(copyButton);
+      buttonContainer.appendChild(closeButton);
+
+      errorContent.appendChild(title);
+      errorContent.appendChild(message);
+      errorContent.appendChild(detailsContainer);
+      errorContent.appendChild(buttonContainer);
+      errorModal.appendChild(errorContent);
+
+      document.body.appendChild(errorModal);
+
+      // Auto-close after 30 seconds if user doesn't interact
+      setTimeout(() => {
+        if (document.body.contains(errorModal)) {
+          document.body.removeChild(errorModal);
+        }
+      }, 30000);
+    }
+
+    // Get debug information for error reporting
+    getDebugInfo() {
       const customerId = this.getCurrentCustomerId();
+      const hasStrokes = this.strokes && this.strokes.length > 0;
+      const strokeCount = hasStrokes ? this.strokes.length : 0;
       
-      
-      // Get existing notes for this customer
+      let svgStatus = 'Not tested';
+      try {
+        if (hasStrokes) {
+          const svgData = this.canvasToSVG();
+          svgStatus = svgData && svgData.trim().length > 0 ? `Success (${svgData.length} chars)` : 'Failed - empty result';
+        } else {
+          svgStatus = 'No strokes to convert';
+        }
+      } catch (error) {
+        svgStatus = `Failed - ${error.message}`;
+      }
+
+      let localStorageStatus = 'Available';
+      try {
+        localStorage.setItem('test', 'test');
+        localStorage.removeItem('test');
+      } catch (e) {
+        localStorageStatus = `Unavailable - ${e.message}`;
+      }
+
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
       const customerNotes = existingNotes[customerId] || [];
+
+      // iPad-specific checks
+      const isIPad = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isStandalone = window.navigator.standalone === true;
+      const memoryInfo = navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'Unknown';
       
-      if (this.editingNote) {
-        // Editing existing note - update it
-        
-        const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
-        if (noteIndex !== -1) {
-          customerNotes[noteIndex] = {
-            ...this.editingNote,
-            svg: svgData,
-            editedDate: new Date().toLocaleString()
-          };
-          
-          // Update localStorage
-          existingNotes[customerId] = customerNotes;
-          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-          
-          
-          // Refresh the notes list
-          loadExistingNotes(customerId);
-        }
-        
-        // Clear editing state
-        this.editingNote = null;
-      } else {
-        // Creating new note
-        const nextNoteNumber = customerNotes.length + 1;
-        
-        
-        const noteData = {
-          id: Date.now(),
-          svg: svgData,
-          date: new Date().toLocaleDateString(),
-          noteNumber: nextNoteNumber
-        };
-
-        // Store in localStorage
-        if (!existingNotes[customerId]) {
-          existingNotes[customerId] = [];
-        }
-        existingNotes[customerId].push(noteData);
-        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-
-
-        // Add note to UI
-        this.addNoteToUI(noteData);
-      }
-      
-      this.hide();
+      return `Customer ID: ${customerId}
+Stroke Count: ${strokeCount}
+SVG Generation: ${svgStatus}
+LocalStorage: ${localStorageStatus}
+Existing Notes: ${customerNotes.length}
+Canvas Visible: ${this.overlay ? this.overlay.style.display !== 'none' : 'No overlay'}
+Current URL: ${window.location.href}
+Editing Note: ${this.editingNote ? this.editingNote.id : 'None'}
+Device: ${isIPad ? 'iPad/iOS' : 'Other'}
+Standalone Mode: ${isStandalone}
+Device Memory: ${memoryInfo}
+Screen Size: ${window.screen.width}x${window.screen.height}
+Viewport Size: ${window.innerWidth}x${window.innerHeight}
+Touch Support: ${navigator.maxTouchPoints || 0} points`;
     }
 
     getCurrentCustomerId() {
+      
       // Try to get customer ID from URL parameters
       const urlParams = new URLSearchParams(window.location.search);
       const id = urlParams.get('id');
       if (id) {
+        console.log(`Found customer ID from URL: ${id}`);
         return id;
       }
       
       // Try to get from the current customer data if available
       if (window.currentCustomer && window.currentCustomer.id) {
+        console.log(`Found customer ID from window.currentCustomer: ${window.currentCustomer.id}`);
         return window.currentCustomer.id;
       }
       
@@ -4295,12 +4659,14 @@
       // Check if we're on a customer view page by looking for customer data in the DOM
       const currentId = window.currentCustomerId || window.customerId;
       if (currentId) {
+        console.log(`Found customer ID from window variables: ${currentId}`);
         return currentId;
       }
       
       // If editing, try to get from form
       const form = document.querySelector('form');
       if (form && form.dataset.customerId) {
+        console.log(`Found customer ID from form dataset: ${form.dataset.customerId}`);
         return form.dataset.customerId;
       }
       
@@ -4310,8 +4676,30 @@
                                document.querySelector('h2')?.textContent?.includes('newCustomer');
       
       if (isNewCustomerPage) {
+        console.log('Detected new customer page, using temp ID');
         return 'temp-new-customer';
       }
+      
+      // Try to find customer ID in the page title or header
+      const pageTitle = document.querySelector('h2')?.textContent;
+      if (pageTitle) {
+        const idMatch = pageTitle.match(/ID:\s*(\d+)/);
+        if (idMatch) {
+          console.log(`Found customer ID from page title: ${idMatch[1]}`);
+          return idMatch[1];
+        }
+      }
+      
+      // Try to find customer ID in any data attributes on the page
+      const customerElements = document.querySelectorAll('[data-customer-id]');
+      if (customerElements.length > 0) {
+        const foundId = customerElements[0].dataset.customerId;
+        console.log(`Found customer ID from data attribute: ${foundId}`);
+        return foundId;
+      }
+      
+      // Log warning about fallback
+      console.warn('Could not determine customer ID, using default fallback');
       
       // Default fallback
       return 'default';
@@ -4764,7 +5152,146 @@
   }
 
   // Global instance
+  // Initialize fullscreen notes canvas
   const fullscreenNotesCanvas = new FullscreenNotesCanvas();
+
+  // Debug utility for testing save functionality
+  window.debugNoteSave = {
+    testSave: () => {
+      console.log('=== Testing Note Save Functionality ===');
+      
+      // Check if canvas exists
+      const canvas = fullscreenNotesCanvas;
+      if (!canvas) {
+        console.error('❌ FullscreenNotesCanvas not found');
+        return;
+      }
+      
+      console.log('✅ FullscreenNotesCanvas found');
+      
+      // Check customer ID detection
+      const customerId = canvas.getCurrentCustomerId();
+      console.log(`Customer ID: ${customerId}`);
+      
+      if (customerId === 'default') {
+        console.warn('⚠️ Using default customer ID - this may cause save issues');
+      } else {
+        console.log('✅ Valid customer ID detected');
+      }
+      
+      // Check localStorage availability
+      try {
+        localStorage.setItem('test', 'test');
+        localStorage.removeItem('test');
+        console.log('✅ LocalStorage is available');
+      } catch (e) {
+        console.error('❌ LocalStorage is not available:', e);
+      }
+      
+      // Check if there are strokes to save
+      if (canvas.strokes && canvas.strokes.length > 0) {
+        console.log(`✅ Found ${canvas.strokes.length} strokes to save`);
+        
+        // Test SVG generation
+        try {
+          const svgData = canvas.canvasToSVG();
+          if (svgData && svgData.trim().length > 0) {
+            console.log('✅ SVG generation successful');
+            console.log(`SVG length: ${svgData.length} characters`);
+          } else {
+            console.error('❌ SVG generation failed - empty result');
+          }
+        } catch (error) {
+          console.error('❌ SVG generation failed:', error);
+        }
+      } else {
+        console.warn('⚠️ No strokes found - nothing to save');
+      }
+      
+      // Check for existing notes
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const customerNotes = existingNotes[customerId] || [];
+      console.log(`Existing notes for customer: ${customerNotes.length}`);
+      
+      console.log('=== End Test ===');
+    },
+    
+    simulateSave: async () => {
+      console.log('=== Simulating Save Operation ===');
+      
+      const canvas = fullscreenNotesCanvas;
+      if (!canvas || !canvas.strokes || canvas.strokes.length === 0) {
+        console.error('❌ No canvas or strokes available for simulation');
+        return;
+      }
+      
+      try {
+        await canvas.saveNote();
+        console.log('✅ Save simulation completed successfully');
+      } catch (error) {
+        console.error('❌ Save simulation failed:', error);
+      }
+    },
+    
+    checkDialog: () => {
+      const dialogs = document.querySelectorAll('.save-note-prompt');
+      console.log(`Found ${dialogs.length} save dialogs on page`);
+      
+      if (dialogs.length > 1) {
+        console.warn('⚠️ Multiple save dialogs detected - this could cause issues');
+      }
+      
+      return dialogs.length;
+    },
+    
+    clearDialogs: () => {
+      const dialogs = document.querySelectorAll('.save-note-prompt');
+      dialogs.forEach(dialog => {
+        if (document.body.contains(dialog)) {
+          document.body.removeChild(dialog);
+        }
+      });
+      console.log(`Cleared ${dialogs.length} save dialogs`);
+    },
+    
+    // Test the error popup system
+    testErrorPopup: () => {
+      const testError = new Error('This is a test error to verify the popup system works on iPad');
+      fullscreenNotesCanvas.showErrorPopup(testError, 'Test Error');
+    },
+    
+    // Force an error to test error handling
+    forceError: async () => {
+      console.log('Forcing an error to test error handling...');
+      try {
+        // Temporarily break localStorage to simulate an error
+        const originalSetItem = localStorage.setItem;
+        localStorage.setItem = () => {
+          throw new Error('Simulated localStorage error for testing');
+        };
+        
+        await fullscreenNotesCanvas.saveNote();
+        
+        // Restore localStorage
+        localStorage.setItem = originalSetItem;
+      } catch (error) {
+        // Restore localStorage in case of any issues
+        if (localStorage.setItem.toString().includes('Simulated')) {
+          localStorage.setItem = Storage.prototype.setItem;
+        }
+        console.log('Error successfully caught and displayed');
+      }
+    }
+  };
+
+  // Global debugging flag
+  window.debugNoteCanvas = false;
+
+  // Helper function to toggle debug mode
+  window.toggleNoteDebug = () => {
+    window.debugNoteCanvas = !window.debugNoteCanvas;
+    console.log(`Note canvas debugging ${window.debugNoteCanvas ? 'enabled' : 'disabled'}`);
+  };
 
   // Function to retroactively mark migrated notes with the isMigrated flag
   function markExistingMigratedNotes() {
