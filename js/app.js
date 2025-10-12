@@ -4273,12 +4273,22 @@
         
         console.log(`Saving note for customer ID: ${customerId}`);
         
-        // Check localStorage availability
+        // Check localStorage availability and space
         try {
           localStorage.setItem('test', 'test');
           localStorage.removeItem('test');
         } catch (e) {
           throw new Error('LocalStorage is not available or is full');
+        }
+        
+        // Check localStorage usage and available space (iPad-specific)
+        const storageInfo = this.getStorageInfo();
+        console.log('Storage info:', storageInfo);
+        
+        // If storage is getting full, try to clean up old data
+        if (storageInfo.isNearLimit) {
+          console.log('Storage near limit, attempting cleanup...');
+          await this.cleanupOldData();
         }
         
         // Get existing notes for this customer
@@ -4326,12 +4336,12 @@
             noteNumber: nextNoteNumber
           };
 
-          // Store in localStorage
-          if (!existingNotes[customerId]) {
-            existingNotes[customerId] = [];
+          // Use enhanced save with quota handling
+          const saveSuccess = await this.saveNoteWithQuotaHandling(noteData, customerId, existingNotes, customerNotes);
+          
+          if (!saveSuccess) {
+            throw new Error('Failed to save note after multiple attempts');
           }
-          existingNotes[customerId].push(noteData);
-          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
 
           console.log('New note created successfully');
 
@@ -4623,10 +4633,16 @@ Browser: ${navigator.userAgent}`;
       const isStandalone = window.navigator.standalone === true;
       const memoryInfo = navigator.deviceMemory ? `${navigator.deviceMemory}GB` : 'Unknown';
       
+      // Storage information
+      const storageInfo = this.getStorageInfo();
+      
       return `Customer ID: ${customerId}
 Stroke Count: ${strokeCount}
 SVG Generation: ${svgStatus}
 LocalStorage: ${localStorageStatus}
+Storage Usage: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)
+Storage Items: ${storageInfo.itemCount}
+Near Limit: ${storageInfo.isNearLimit ? 'YES' : 'NO'}
 Existing Notes: ${customerNotes.length}
 Canvas Visible: ${this.overlay ? this.overlay.style.display !== 'none' : 'No overlay'}
 Current URL: ${window.location.href}
@@ -4637,6 +4653,215 @@ Device Memory: ${memoryInfo}
 Screen Size: ${window.screen.width}x${window.screen.height}
 Viewport Size: ${window.innerWidth}x${window.innerHeight}
 Touch Support: ${navigator.maxTouchPoints || 0} points`;
+    }
+
+    // Get storage usage information
+    getStorageInfo() {
+      let totalSize = 0;
+      let itemCount = 0;
+      let largestItems = [];
+      
+      try {
+        for (let key in localStorage) {
+          if (localStorage.hasOwnProperty(key)) {
+            const value = localStorage.getItem(key);
+            const size = value ? value.length : 0;
+            totalSize += size;
+            itemCount++;
+            
+            largestItems.push({ key, size });
+          }
+        }
+        
+        // Sort by size, largest first
+        largestItems.sort((a, b) => b.size - a.size);
+        largestItems = largestItems.slice(0, 10); // Top 10 largest items
+        
+        // Estimate if we're near the limit (iOS Safari typically has 5-10MB limit)
+        const estimatedLimit = 10 * 1024 * 1024; // 10MB estimate
+        const usagePercentage = (totalSize / estimatedLimit) * 100;
+        const isNearLimit = usagePercentage > 80; // 80% threshold
+        
+        return {
+          totalSize,
+          totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
+          itemCount,
+          usagePercentage: usagePercentage.toFixed(1),
+          isNearLimit,
+          largestItems: largestItems.slice(0, 5) // Top 5 for logging
+        };
+      } catch (error) {
+        return {
+          totalSize: 0,
+          totalSizeMB: '0.00',
+          itemCount: 0,
+          usagePercentage: '0.0',
+          isNearLimit: false,
+          largestItems: [],
+          error: error.message
+        };
+      }
+    }
+
+    // Clean up old data to free space
+    async cleanupOldData() {
+      console.log('Starting storage cleanup...');
+      let freedSpace = 0;
+      
+      try {
+        // 1. Clean up old temporary data
+        const keysToRemove = [];
+        for (let key in localStorage) {
+          if (localStorage.hasOwnProperty(key)) {
+            // Remove old test keys
+            if (key.startsWith('test') || key.startsWith('temp')) {
+              keysToRemove.push(key);
+            }
+            // Remove old image cache keys (if any)
+            if (key.startsWith('chikas_image_') && Math.random() < 0.1) { // Remove 10% randomly
+              keysToRemove.push(key);
+            }
+          }
+        }
+        
+        keysToRemove.forEach(key => {
+          const size = localStorage.getItem(key)?.length || 0;
+          localStorage.removeItem(key);
+          freedSpace += size;
+        });
+        
+        // 2. Compress customer notes by removing redundant data
+        const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        let notesModified = false;
+        
+        for (let customerId in customerNotes) {
+          const notes = customerNotes[customerId];
+          if (Array.isArray(notes)) {
+            // Keep only the most recent 50 notes per customer
+            if (notes.length > 50) {
+              // Sort by creation time (newer first) and keep top 50
+              notes.sort((a, b) => {
+                const timeA = a.id || 0;
+                const timeB = b.id || 0;
+                return timeB - timeA;
+              });
+              customerNotes[customerId] = notes.slice(0, 50);
+              notesModified = true;
+              console.log(`Trimmed notes for customer ${customerId} from ${notes.length} to 50`);
+            }
+          }
+        }
+        
+        if (notesModified) {
+          const oldSize = localStorage.getItem('customerNotes')?.length || 0;
+          localStorage.setItem('customerNotes', JSON.stringify(customerNotes));
+          const newSize = localStorage.getItem('customerNotes')?.length || 0;
+          freedSpace += Math.max(0, oldSize - newSize);
+        }
+        
+        console.log(`Cleanup completed. Freed approximately ${(freedSpace / 1024).toFixed(1)}KB`);
+        return freedSpace;
+        
+      } catch (error) {
+        console.error('Error during cleanup:', error);
+        return 0;
+      }
+    }
+
+    // Enhanced save with quota handling
+    async saveNoteWithQuotaHandling(noteData, customerId, existingNotes, customerNotes) {
+      const maxRetries = 3;
+      let attempt = 0;
+      
+      while (attempt < maxRetries) {
+        try {
+          // Try to save
+          if (!existingNotes[customerId]) {
+            existingNotes[customerId] = [];
+          }
+          existingNotes[customerId].push(noteData);
+          
+          const dataToSave = JSON.stringify(existingNotes);
+          localStorage.setItem('customerNotes', dataToSave);
+          
+          console.log(`Note saved successfully on attempt ${attempt + 1}`);
+          return true;
+          
+        } catch (error) {
+          attempt++;
+          console.log(`Save attempt ${attempt} failed:`, error.message);
+          
+          if (error.message.includes('quota') || error.message.includes('QuotaExceededError')) {
+            if (attempt < maxRetries) {
+              console.log(`Quota exceeded, attempting cleanup before retry ${attempt + 1}...`);
+              
+              // Progressive cleanup strategies
+              if (attempt === 1) {
+                // First retry: basic cleanup
+                await this.cleanupOldData();
+              } else if (attempt === 2) {
+                // Second retry: more aggressive cleanup
+                await this.aggressiveCleanup();
+              }
+              
+              // Wait a bit before retry
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } else {
+              // Final attempt failed, show storage full error
+              throw new Error(`Storage quota exceeded. Please free up space by:\n1. Clearing browser data\n2. Deleting old notes\n3. Restarting the app\n\nStorage used: ${this.getStorageInfo().totalSizeMB}MB`);
+            }
+          } else {
+            // Non-quota error, don't retry
+            throw error;
+          }
+        }
+      }
+      
+      return false;
+    }
+
+    // More aggressive cleanup for critical situations
+    async aggressiveCleanup() {
+      console.log('Performing aggressive cleanup...');
+      
+      try {
+        // Remove all non-essential localStorage items
+        const essentialKeys = ['customerNotes'];
+        const keysToRemove = [];
+        
+        for (let key in localStorage) {
+          if (localStorage.hasOwnProperty(key) && !essentialKeys.includes(key)) {
+            keysToRemove.push(key);
+          }
+        }
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+        console.log(`Aggressive cleanup removed ${keysToRemove.length} non-essential items`);
+        
+        // Also limit notes per customer more aggressively
+        const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        let modified = false;
+        
+        for (let customerId in customerNotes) {
+          const notes = customerNotes[customerId];
+          if (Array.isArray(notes) && notes.length > 20) {
+            // Keep only 20 most recent notes per customer
+            notes.sort((a, b) => (b.id || 0) - (a.id || 0));
+            customerNotes[customerId] = notes.slice(0, 20);
+            modified = true;
+          }
+        }
+        
+        if (modified) {
+          localStorage.setItem('customerNotes', JSON.stringify(customerNotes));
+        }
+        
+      } catch (error) {
+        console.error('Error during aggressive cleanup:', error);
+      }
     }
 
     getCurrentCustomerId() {
@@ -5281,6 +5506,43 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         }
         console.log('Error successfully caught and displayed');
       }
+    },
+    
+    // Check storage usage
+    checkStorage: () => {
+      const storageInfo = fullscreenNotesCanvas.getStorageInfo();
+      console.log('=== Storage Information ===');
+      console.log(`Total Usage: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)`);
+      console.log(`Items: ${storageInfo.itemCount}`);
+      console.log(`Near Limit: ${storageInfo.isNearLimit ? 'YES ⚠️' : 'NO ✅'}`);
+      
+      if (storageInfo.largestItems && storageInfo.largestItems.length > 0) {
+        console.log('\nLargest items:');
+        storageInfo.largestItems.forEach((item, index) => {
+          const sizeMB = (item.size / (1024 * 1024)).toFixed(2);
+          console.log(`${index + 1}. ${item.key}: ${sizeMB}MB`);
+        });
+      }
+      
+      return storageInfo;
+    },
+    
+    // Clean up storage
+    cleanStorage: async () => {
+      console.log('=== Starting Storage Cleanup ===');
+      const freedSpace = await fullscreenNotesCanvas.cleanupOldData();
+      const storageInfo = fullscreenNotesCanvas.getStorageInfo();
+      console.log(`Cleanup completed. Storage now: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)`);
+      return { freedSpace, newStorageInfo: storageInfo };
+    },
+    
+    // Aggressive cleanup
+    aggressiveClean: async () => {
+      console.log('=== Starting Aggressive Cleanup ===');
+      await fullscreenNotesCanvas.aggressiveCleanup();
+      const storageInfo = fullscreenNotesCanvas.getStorageInfo();
+      console.log(`Aggressive cleanup completed. Storage now: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)`);
+      return storageInfo;
     }
   };
 
