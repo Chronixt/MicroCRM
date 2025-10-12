@@ -4291,9 +4291,8 @@
           await this.cleanupOldData();
         }
         
-        // Get existing notes for this customer
-        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-        const customerNotes = existingNotes[customerId] || [];
+        // Get existing notes for this customer using hybrid loading
+        const allExistingNotes = await this.loadNotesHybrid(customerId);
         
         if (this.editingNote) {
           // Editing existing note - update it
@@ -4350,12 +4349,16 @@
           this.editingNote = null;
         } else {
           // Creating new note
-          const nextNoteNumber = customerNotes.length + 1;
+          const nextNoteNumber = allExistingNotes.length + 1;
           
-          console.log(`Creating new note #${nextNoteNumber}`);
+          console.log(`Creating new note #${nextNoteNumber} (based on ${allExistingNotes.length} existing notes)`);
+          
+          // Generate unique ID that won't conflict with IndexedDB auto-increment
+          // Use timestamp + random number to avoid conflicts
+          const uniqueId = Date.now() + Math.floor(Math.random() * 1000);
           
           const noteData = {
-            id: Date.now(),
+            id: uniqueId,
             svg: svgData,
             date: new Date().toLocaleDateString(),
             noteNumber: nextNoteNumber
@@ -4370,9 +4373,25 @@
 
           console.log(`New note saved successfully using ${saveResult.method}`);
 
-          // Add note to UI
+          // Add note to UI immediately with the correct data
           try {
+            // If saved to IndexedDB, update the noteData with the new ID
+            if (saveResult.method === 'indexeddb' && saveResult.id) {
+              noteData.id = saveResult.id;
+              noteData.source = 'indexeddb-fallback';
+            }
+            
             this.addNoteToUI(noteData);
+            
+            // Also refresh the full notes list to ensure consistency
+            setTimeout(async () => {
+              try {
+                await this.refreshNotesDisplay(customerId);
+              } catch (refreshError) {
+                console.warn('Failed to refresh notes display:', refreshError);
+              }
+            }, 100);
+            
           } catch (uiError) {
             console.warn('Note saved but failed to update UI:', uiError);
             // Don't throw - the save was successful
@@ -4947,7 +4966,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             date: noteData.date,
             noteNumber: noteData.noteNumber,
             createdAt: new Date().toISOString(),
-            source: 'indexeddb-fallback' // Mark as fallback save
+            source: 'indexeddb-fallback', // Mark as fallback save
+            originalId: noteData.id // Store the original ID for reference
           };
           
           console.log('Attempting to save note to IndexedDB...', noteForDB);
@@ -4957,6 +4977,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Update the noteData with the database ID for UI consistency
           noteData.id = savedId;
           noteData.source = 'indexeddb-fallback';
+          noteData.originalId = noteForDB.originalId;
           
           return { method: 'indexeddb', success: true, id: savedId };
           
@@ -5887,6 +5908,67 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         
       } catch (error) {
         console.error('❌ Edit test failed:', error);
+        return { error: error.message };
+      }
+    },
+    
+    // Debug note numbering issues
+    debugNoteNumbers: async () => {
+      console.log('=== Debugging Note Numbers ===');
+      
+      const canvas = fullscreenNotesCanvas;
+      const customerId = canvas.getCurrentCustomerId();
+      
+      if (!customerId || customerId === 'default') {
+        console.error('❌ Cannot debug - no valid customer ID');
+        return;
+      }
+      
+      try {
+        // Check localStorage notes
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const localStorageNotes = existingNotes[customerId] || [];
+        
+        console.log(`📦 LocalStorage notes (${localStorageNotes.length}):`);
+        localStorageNotes.forEach((note, index) => {
+          console.log(`  ${index + 1}. ID: ${note.id}, Note #: ${note.noteNumber}, Source: ${note.source || 'localStorage'}`);
+        });
+        
+        // Check IndexedDB notes
+        const indexedDBNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        
+        console.log(`🗄️ IndexedDB notes (${indexedDBNotes.length}):`);
+        indexedDBNotes.forEach((note, index) => {
+          console.log(`  ${index + 1}. ID: ${note.id}, Note #: ${note.noteNumber}, Source: ${note.source || 'indexeddb'}`);
+        });
+        
+        // Check hybrid loading
+        const allNotes = await canvas.loadNotesHybrid(customerId);
+        
+        console.log(`🔄 Hybrid loaded notes (${allNotes.length}):`);
+        allNotes.forEach((note, index) => {
+          console.log(`  ${index + 1}. ID: ${note.id}, Note #: ${note.noteNumber}, Source: ${note.source}`);
+        });
+        
+        // Check for duplicates or numbering issues
+        const noteNumbers = allNotes.map(note => note.noteNumber);
+        const duplicateNumbers = noteNumbers.filter((num, index) => noteNumbers.indexOf(num) !== index);
+        
+        if (duplicateNumbers.length > 0) {
+          console.warn(`⚠️ Duplicate note numbers found: ${duplicateNumbers.join(', ')}`);
+        } else {
+          console.log('✅ No duplicate note numbers found');
+        }
+        
+        return {
+          localStorage: localStorageNotes.length,
+          indexedDB: indexedDBNotes.length,
+          hybrid: allNotes.length,
+          duplicates: duplicateNumbers
+        };
+        
+      } catch (error) {
+        console.error('❌ Debug failed:', error);
         return { error: error.message };
       }
     }
