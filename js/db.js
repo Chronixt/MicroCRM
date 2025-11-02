@@ -576,6 +576,61 @@
     // Export notes from localStorage (new SVG notes)
     const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
     
+    // Export notes from IndexedDB and merge with localStorage notes
+    const indexedDBNotes = await getAllNotes();
+    const mergedCustomerNotes = { ...customerNotes };
+    
+    indexedDBNotes.forEach(note => {
+      if (note && note.customerId !== undefined && note.customerId !== null) {
+        const customerId = String(note.customerId);
+        
+        // Initialize array if it doesn't exist
+        if (!mergedCustomerNotes[customerId]) {
+          mergedCustomerNotes[customerId] = [];
+        }
+        
+        // Check if note with same ID already exists (from localStorage)
+        const existingIndex = mergedCustomerNotes[customerId].findIndex(n => n.id === note.id);
+        
+        if (existingIndex >= 0) {
+          // Merge: prefer the note with more data (longer SVG or more recent)
+          const existing = mergedCustomerNotes[customerId][existingIndex];
+          const existingSvgSize = (existing.svg || '').length;
+          const indexedDBSvgSize = (note.svg || '').length;
+          
+          // If IndexedDB version has more data, replace it
+          if (indexedDBSvgSize > existingSvgSize) {
+            mergedCustomerNotes[customerId][existingIndex] = note;
+          } else {
+            // Otherwise keep existing but ensure it has customerId
+            if (!existing.customerId) {
+              existing.customerId = note.customerId;
+            }
+          }
+        } else {
+          // Add new note, ensure it has customerId
+          const noteToAdd = { ...note };
+          if (!noteToAdd.customerId) {
+            noteToAdd.customerId = note.customerId;
+          }
+          mergedCustomerNotes[customerId].push(noteToAdd);
+        }
+      } else {
+        console.warn('Note from IndexedDB missing customerId:', note);
+      }
+    });
+    
+    // Also ensure all localStorage notes have customerId field
+    for (const customerId in mergedCustomerNotes) {
+      if (mergedCustomerNotes[customerId]) {
+        mergedCustomerNotes[customerId].forEach(note => {
+          if (!note.customerId) {
+            note.customerId = parseInt(customerId);
+          }
+        });
+      }
+    }
+    
     // Export images in chunks to avoid memory issues
     const images = await getAllImages();
     
@@ -616,7 +671,7 @@
       },
       customers,
       appointments,
-      customerNotes, // Include the new SVG notes from localStorage
+      customerNotes: mergedCustomerNotes, // Include notes from both localStorage and IndexedDB
       images: imagesSerialized,
     };
   }
@@ -685,13 +740,13 @@
       };
       
       // Now save the merged note
-      return runTransaction(['notes'], 'readwrite', (notes) => (
-        new Promise((resolve, reject) => {
+    return runTransaction(['notes'], 'readwrite', (notes) => (
+      new Promise((resolve, reject) => {
           const req = notes.put(mergedNote);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        })
-      ));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
     });
   }
 
@@ -1355,7 +1410,69 @@
       
       // Export notes from localStorage (new SVG notes)
       const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      if (progressCallback) progressCallback(`Exported notes for ${Object.keys(customerNotes).length} customers`, 60);
+      if (progressCallback) progressCallback(`Exported notes from localStorage for ${Object.keys(customerNotes).length} customers`, 55);
+      
+      // Export notes from IndexedDB
+      const indexedDBNotes = await getAllNotes();
+      if (progressCallback) progressCallback(`Exported ${indexedDBNotes.length} notes from IndexedDB`, 65);
+      
+      // Merge IndexedDB notes into customerNotes structure
+      // IndexedDB notes already have customerId field, so we can organize them by customerId
+      const mergedCustomerNotes = { ...customerNotes };
+      
+      indexedDBNotes.forEach(note => {
+        if (note && note.customerId !== undefined && note.customerId !== null) {
+          const customerId = String(note.customerId);
+          
+          // Initialize array if it doesn't exist
+          if (!mergedCustomerNotes[customerId]) {
+            mergedCustomerNotes[customerId] = [];
+          }
+          
+          // Check if note with same ID already exists (from localStorage)
+          const existingIndex = mergedCustomerNotes[customerId].findIndex(n => n.id === note.id);
+          
+          if (existingIndex >= 0) {
+            // Merge: prefer the note with more data (longer SVG or more recent)
+            const existing = mergedCustomerNotes[customerId][existingIndex];
+            const existingSvgSize = (existing.svg || '').length;
+            const indexedDBSvgSize = (note.svg || '').length;
+            
+            // If IndexedDB version has more data, replace it
+            if (indexedDBSvgSize > existingSvgSize) {
+              mergedCustomerNotes[customerId][existingIndex] = note;
+            } else {
+              // Otherwise keep existing but ensure it has customerId
+              if (!existing.customerId) {
+                existing.customerId = note.customerId;
+              }
+            }
+          } else {
+            // Add new note, ensure it has customerId
+            const noteToAdd = { ...note };
+            if (!noteToAdd.customerId) {
+              noteToAdd.customerId = note.customerId;
+            }
+            mergedCustomerNotes[customerId].push(noteToAdd);
+          }
+        } else {
+          console.warn('Note from IndexedDB missing customerId:', note);
+        }
+      });
+      
+      // Also ensure all localStorage notes have customerId field
+      for (const customerId in mergedCustomerNotes) {
+        if (mergedCustomerNotes[customerId]) {
+          mergedCustomerNotes[customerId].forEach(note => {
+            if (!note.customerId) {
+              note.customerId = parseInt(customerId);
+            }
+          });
+        }
+      }
+      
+      const totalNotesCount = Object.values(mergedCustomerNotes).reduce((sum, notes) => sum + (notes?.length || 0), 0);
+      if (progressCallback) progressCallback(`Merged notes: ${totalNotesCount} total notes for ${Object.keys(mergedCustomerNotes).length} customers`, 75);
       
       if (progressCallback) progressCallback('Creating backup file...', 90);
       
@@ -1368,7 +1485,7 @@
         },
         customers,
         appointments,
-        customerNotes, // Include the new SVG notes from localStorage
+        customerNotes: mergedCustomerNotes, // Include notes from both localStorage and IndexedDB
         images: [] // Empty images array
       };
       
@@ -1406,7 +1523,63 @@
       
       // Export notes from localStorage (new SVG notes)
       const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      if (progressCallback) progressCallback(`Exported notes for ${Object.keys(customerNotes).length} customers`, 25);
+      if (progressCallback) progressCallback(`Exported notes from localStorage for ${Object.keys(customerNotes).length} customers`, 23);
+      
+      // Export notes from IndexedDB and merge with localStorage notes
+      const indexedDBNotes = await getAllNotes();
+      const mergedCustomerNotes = { ...customerNotes };
+      
+      indexedDBNotes.forEach(note => {
+        if (note && note.customerId !== undefined && note.customerId !== null) {
+          const customerId = String(note.customerId);
+          
+          // Initialize array if it doesn't exist
+          if (!mergedCustomerNotes[customerId]) {
+            mergedCustomerNotes[customerId] = [];
+          }
+          
+          // Check if note with same ID already exists (from localStorage)
+          const existingIndex = mergedCustomerNotes[customerId].findIndex(n => n.id === note.id);
+          
+          if (existingIndex >= 0) {
+            // Merge: prefer the note with more data (longer SVG or more recent)
+            const existing = mergedCustomerNotes[customerId][existingIndex];
+            const existingSvgSize = (existing.svg || '').length;
+            const indexedDBSvgSize = (note.svg || '').length;
+            
+            // If IndexedDB version has more data, replace it
+            if (indexedDBSvgSize > existingSvgSize) {
+              mergedCustomerNotes[customerId][existingIndex] = note;
+            } else {
+              // Otherwise keep existing but ensure it has customerId
+              if (!existing.customerId) {
+                existing.customerId = note.customerId;
+              }
+            }
+          } else {
+            // Add new note, ensure it has customerId
+            const noteToAdd = { ...note };
+            if (!noteToAdd.customerId) {
+              noteToAdd.customerId = note.customerId;
+            }
+            mergedCustomerNotes[customerId].push(noteToAdd);
+          }
+        }
+      });
+      
+      // Also ensure all localStorage notes have customerId field
+      for (const customerId in mergedCustomerNotes) {
+        if (mergedCustomerNotes[customerId]) {
+          mergedCustomerNotes[customerId].forEach(note => {
+            if (!note.customerId) {
+              note.customerId = parseInt(customerId);
+            }
+          });
+        }
+      }
+      
+      const totalNotesCount = Object.values(mergedCustomerNotes).reduce((sum, notes) => sum + (notes?.length || 0), 0);
+      if (progressCallback) progressCallback(`Merged ${indexedDBNotes.length} IndexedDB notes: ${totalNotesCount} total notes for ${Object.keys(mergedCustomerNotes).length} customers`, 25);
       
       // Get image count first
       const images = await getAllImages();
@@ -1433,9 +1606,9 @@
       jsonParts.push(JSON.stringify(appointments, null, 2));
       jsonParts.push(',\n');
       
-      // Add customer notes
+      // Add customer notes (merged from both localStorage and IndexedDB)
       jsonParts.push('  "customerNotes": ');
-      jsonParts.push(JSON.stringify(customerNotes, null, 2));
+      jsonParts.push(JSON.stringify(mergedCustomerNotes, null, 2));
       jsonParts.push(',\n');
       
       // Process images in very small chunks and add to JSON directly

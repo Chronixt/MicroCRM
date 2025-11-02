@@ -1,0 +1,30 @@
+NOTES MISSING CUSTOMER ID - ANALYSIS REPORT
+===========================================
+
+Total notes missing customerId field: 62
+
+All notes in the backup file are missing the customerId field within the note object itself.
+The notes are stored in customerNotes object where:
+- The KEY is the customerId (e.g., "115", "132", "159")
+- But the note OBJECT doesn't have a customerId field
+
+This is causing issues because:
+1. When updating notes, the code expects notes to have a customerId field
+2. The scan function tries to extract customerId from note.customerId
+3. Without this field, notes can't be properly associated during recovery/updates
+
+Affected Customer IDs (with notes missing customerId):
+115, 132, 159, 162, 166, 167, 205, 206, 212, 213, 215, 219, 233, 246, 248, 250, 255, 256, 
+288, 289, 294, 317, 326, 377, 379, 381, 388, 403, 405, 406, 446, 473, 477, 484, 514, 516, 
+536, 549, 562, 563
+
+Most affected customer: 549 (has 6 notes missing customerId)
+
+Note date formats also vary:
+- "2025/9/1"
+- "1/9/2025"  
+- "24/9/2025"
+- "2025/9/5"
+
+This inconsistency in date formats may also be contributing to display issues.
+
