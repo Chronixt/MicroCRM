@@ -2622,8 +2622,86 @@
         const formatDate = (dateStr) => {
           if (!dateStr) return 'Unknown date';
           try {
-            const date = new Date(dateStr);
-            if (isNaN(date.getTime())) return dateStr;
+            // Handle various date formats
+            let date;
+            if (typeof dateStr === 'string') {
+              // Try to parse locale date strings that might have been stored
+              // Examples: "12/10/2025", "12/10/2025, 2:30:00 PM", "Dec 10, 2025", etc.
+              
+              // First, try parsing as ISO date (most reliable)
+              const isoDate = new Date(dateStr);
+              if (!isNaN(isoDate.getTime())) {
+                // Check if it's a reasonable date (not too far in future)
+                const now = new Date();
+                const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                if (isoDate <= oneYearFromNow && isoDate >= new Date(2020, 0, 1)) {
+                  date = isoDate;
+                }
+              }
+              
+              // If ISO parsing failed or date seems invalid, try manual parsing
+              if (!date || isNaN(date.getTime())) {
+                // Try MM/DD/YYYY format (US locale)
+                const usDateMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                if (usDateMatch) {
+                  const [, month, day, year] = usDateMatch;
+                  const testDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                  // Validate: month should be 1-12, day should be 1-31
+                  if (parseInt(month) >= 1 && parseInt(month) <= 12 && 
+                      parseInt(day) >= 1 && parseInt(day) <= 31 &&
+                      parseInt(year) >= 2020 && parseInt(year) <= new Date().getFullYear() + 1) {
+                    const now = new Date();
+                    const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                    if (testDate <= oneYearFromNow) {
+                      date = testDate;
+                    }
+                  }
+                }
+                
+                // If still no date, try DD/MM/YYYY format (many locales)
+                if (!date || isNaN(date.getTime())) {
+                  const euDateMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                  if (euDateMatch) {
+                    const [, day, month, year] = euDateMatch;
+                    const testDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    if (parseInt(month) >= 1 && parseInt(month) <= 12 && 
+                        parseInt(day) >= 1 && parseInt(day) <= 31 &&
+                        parseInt(year) >= 2020 && parseInt(year) <= new Date().getFullYear() + 1) {
+                      const now = new Date();
+                      const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                      if (testDate <= oneYearFromNow) {
+                        date = testDate;
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // Last resort: try standard Date parsing
+              if (!date || isNaN(date.getTime())) {
+                date = new Date(dateStr);
+              }
+            } else {
+              date = new Date(dateStr);
+            }
+            
+            if (isNaN(date.getTime())) {
+              return `${String(dateStr).substring(0, 30)} (invalid date)`;
+            }
+            
+            // Final validation: date should be reasonable
+            const now = new Date();
+            const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+            const minDate = new Date(2020, 0, 1);
+            
+            if (date > oneYearFromNow) {
+              return `${dateStr} (future date?)`;
+            }
+            
+            if (date < minDate) {
+              return `${dateStr} (old date?)`;
+            }
+            
             return date.toLocaleString('en-US', {
               year: 'numeric',
               month: 'short',
@@ -2631,8 +2709,8 @@
               hour: '2-digit',
               minute: '2-digit'
             });
-          } catch {
-            return dateStr;
+          } catch (e) {
+            return `${String(dateStr).substring(0, 30)} (parse error)`;
           }
         };
 
@@ -2642,17 +2720,86 @@
             .map(item => {
               const note = getNoteFn(item);
               const editedDate = note?.editedDate || note?.date || note?.createdAt || '';
+              
+              // Extract customerId from multiple possible locations
+              let customerId = item.customerId;
+              if (customerId === undefined && note) {
+                customerId = note.customerId;
+              }
+              // Ensure it's a number if it exists
+              if (customerId !== undefined && customerId !== null) {
+                customerId = parseInt(customerId);
+                if (isNaN(customerId)) {
+                  customerId = undefined;
+                }
+              }
+              
+              // If customerId is still undefined, log for debugging but continue
+              if (customerId === undefined || customerId === null) {
+                console.warn('Note with undefined customerId:', { 
+                  item, 
+                  note, 
+                  noteId: note?.id,
+                  itemCustomerId: item.customerId,
+                  noteCustomerId: note?.customerId
+                });
+              }
+              
+              // Try one more time to get customerId from the note structure itself
+              if (customerId === undefined && note) {
+                // Some notes might have customerId nested differently
+                customerId = note.customerId;
+                if (customerId !== undefined && customerId !== null) {
+                  customerId = parseInt(customerId);
+                  if (isNaN(customerId)) customerId = undefined;
+                }
+              }
+              
               return {
-                noteId: note?.id,
-                customerId: item.customerId || note?.customerId,
-                customerName: getCustomerName(item.customerId || note?.customerId),
+                noteId: note?.id || item.noteId,
+                customerId: customerId,
+                customerName: customerId !== undefined && customerId !== null ? getCustomerName(customerId) : 'Unknown Customer (Missing Customer ID)',
                 editedDate: editedDate,
                 note: note
               };
             })
+            .filter(item => item.noteId !== undefined) // Filter out items without noteId
             .sort((a, b) => {
-              const dateA = a.editedDate ? new Date(a.editedDate).getTime() : 0;
-              const dateB = b.editedDate ? new Date(b.editedDate).getTime() : 0;
+              // Handle date comparison more carefully
+              let dateA = 0;
+              let dateB = 0;
+              
+              if (a.editedDate) {
+                try {
+                  const d = new Date(a.editedDate);
+                  if (!isNaN(d.getTime())) {
+                    // Check if date seems reasonable (not too far in future)
+                    const now = new Date();
+                    const maxFutureDate = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                    if (d <= maxFutureDate) {
+                      dateA = d.getTime();
+                    }
+                  }
+                } catch (e) {
+                  // Invalid date, use 0
+                }
+              }
+              
+              if (b.editedDate) {
+                try {
+                  const d = new Date(b.editedDate);
+                  if (!isNaN(d.getTime())) {
+                    const now = new Date();
+                    const maxFutureDate = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                    if (d <= maxFutureDate) {
+                      dateB = d.getTime();
+                    }
+                  }
+                } catch (e) {
+                  // Invalid date, use 0
+                }
+              }
+              
               return dateB - dateA; // Most recent first
             })
             .slice(0, 10);
