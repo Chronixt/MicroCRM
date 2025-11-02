@@ -2625,53 +2625,84 @@
             // Handle various date formats
             let date;
             if (typeof dateStr === 'string') {
-              // Try to parse locale date strings that might have been stored
-              // Examples: "12/10/2025", "12/10/2025, 2:30:00 PM", "Dec 10, 2025", etc.
+              // First priority: try yyyy-mm-dd format (our standard format)
+              const yyyymmddMatch = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+              if (yyyymmddMatch) {
+                const [, year, month, day] = yyyymmddMatch;
+                const testDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                if (!isNaN(testDate.getTime())) {
+                  const now = new Date();
+                  const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                  if (testDate <= oneYearFromNow && testDate >= new Date(2020, 0, 1)) {
+                    date = testDate;
+                  }
+                }
+              }
               
-              // First, try parsing as ISO date (most reliable)
-              const isoDate = new Date(dateStr);
-              if (!isNaN(isoDate.getTime())) {
-                // Check if it's a reasonable date (not too far in future)
-                const now = new Date();
-                const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
-                if (isoDate <= oneYearFromNow && isoDate >= new Date(2020, 0, 1)) {
-                  date = isoDate;
+              // Second priority: try ISO date string (includes time)
+              if (!date || isNaN(date.getTime())) {
+                const isoDate = new Date(dateStr);
+                if (!isNaN(isoDate.getTime())) {
+                  // Check if it's a reasonable date (not too far in future)
+                  const now = new Date();
+                  const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                  if (isoDate <= oneYearFromNow && isoDate >= new Date(2020, 0, 1)) {
+                    date = isoDate;
+                  }
                 }
               }
               
               // If ISO parsing failed or date seems invalid, try manual parsing
+              // For ambiguous dates, prioritize DD/MM/YYYY format
               if (!date || isNaN(date.getTime())) {
-                // Try MM/DD/YYYY format (US locale)
-                const usDateMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-                if (usDateMatch) {
-                  const [, month, day, year] = usDateMatch;
-                  const testDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                  // Validate: month should be 1-12, day should be 1-31
-                  if (parseInt(month) >= 1 && parseInt(month) <= 12 && 
-                      parseInt(day) >= 1 && parseInt(day) <= 31 &&
-                      parseInt(year) >= 2020 && parseInt(year) <= new Date().getFullYear() + 1) {
+                // Try DD/MM/YYYY format first (prioritize European format)
+                const dmyMatch = dateStr.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+                if (dmyMatch) {
+                  const [, first, second, year] = dmyMatch;
+                  const firstNum = parseInt(first);
+                  const secondNum = parseInt(second);
+                  const yearNum = parseInt(year);
+                  
+                  // Determine which is day and which is month
+                  let day, month;
+                  
+                  if (firstNum > 12) {
+                    // First part is definitely day (DD/MM/YYYY)
+                    day = firstNum;
+                    month = secondNum;
+                  } else if (secondNum > 12) {
+                    // Second part is definitely day (MM/DD/YYYY)
+                    month = firstNum;
+                    day = secondNum;
+                  } else {
+                    // Ambiguous: both could be month or day
+                    // Prioritize DD/MM/YYYY interpretation
                     const now = new Date();
-                    const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
-                    if (testDate <= oneYearFromNow) {
-                      date = testDate;
+                    const ddmmDate = new Date(yearNum, secondNum - 1, firstNum); // DD/MM
+                    const mmddDate = new Date(yearNum, firstNum - 1, secondNum); // MM/DD
+                    
+                    // Prefer DD/MM if MM/DD would be in the future
+                    if (mmddDate > now && ddmmDate <= now) {
+                      day = firstNum;
+                      month = secondNum;
+                    } else if (ddmmDate > now && mmddDate <= now) {
+                      month = firstNum;
+                      day = secondNum;
+                    } else {
+                      // Both are valid, prefer DD/MM/YYYY
+                      day = firstNum;
+                      month = secondNum;
                     }
                   }
-                }
-                
-                // If still no date, try DD/MM/YYYY format (many locales)
-                if (!date || isNaN(date.getTime())) {
-                  const euDateMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-                  if (euDateMatch) {
-                    const [, day, month, year] = euDateMatch;
-                    const testDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                    if (parseInt(month) >= 1 && parseInt(month) <= 12 && 
-                        parseInt(day) >= 1 && parseInt(day) <= 31 &&
-                        parseInt(year) >= 2020 && parseInt(year) <= new Date().getFullYear() + 1) {
-                      const now = new Date();
-                      const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
-                      if (testDate <= oneYearFromNow) {
-                        date = testDate;
-                      }
+                  
+                  // Validate and use the date
+                  if (month >= 1 && month <= 12 && day >= 1 && day <= 31 &&
+                      yearNum >= 2020 && yearNum <= new Date().getFullYear() + 1) {
+                    const testDate = new Date(yearNum, month - 1, day);
+                    const now = new Date();
+                    const oneYearFromNow = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+                    if (!isNaN(testDate.getTime()) && testDate <= oneYearFromNow) {
+                      date = testDate;
                     }
                   }
                 }
@@ -2755,11 +2786,68 @@
                 }
               }
               
+              // Normalize date to yyyy-mm-dd format for display
+              let normalizedDate = editedDate;
+              if (editedDate && typeof editedDate === 'string') {
+                // Try to normalize using the helper (it's in db.js, so we'll use a simple check)
+                if (/^\d{4}-\d{2}-\d{2}$/.test(editedDate)) {
+                  normalizedDate = editedDate; // Already in correct format
+                } else {
+                  // Try to parse and normalize
+                  try {
+                    // Use the same logic as normalizeDateToYYYYMMDD
+                    const dmyMatch = editedDate.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+                    if (dmyMatch) {
+                      const [, first, second, year] = dmyMatch;
+                      const firstNum = parseInt(first);
+                      const secondNum = parseInt(second);
+                      
+                      // Prioritize DD/MM/YYYY
+                      let day, month;
+                      if (firstNum > 12) {
+                        day = firstNum;
+                        month = secondNum;
+                      } else if (secondNum > 12) {
+                        month = firstNum;
+                        day = secondNum;
+                      } else {
+                        // Ambiguous - prefer DD/MM
+                        const now = new Date();
+                        const ddmmDate = new Date(parseInt(year), secondNum - 1, firstNum);
+                        const mmddDate = new Date(parseInt(year), firstNum - 1, secondNum);
+                        if (mmddDate > now && ddmmDate <= now) {
+                          day = firstNum;
+                          month = secondNum;
+                        } else {
+                          day = firstNum;
+                          month = secondNum; // Default to DD/MM
+                        }
+                      }
+                      
+                      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                        normalizedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      }
+                    } else {
+                      // Try ISO or standard date parsing
+                      const date = new Date(editedDate);
+                      if (!isNaN(date.getTime())) {
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        normalizedDate = `${year}-${month}-${day}`;
+                      }
+                    }
+                  } catch (e) {
+                    // Keep original if normalization fails
+                  }
+                }
+              }
+              
               return {
                 noteId: note?.id || item.noteId,
                 customerId: customerId,
                 customerName: customerId !== undefined && customerId !== null ? getCustomerName(customerId) : 'Unknown Customer (Missing Customer ID)',
-                editedDate: editedDate,
+                editedDate: normalizedDate,
                 note: note
               };
             })
@@ -2805,12 +2893,67 @@
             .slice(0, 10);
         };
 
+        // Helper to normalize date string to yyyy-mm-dd (for display consistency)
+        const normalizeDateForDisplay = (dateStr) => {
+          if (!dateStr) return '';
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr; // Already normalized
+          
+          // Use same logic as normalizeDateToYYYYMMDD
+          const dmyMatch = dateStr.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+          if (dmyMatch) {
+            const [, first, second, year] = dmyMatch;
+            const firstNum = parseInt(first);
+            const secondNum = parseInt(second);
+            
+            let day, month;
+            if (firstNum > 12) {
+              day = firstNum;
+              month = secondNum;
+            } else if (secondNum > 12) {
+              month = firstNum;
+              day = secondNum;
+            } else {
+              // Ambiguous - prefer DD/MM
+              const now = new Date();
+              const ddmmDate = new Date(parseInt(year), secondNum - 1, firstNum);
+              const mmddDate = new Date(parseInt(year), firstNum - 1, secondNum);
+              if (mmddDate > now && ddmmDate <= now) {
+                day = firstNum;
+                month = secondNum;
+              } else {
+                day = firstNum;
+                month = secondNum; // Default to DD/MM
+              }
+            }
+            
+            if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+              return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            }
+          }
+          
+          // Try standard parsing
+          try {
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+              const year = date.getFullYear();
+              const month = String(date.getMonth() + 1).padStart(2, '0');
+              const day = String(date.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            }
+          } catch (e) {
+            // Ignore
+          }
+          
+          return dateStr; // Return original if can't normalize
+        };
+        
         // Process each category
         const healthyNotes = getLast10Notes(results.healthy, (item) => item.note);
         const corruptedNotes = results.corrupted
           .map(item => {
             const note = item.healthyVersion || item.corruptedVersion || {};
-            const editedDate = note?.editedDate || note?.date || note?.createdAt || '';
+            const editedDateRaw = note?.editedDate || note?.date || note?.createdAt || '';
+            const editedDate = normalizeDateForDisplay(editedDateRaw);
             return {
               noteId: note?.id || item.noteId,
               customerId: item.customerId || note?.customerId,
@@ -2822,8 +2965,9 @@
             };
           })
           .sort((a, b) => {
-            const dateA = a.editedDate ? new Date(a.editedDate).getTime() : 0;
-            const dateB = b.editedDate ? new Date(b.editedDate).getTime() : 0;
+            // Use normalized dates for comparison
+            const dateA = a.editedDate && /^\d{4}-\d{2}-\d{2}$/.test(a.editedDate) ? new Date(a.editedDate + 'T00:00:00').getTime() : 0;
+            const dateB = b.editedDate && /^\d{4}-\d{2}-\d{2}$/.test(b.editedDate) ? new Date(b.editedDate + 'T00:00:00').getTime() : 0;
             return dateB - dateA;
           })
           .slice(0, 10);
@@ -2833,12 +2977,16 @@
         // Process conflicting notes
         const conflictingNotes = results.conflicts
           .map(item => {
-            const indexedDBDate = item.indexedDBVersion?.editedDate || item.indexedDBVersion?.date || item.indexedDBVersion?.createdAt || '';
-            const localStorageDate = item.localStorageVersion?.editedDate || item.localStorageVersion?.date || item.localStorageVersion?.createdAt || '';
+            const indexedDBDateRaw = item.indexedDBVersion?.editedDate || item.indexedDBVersion?.date || item.indexedDBVersion?.createdAt || '';
+            const localStorageDateRaw = item.localStorageVersion?.editedDate || item.localStorageVersion?.date || item.localStorageVersion?.createdAt || '';
             
-            // Use the more recent date as the "last edited" date
-            const indexedDBTime = indexedDBDate ? new Date(indexedDBDate).getTime() : 0;
-            const localStorageTime = localStorageDate ? new Date(localStorageDate).getTime() : 0;
+            // Normalize dates to yyyy-mm-dd
+            const indexedDBDate = normalizeDateForDisplay(indexedDBDateRaw);
+            const localStorageDate = normalizeDateForDisplay(localStorageDateRaw);
+            
+            // Use the more recent date as the "last edited" date (compare normalized dates)
+            const indexedDBTime = indexedDBDate && /^\d{4}-\d{2}-\d{2}$/.test(indexedDBDate) ? new Date(indexedDBDate + 'T00:00:00').getTime() : 0;
+            const localStorageTime = localStorageDate && /^\d{4}-\d{2}-\d{2}$/.test(localStorageDate) ? new Date(localStorageDate + 'T00:00:00').getTime() : 0;
             const mostRecentDate = indexedDBTime > localStorageTime ? indexedDBDate : localStorageDate;
             
             return {
@@ -2855,8 +3003,9 @@
             };
           })
           .sort((a, b) => {
-            const dateA = a.editedDate ? new Date(a.editedDate).getTime() : 0;
-            const dateB = b.editedDate ? new Date(b.editedDate).getTime() : 0;
+            // Use normalized dates for comparison
+            const dateA = a.editedDate && /^\d{4}-\d{2}-\d{2}$/.test(a.editedDate) ? new Date(a.editedDate + 'T00:00:00').getTime() : 0;
+            const dateB = b.editedDate && /^\d{4}-\d{2}-\d{2}$/.test(b.editedDate) ? new Date(b.editedDate + 'T00:00:00').getTime() : 0;
             return dateB - dateA;
           })
           .slice(0, 10);
@@ -2876,7 +3025,7 @@
                       ${showRecoverable && !note.canRecover ? '<span style="color: #ef4444; font-size: 11px; margin-left: 6px;">⚠ No backup</span>' : ''}
                     </div>
                     <div style="color: rgba(255,255,255,0.7); font-size: 11px; margin-top: 4px;">
-                      Last edited: ${formatDate(note.editedDate)}
+                      Last edited: ${note.editedDate && /^\d{4}-\d{2}-\d{2}$/.test(note.editedDate) ? note.editedDate : (note.editedDate ? formatDate(note.editedDate) : 'Unknown')}
                     </div>
                     <div style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 2px;">
                       Note ID: ${note.noteId}
@@ -2897,9 +3046,14 @@
               <strong style="font-size: 13px; color: ${color};">${icon} ${title}:</strong>
               <div style="margin-top: 8px; max-height: 400px; overflow-y: auto; font-size: 12px;">
                 ${notes.map((note, index) => {
-                  const indexedDBTime = note.indexedDBDate ? new Date(note.indexedDBDate).getTime() : 0;
-                  const localStorageTime = note.localStorageDate ? new Date(note.localStorageDate).getTime() : 0;
+                  // Compare normalized dates properly
+                  const indexedDBTime = note.indexedDBDate && /^\d{4}-\d{2}-\d{2}$/.test(note.indexedDBDate) ? new Date(note.indexedDBDate + 'T00:00:00').getTime() : 0;
+                  const localStorageTime = note.localStorageDate && /^\d{4}-\d{2}-\d{2}$/.test(note.localStorageDate) ? new Date(note.localStorageDate + 'T00:00:00').getTime() : 0;
                   const indexedDBNewer = indexedDBTime > localStorageTime;
+                  
+                  // Format dates for display (show yyyy-mm-dd if normalized, otherwise format)
+                  const indexedDBDateDisplay = note.indexedDBDate && /^\d{4}-\d{2}-\d{2}$/.test(note.indexedDBDate) ? note.indexedDBDate : (note.indexedDBDate ? formatDate(note.indexedDBDate) : 'Unknown');
+                  const localStorageDateDisplay = note.localStorageDate && /^\d{4}-\d{2}-\d{2}$/.test(note.localStorageDate) ? note.localStorageDate : (note.localStorageDate ? formatDate(note.localStorageDate) : 'Unknown');
                   
                   return `
                     <div style="padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 3px solid ${color};">
@@ -2912,7 +3066,7 @@
                           💾 IndexedDB Version ${indexedDBNewer ? '<span style="color: #10b981; font-size: 10px;">(Newer)</span>' : ''}
                         </div>
                         <div style="color: rgba(255,255,255,0.7); font-size: 10px;">
-                          Last edited: ${formatDate(note.indexedDBDate)}
+                          Last edited: ${indexedDBDateDisplay}
                         </div>
                         <div style="color: rgba(255,255,255,0.6); font-size: 10px; margin-top: 2px;">
                           SVG size: ${note.indexedDBSvgSize.toLocaleString()} characters
@@ -2924,7 +3078,7 @@
                           📱 localStorage Version ${!indexedDBNewer ? '<span style="color: #10b981; font-size: 10px;">(Newer)</span>' : ''}
                         </div>
                         <div style="color: rgba(255,255,255,0.7); font-size: 10px;">
-                          Last edited: ${formatDate(note.localStorageDate)}
+                          Last edited: ${localStorageDateDisplay}
                         </div>
                         <div style="color: rgba(255,255,255,0.6); font-size: 10px; margin-top: 2px;">
                           SVG size: ${note.localStorageSvgSize.toLocaleString()} characters
@@ -3658,6 +3812,17 @@
 
   function escapeHtml(str) {
     return String(str || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c] || c);
+  }
+
+  // Helper function to format date as yyyy-mm-dd (ISO date format)
+  function formatDateYYYYMMDD(date = new Date()) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0]; // Fallback to today
+    
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
@@ -4863,7 +5028,7 @@
           const updatedNote = {
             ...this.editingNote,
             svg: svgData,
-            editedDate: new Date().toLocaleString()
+            editedDate: formatDateYYYYMMDD(new Date())
           };
           
           // Determine which storage method to use based on the note's source
@@ -4880,9 +5045,16 @@
             const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
             const customerNotes = existingNotes[customerId] || [];
             
+            // Ensure dates are normalized
+            const normalizedUpdatedNote = {
+              ...updatedNote,
+              date: formatDateYYYYMMDD(updatedNote.date || this.editingNote.date),
+              editedDate: updatedNote.editedDate ? formatDateYYYYMMDD(updatedNote.editedDate) : undefined
+            };
+            
             const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
             if (noteIndex !== -1) {
-              customerNotes[noteIndex] = updatedNote;
+              customerNotes[noteIndex] = normalizedUpdatedNote;
               
               // Update localStorage
               existingNotes[customerId] = customerNotes;
@@ -4921,7 +5093,7 @@
           const noteData = {
             id: uniqueId,
             svg: svgData,
-            date: new Date().toLocaleDateString(),
+            date: formatDateYYYYMMDD(new Date()),
             noteNumber: nextNoteNumber
           };
 
@@ -5493,13 +5665,21 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     async saveNoteHybrid(noteData, customerId) {
       console.log('Attempting hybrid save for customer:', customerId);
       
+      // Ensure dates are in yyyy-mm-dd format before saving
+      const normalizedNoteData = {
+        ...noteData,
+        date: formatDateYYYYMMDD(noteData.date),
+        editedDate: noteData.editedDate ? formatDateYYYYMMDD(noteData.editedDate) : undefined,
+        createdAt: noteData.createdAt ? formatDateYYYYMMDD(noteData.createdAt) : undefined
+      };
+      
       try {
         // First, try localStorage (existing method)
         const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
         if (!existingNotes[customerId]) {
           existingNotes[customerId] = [];
         }
-        existingNotes[customerId].push(noteData);
+        existingNotes[customerId].push(normalizedNoteData);
         
         const dataToSave = JSON.stringify(existingNotes);
         localStorage.setItem('customerNotes', dataToSave);
@@ -5523,12 +5703,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           
           const noteForDB = {
             customerId: parseInt(customerId),
-            svg: noteData.svg,
-            date: noteData.date,
-            noteNumber: noteData.noteNumber,
-            createdAt: new Date().toISOString(),
+            svg: normalizedNoteData.svg,
+            date: normalizedNoteData.date,
+            noteNumber: normalizedNoteData.noteNumber,
+            createdAt: formatDateYYYYMMDD(new Date()),
+            editedDate: normalizedNoteData.editedDate,
             source: 'indexeddb-fallback', // Mark as fallback save
-            originalId: noteData.id // Store the original ID for reference
+            originalId: normalizedNoteData.id // Store the original ID for reference
           };
           
           console.log('Attempting to save note to IndexedDB...', noteForDB);
@@ -5536,9 +5717,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
           
           // Update the noteData with the database ID for UI consistency
-          noteData.id = savedId;
-          noteData.source = 'indexeddb-fallback';
-          noteData.originalId = noteForDB.originalId;
+          normalizedNoteData.id = savedId;
+          normalizedNoteData.source = 'indexeddb-fallback';
+          normalizedNoteData.originalId = noteForDB.originalId;
+          
+          // Also update original noteData for return consistency
+          Object.assign(noteData, normalizedNoteData);
           
           return { method: 'indexeddb', success: true, id: savedId };
           
@@ -5736,7 +5920,24 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Create the main title text
       const titleText = document.createElement('span');
-      titleText.textContent = `Note ${noteData.noteNumber} - ${noteData.date}`;
+      // Format date for display (convert yyyy-mm-dd to readable format)
+      let displayDate = noteData.date;
+      if (displayDate && /^\d{4}-\d{2}-\d{2}$/.test(displayDate)) {
+        // Convert yyyy-mm-dd to readable format
+        try {
+          const date = new Date(displayDate + 'T00:00:00');
+          if (!isNaN(date.getTime())) {
+            displayDate = date.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
+            });
+          }
+        } catch (e) {
+          // Keep original if conversion fails
+        }
+      }
+      titleText.textContent = `Note ${noteData.noteNumber} - ${displayDate}`;
       
       // Add migrated indicator if this is a migrated note
       if (isMigratedNote) {
@@ -5753,8 +5954,26 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Add edited timestamp if the note was edited
       if (noteData.editedDate) {
+        // Format editedDate for display (convert yyyy-mm-dd to readable format)
+        let displayEditedDate = noteData.editedDate;
+        if (displayEditedDate && /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate)) {
+          try {
+            const date = new Date(displayEditedDate + 'T00:00:00');
+            if (!isNaN(date.getTime())) {
+              displayEditedDate = date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+            }
+          } catch (e) {
+            // Keep original if conversion fails
+          }
+        }
         const editedText = document.createElement('span');
-        editedText.textContent = ` (edited: ${noteData.editedDate})`;
+        editedText.textContent = ` (edited: ${displayEditedDate})`;
         editedText.style.fontStyle = 'italic';
         editedText.style.fontSize = '0.85em';
         editedText.style.color = 'var(--muted)';
@@ -6352,7 +6571,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const testNote = {
         id: Date.now(),
         svg: '<svg><text>Test Note</text></svg>',
-        date: new Date().toLocaleDateString(),
+        date: formatDateYYYYMMDD(new Date()),
         noteNumber: 999
       };
       
@@ -6591,7 +6810,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           const noteData = {
             id: Date.now() + Math.random(), // Unique ID
             svg: svgContent,
-            date: customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+            date: customer.createdAt ? formatDateYYYYMMDD(new Date(customer.createdAt)) : formatDateYYYYMMDD(new Date()),
             noteNumber: 1, // First note for this customer
             isMigrated: true // Flag to identify migrated notes
           };

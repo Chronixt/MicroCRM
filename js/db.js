@@ -6,6 +6,105 @@
   /** @type {IDBDatabase | null} */
   let database = null;
 
+  // Helper function to normalize date to yyyy-mm-dd format
+  function normalizeDateToYYYYMMDD(dateValue) {
+    if (!dateValue) return null;
+    
+    // If already in yyyy-mm-dd format, return as-is
+    if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      return dateValue;
+    }
+    
+    // Handle ambiguous date strings (DD/MM/YYYY vs MM/DD/YYYY)
+    if (typeof dateValue === 'string') {
+      // Try yyyy/mm/dd or yyyy-mm-dd format first (unambiguous)
+      const ymdMatch = dateValue.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+      if (ymdMatch) {
+        const [, year, month, day] = ymdMatch;
+        const testDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        if (!isNaN(testDate.getTime())) {
+          const yearStr = String(year);
+          const monthStr = String(month).padStart(2, '0');
+          const dayStr = String(day).padStart(2, '0');
+          return `${yearStr}-${monthStr}-${dayStr}`;
+        }
+      }
+      
+      // For ambiguous d/m/yyyy or m/d/yyyy formats, prioritize DD/MM/YYYY
+      // This is because dates like "1/11/2025" are more likely to be Nov 1st than Jan 11th
+      const dmyMatch = dateValue.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+      if (dmyMatch) {
+        const [, first, second, year] = dmyMatch;
+        const firstNum = parseInt(first);
+        const secondNum = parseInt(second);
+        const yearNum = parseInt(year);
+        
+        // Determine which is day and which is month
+        // If first > 12, it must be day (DD/MM format)
+        // If second > 12, it must be month first (MM/DD format)
+        let day, month;
+        
+        if (firstNum > 12) {
+          // First part is definitely day (DD/MM/YYYY)
+          day = firstNum;
+          month = secondNum;
+        } else if (secondNum > 12) {
+          // Second part is definitely day (MM/DD/YYYY)
+          month = firstNum;
+          day = secondNum;
+        } else {
+          // Ambiguous: both could be month or day
+          // Prioritize DD/MM/YYYY interpretation
+          // Check which makes more sense (not too far in future)
+          const now = new Date();
+          const ddmmDate = new Date(yearNum, secondNum - 1, firstNum); // DD/MM
+          const mmddDate = new Date(yearNum, firstNum - 1, secondNum); // MM/DD
+          
+          // Prefer DD/MM if MM/DD would be in the future or far future
+          if (mmddDate > now && ddmmDate <= now) {
+            day = firstNum;
+            month = secondNum;
+          } else if (ddmmDate > now && mmddDate <= now) {
+            month = firstNum;
+            day = secondNum;
+          } else {
+            // Both are valid, prefer DD/MM/YYYY (European format, more common)
+            day = firstNum;
+            month = secondNum;
+          }
+        }
+        
+        // Validate month and day
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          const testDate = new Date(yearNum, month - 1, day);
+          if (!isNaN(testDate.getTime())) {
+            const yearStr = String(yearNum);
+            const monthStr = String(month).padStart(2, '0');
+            const dayStr = String(day).padStart(2, '0');
+            return `${yearStr}-${monthStr}-${dayStr}`;
+          }
+        }
+      }
+    }
+    
+    // Try to parse the date normally (for ISO strings, Date objects, etc.)
+    let date;
+    if (dateValue instanceof Date) {
+      date = dateValue;
+    } else {
+      date = new Date(dateValue);
+    }
+    
+    if (isNaN(date.getTime())) {
+      return null; // Invalid date
+    }
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   function openDatabase() {
     return new Promise((resolve, reject) => {
       if (database) return resolve(database);
@@ -680,9 +779,15 @@
   function createNote(note) {
     return runTransaction(['notes'], 'readwrite', (notes) => (
       new Promise((resolve, reject) => {
+        // Normalize date fields to yyyy-mm-dd format
+        const normalizedDate = normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(new Date());
+        const normalizedCreatedAt = note.createdAt || new Date().toISOString().split('T')[0];
+        
         const noteToStore = {
           ...note,
-          createdAt: note.createdAt || new Date().toISOString()
+          date: normalizedDate,
+          createdAt: normalizeDateToYYYYMMDD(normalizedCreatedAt) || new Date().toISOString().split('T')[0],
+          editedDate: note.editedDate ? normalizeDateToYYYYMMDD(note.editedDate) : undefined
         };
         const req = notes.add(noteToStore);
         req.onsuccess = () => resolve(req.result);
@@ -732,11 +837,16 @@
       })
     )).then((existingNote) => {
       // Merge existing note with updates, preserving all original fields
+      // Normalize date fields to yyyy-mm-dd format
       const mergedNote = {
         ...existingNote,
         ...updatedNote,
         // Ensure ID is preserved from existing note
-        id: existingNote.id
+        id: existingNote.id,
+        // Normalize date fields
+        date: updatedNote.date ? normalizeDateToYYYYMMDD(updatedNote.date) : (existingNote.date ? normalizeDateToYYYYMMDD(existingNote.date) : normalizeDateToYYYYMMDD(new Date())),
+        editedDate: updatedNote.editedDate ? normalizeDateToYYYYMMDD(updatedNote.editedDate) : existingNote.editedDate ? normalizeDateToYYYYMMDD(existingNote.editedDate) : undefined,
+        createdAt: existingNote.createdAt ? normalizeDateToYYYYMMDD(existingNote.createdAt) : (updatedNote.createdAt ? normalizeDateToYYYYMMDD(updatedNote.createdAt) : new Date().toISOString().split('T')[0])
       };
       
       // Now save the merged note
@@ -1221,9 +1331,85 @@
         appointments.forEach((a) => appointmentsStore.put(a));
       });
       
-      // Import customer notes from localStorage
+      // Import customer notes to IndexedDB instead of localStorage to avoid quota issues
+      // This is more reliable and can handle much larger datasets
       if (customerNotes && Object.keys(customerNotes).length > 0) {
-        localStorage.setItem('customerNotes', JSON.stringify(customerNotes));
+        // Count total notes for progress tracking
+        let totalNotes = 0;
+        for (const customerId in customerNotes) {
+          if (customerNotes[customerId] && Array.isArray(customerNotes[customerId])) {
+            totalNotes += customerNotes[customerId].length;
+          }
+        }
+        
+        // Import notes to IndexedDB in chunks to avoid transaction timeout
+        const chunkSize = 50; // Process 50 notes at a time
+        let processedNotes = 0;
+        
+        for (const customerId in customerNotes) {
+          const notes = customerNotes[customerId];
+          if (!Array.isArray(notes)) continue;
+          
+          // Process notes in chunks
+          for (let i = 0; i < notes.length; i += chunkSize) {
+            const chunk = notes.slice(i, i + chunkSize);
+            
+            await runTransaction(['notes'], 'readwrite', (notesStore) => {
+              return Promise.all(chunk.map(note => {
+                return new Promise((resolve, reject) => {
+                  try {
+                    // Ensure note has customerId and normalize dates
+                    const noteToImport = {
+                      ...note,
+                      customerId: note.customerId || parseInt(customerId),
+                      date: normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(note.createdAt) || normalizeDateToYYYYMMDD(new Date()),
+                      createdAt: normalizeDateToYYYYMMDD(note.createdAt) || normalizeDateToYYYYMMDD(note.date) || new Date().toISOString().split('T')[0],
+                      editedDate: note.editedDate ? normalizeDateToYYYYMMDD(note.editedDate) : undefined
+                    };
+                    
+                    // Use put() which will update if exists, add if new
+                    const req = notesStore.put(noteToImport);
+                    req.onsuccess = () => {
+                      processedNotes++;
+                      resolve(req.result);
+                    };
+                    req.onerror = () => reject(req.error);
+                  } catch (error) {
+                    reject(error);
+                  }
+                });
+              }));
+            });
+            
+            // Small delay to prevent overwhelming the browser
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+        }
+        
+        // Only store a minimal reference in localStorage if needed for backward compatibility
+        // Store a lightweight version with just IDs and basic info
+        try {
+          const lightweightNotes = {};
+          for (const customerId in customerNotes) {
+            if (customerNotes[customerId] && Array.isArray(customerNotes[customerId])) {
+              // Only store basic metadata, not full SVG data
+              lightweightNotes[customerId] = customerNotes[customerId].map(note => ({
+                id: note.id,
+                date: note.date || note.createdAt || note.editedDate,
+                noteNumber: note.noteNumber
+              }));
+            }
+          }
+          
+          // Only store if it's reasonably small (under 1MB)
+          const lightweightStr = JSON.stringify(lightweightNotes);
+          if (lightweightStr.length < 1024 * 1024) { // Less than 1MB
+            localStorage.setItem('customerNotesMetadata', lightweightStr);
+          }
+        } catch (metadataError) {
+          // If even metadata is too large, skip localStorage entirely
+          console.warn('Could not store notes metadata in localStorage:', metadataError);
+        }
       }
       // Images need dataUrl -> blob
       let successCount = 0;

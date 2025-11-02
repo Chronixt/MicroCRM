@@ -51,7 +51,7 @@ def fix_backup_file(input_file, output_file=None):
     return fixed_count
 
 if __name__ == '__main__':
-    input_file = 'chikas-daily-backup-2025-11-02.json'
+    input_file = 'chikas-daily-backup-2025-11-02 (1).json'
     
     if len(sys.argv) > 1:
         input_file = sys.argv[1]
