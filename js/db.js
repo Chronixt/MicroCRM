@@ -1,7 +1,7 @@
 /* IndexedDB wrapper for Chikas DB */
 (function () {
   const DB_NAME = 'chikas-db';
-  const DB_VERSION = 4; // Increment version to add notes store
+  const DB_VERSION = 6; // Increment version to force noteVersions store creation
 
   /** @type {IDBDatabase | null} */
   let database = null;
@@ -107,14 +107,28 @@
 
   function openDatabase() {
     return new Promise((resolve, reject) => {
-      if (database) return resolve(database);
+      // If database exists but might be old version, check if upgrade is needed
+      if (database) {
+        // Check if noteVersions store exists (indicator of version 5)
+        if (!database.objectStoreNames.contains('noteVersions') && DB_VERSION >= 5) {
+          // Database needs upgrade - close it and reopen
+          console.log('Database needs upgrade, closing and reopening...');
+          database.close();
+          database = null;
+        } else {
+          return resolve(database);
+        }
+      }
+      
+      // Force open with new version to trigger upgrade
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onupgradeneeded = (event) => {
-        const db = /** @type {IDBDatabase} */ (request.result);
-        const oldVersion = event.oldVersion;
+        const db = /** @type {IDBDatabase} */ (event.target.result);
+        const oldVersion = event.oldVersion || 0;
         
         console.log(`Upgrading database from version ${oldVersion} to ${DB_VERSION}`);
+        console.log('Current stores:', Array.from(db.objectStoreNames));
         
         // Handle upgrade from version 3 to 4 (add notes store)
         if (oldVersion < 4) {
@@ -124,6 +138,21 @@
             const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
             notesStore.createIndex('customerId', 'customerId', { unique: false });
             notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+          }
+        }
+        
+        // Handle upgrade from version 4 to 5 or 5 to 6 (add noteVersions store for version history)
+        if (oldVersion < 5 || (!db.objectStoreNames.contains('noteVersions') && oldVersion < 6)) {
+          if (!db.objectStoreNames.contains('noteVersions')) {
+            console.log('Creating noteVersions store...');
+            try {
+              const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
+              noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
+              noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
+              console.log('noteVersions store created successfully');
+            } catch (createError) {
+              console.error('Failed to create noteVersions store:', createError);
+            }
           }
         }
         
@@ -168,9 +197,21 @@
 
       request.onsuccess = () => {
         database = request.result;
+        
+        // Verify that noteVersions store exists after upgrade
+        const stores = Array.from(database.objectStoreNames);
+        console.log('Database opened. Version:', database.version, 'Expected:', DB_VERSION, 'Stores:', stores);
+        
+        if (DB_VERSION >= 5 && !database.objectStoreNames.contains('noteVersions')) {
+          console.warn('noteVersions store missing. Database may need upgrade from version', database.version);
+        }
+        
         resolve(database);
       };
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        console.error('Failed to open database:', request.error);
+        reject(request.error);
+      };
     });
   }
 
@@ -835,7 +876,70 @@
         };
         req.onerror = () => reject(req.error);
       })
-    )).then((existingNote) => {
+    )).then(async (existingNote) => {
+      // Save previous version before updating (only store essential fields to save space)
+      // Only save if the note actually has content that changed
+      if (existingNote.svg && existingNote.svg !== updatedNote.svg) {
+        try {
+          // Check if store exists before trying to use it
+          const storeExists = await checkNoteVersionsStoreExists();
+          if (!storeExists) {
+            console.debug('noteVersions store not available, skipping version save');
+          } else {
+            await runTransaction(['noteVersions'], 'readwrite', (noteVersions) => {
+              return new Promise((resolve, reject) => {
+                // Delete any existing version for this note (only keep latest)
+                const index = noteVersions.index('noteId');
+                const range = IDBKeyRange.only(existingNote.id);
+                const request = index.openCursor(range);
+                
+                let hasDeleted = false;
+                
+                request.onsuccess = () => {
+                  const cursor = request.result;
+                  if (cursor) {
+                    cursor.delete();
+                    hasDeleted = true;
+                    cursor.continue();
+                  } else {
+                    // No more versions, now add the new one
+                    const previousVersion = {
+                      noteId: existingNote.id,
+                      // Store only essential fields to save memory
+                      svg: existingNote.svg,
+                      editedDate: existingNote.editedDate,
+                      savedAt: new Date().toISOString()
+                    };
+                    const addReq = noteVersions.add(previousVersion);
+                    addReq.onsuccess = () => resolve(addReq.result);
+                    addReq.onerror = () => reject(addReq.error);
+                  }
+                };
+                request.onerror = () => {
+                  // If index doesn't exist yet or error, try to add anyway
+                  const previousVersion = {
+                    noteId: existingNote.id,
+                    svg: existingNote.svg,
+                    editedDate: existingNote.editedDate,
+                    savedAt: new Date().toISOString()
+                  };
+                  const addReq = noteVersions.add(previousVersion);
+                  addReq.onsuccess = () => resolve(addReq.result);
+                  addReq.onerror = () => {
+                    // If adding fails, just resolve without error (don't block update)
+                    console.warn('Could not save note version history:', addReq.error);
+                    resolve(null);
+                  };
+                };
+              });
+            });
+          }
+        } catch (versionError) {
+          // If versioning fails, log but don't block the update
+          console.warn('Failed to save note version:', versionError);
+        }
+      }
+      
       // Merge existing note with updates, preserving all original fields
       // Normalize date fields to yyyy-mm-dd format
       const mergedNote = {
@@ -850,13 +954,108 @@
       };
       
       // Now save the merged note
-    return runTransaction(['notes'], 'readwrite', (notes) => (
-      new Promise((resolve, reject) => {
+      return runTransaction(['notes'], 'readwrite', (notes) => (
+        new Promise((resolve, reject) => {
           const req = notes.put(mergedNote);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      })
-    ));
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        })
+      ));
+    });
+  }
+  
+  // Helper to check if noteVersions store exists
+  async function checkNoteVersionsStoreExists() {
+    try {
+      const db = await openDatabase();
+      return db.objectStoreNames.contains('noteVersions');
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Get previous version of a note (if available)
+  function getNotePreviousVersion(noteId) {
+    return checkNoteVersionsStoreExists().then(async (storeExists) => {
+      if (!storeExists) {
+        console.warn('noteVersions store does not exist yet. Database may need to be upgraded.');
+        return null;
+      }
+      
+      return runTransaction(['noteVersions'], 'readonly', (noteVersions) => (
+        new Promise((resolve, reject) => {
+          try {
+            const index = noteVersions.index('noteId');
+            const range = IDBKeyRange.only(parseInt(noteId));
+            const request = index.openCursor(range);
+            
+            let latestVersion = null;
+            request.onsuccess = () => {
+              const cursor = request.result;
+              if (cursor) {
+                const version = cursor.value;
+                // Keep the most recent version (highest savedAt)
+                if (!latestVersion || version.savedAt > latestVersion.savedAt) {
+                  latestVersion = version;
+                }
+                cursor.continue();
+              } else {
+                resolve(latestVersion);
+              }
+            };
+            request.onerror = () => reject(request.error);
+          } catch (error) {
+            // If index doesn't exist, return null
+            console.warn('Note versions index not available:', error);
+            resolve(null);
+          }
+        })
+      ));
+    }).catch((error) => {
+      console.warn('Error checking note versions store:', error);
+      return null;
+    });
+  }
+  
+  // Restore note to previous version
+  function restoreNoteToPreviousVersion(noteId) {
+    return getNotePreviousVersion(noteId).then(async (previousVersion) => {
+      if (!previousVersion) {
+        throw new Error('No previous version found for this note');
+      }
+      
+      // Get the current note to preserve other fields
+      const currentNote = await runTransaction(['notes'], 'readonly', (notes) => (
+        new Promise((resolve, reject) => {
+          const req = notes.get(parseInt(noteId));
+          req.onsuccess = () => {
+            if (!req.result) {
+              reject(new Error(`Note with id ${noteId} not found`));
+              return;
+            }
+            resolve(req.result);
+          };
+          req.onerror = () => reject(req.error);
+        })
+      ));
+      
+      // Restore the note with previous version's SVG and editedDate
+      const restoredNote = {
+        ...currentNote,
+        svg: previousVersion.svg,
+        editedDate: previousVersion.editedDate || currentNote.editedDate,
+        // Mark as restored
+        restoredAt: new Date().toISOString()
+      };
+      
+      // Save the restored note
+      return runTransaction(['notes'], 'readwrite', (notes) => (
+        new Promise((resolve, reject) => {
+          const req = notes.put(restoredNote);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        })
+      ));
     });
   }
 
@@ -1918,6 +2117,9 @@
     scanForCorruptedNotes,
     recoverCorruptedNotes,
     restoreNotesFromBackup,
+    // Version history functions
+    getNotePreviousVersion,
+    restoreNoteToPreviousVersion,
   };
 })();
 

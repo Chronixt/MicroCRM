@@ -5045,6 +5045,23 @@
             const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
             const customerNotes = existingNotes[customerId] || [];
             
+            const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
+            if (noteIndex === -1) {
+              throw new Error('Could not find existing note to update in localStorage');
+            }
+            
+            // Save previous version to IndexedDB if possible (for future migration/recovery)
+            const existingNote = customerNotes[noteIndex];
+            try {
+              // Try to save version history in IndexedDB (lightweight, doesn't affect localStorage quota)
+              await ChikasDB.getNotePreviousVersion(existingNote.id).catch(() => null); // Check if noteVersions store exists
+              // Only save if this note might be migrated to IndexedDB later
+              // For now, we'll skip version history for pure localStorage notes to save space
+            } catch (versionError) {
+              // Version history not available, that's okay
+              console.debug('Version history not available for localStorage note');
+            }
+            
             // Ensure dates are normalized
             const normalizedUpdatedNote = {
               ...updatedNote,
@@ -5052,18 +5069,13 @@
               editedDate: updatedNote.editedDate ? formatDateYYYYMMDD(updatedNote.editedDate) : undefined
             };
             
-            const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
-            if (noteIndex !== -1) {
-              customerNotes[noteIndex] = normalizedUpdatedNote;
-              
-              // Update localStorage
-              existingNotes[customerId] = customerNotes;
-              localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-              
-              console.log('Note updated successfully in localStorage');
-            } else {
-              throw new Error('Could not find existing note to update in localStorage');
-            }
+            customerNotes[noteIndex] = normalizedUpdatedNote;
+            
+            // Update localStorage
+            existingNotes[customerId] = customerNotes;
+            localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+            
+            console.log('Note updated successfully in localStorage');
           }
           
           // Refresh the notes list using hybrid loading
@@ -6030,6 +6042,42 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Show delete button only on edit/new customer screens for all notes
       if (isEditScreen || isNewCustomerScreen) {
+        // Add revert button for IndexedDB notes (only they have version history)
+        if (noteData.source === 'indexeddb' || noteData.source === 'indexeddb-fallback') {
+          const revertButton = document.createElement('button');
+          revertButton.textContent = '↩️';
+          revertButton.title = 'Revert to Previous Version';
+          revertButton.style.cssText = `
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            color: #3b82f6;
+            font-size: 12px;
+            transition: background 0.2s ease;
+            margin-right: 6px;
+          `;
+          revertButton.addEventListener('click', async (e) => {
+            e.stopPropagation(); // Prevent header click
+            if (confirm('Are you sure you want to revert this note to its previous version? This will replace the current content with the last saved version.')) {
+              try {
+                await this.revertNoteToPreviousVersion(noteData);
+              } catch (error) {
+                alert(`Failed to revert note: ${error.message}`);
+              }
+            }
+          });
+          revertButton.addEventListener('mouseenter', () => {
+            revertButton.style.background = 'rgba(59, 130, 246, 0.3)';
+          });
+          revertButton.addEventListener('mouseleave', () => {
+            revertButton.style.background = 'rgba(59, 130, 246, 0.2)';
+          });
+          
+          headerRight.appendChild(revertButton);
+        }
+        
         const deleteButton = document.createElement('button');
         deleteButton.textContent = '🗑️';
         deleteButton.title = 'Delete Note';
@@ -6202,6 +6250,88 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       });
 
       notesList.appendChild(noteElement);
+    }
+
+    async revertNoteToPreviousVersion(noteData) {
+      try {
+        // Only works for IndexedDB notes
+        if (noteData.source !== 'indexeddb' && noteData.source !== 'indexeddb-fallback') {
+          throw new Error('Version history is only available for notes stored in IndexedDB');
+        }
+        
+        const noteId = noteData.id || noteData.noteId;
+        if (!noteId) {
+          throw new Error('Note ID not found');
+        }
+        
+        // Force database upgrade if needed by closing and reopening
+        try {
+          // Close any existing database connections to force upgrade
+          const existingDb = await new Promise((resolve) => {
+            const req = indexedDB.open('chikas-db');
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+          });
+          
+          if (existingDb) {
+            const hasStore = existingDb.objectStoreNames.contains('noteVersions');
+            existingDb.close();
+            
+            if (!hasStore) {
+              // Force upgrade by opening with higher version
+              const upgradeReq = indexedDB.open('chikas-db', 5);
+              upgradeReq.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('noteVersions')) {
+                  console.log('Creating noteVersions store during forced upgrade...');
+                  try {
+                    const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
+                    noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
+                    noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
+                    console.log('noteVersions store created successfully');
+                  } catch (createError) {
+                    console.error('Failed to create noteVersions store:', createError);
+                  }
+                }
+              };
+              await new Promise((resolve, reject) => {
+                upgradeReq.onsuccess = () => {
+                  upgradeReq.result.close();
+                  resolve();
+                };
+                upgradeReq.onerror = () => reject(upgradeReq.error);
+              });
+              
+              // Wait a moment for upgrade to complete
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+        } catch (upgradeError) {
+          console.warn('Could not force database upgrade:', upgradeError);
+        }
+        
+        // Check if previous version exists
+        const previousVersion = await ChikasDB.getNotePreviousVersion(noteId);
+        if (!previousVersion) {
+          throw new Error('No previous version found for this note. The note may not have been edited yet, or try refreshing the page.');
+        }
+        
+        // Restore the note
+        await ChikasDB.restoreNoteToPreviousVersion(noteId);
+        
+        // Refresh the notes display
+        const customerId = this.getCurrentCustomerId();
+        if (customerId) {
+          await this.refreshNotesDisplay(customerId);
+          alert('Note reverted to previous version successfully!');
+        } else {
+          alert('Note reverted to previous version successfully! Please refresh the page to see the change.');
+        }
+        
+      } catch (error) {
+        console.error('Error reverting note:', error);
+        throw error;
+      }
     }
 
     async deleteNote(noteData) {
