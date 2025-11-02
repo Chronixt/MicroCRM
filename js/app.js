@@ -2602,7 +2602,200 @@
         const results = await ChikasDB.scanForCorruptedNotes();
         scanResultData = results;
 
-        // Display summary
+        // Get customer names for display
+        const allCustomers = await ChikasDB.getAllCustomers();
+        const customerMap = new Map();
+        allCustomers.forEach(customer => {
+          customerMap.set(customer.id, customer);
+        });
+
+        // Helper to get customer name
+        const getCustomerName = (customerId) => {
+          const customer = customerMap.get(customerId);
+          if (!customer) return `Customer ID: ${customerId}`;
+          const firstName = customer.firstName || '';
+          const lastName = customer.lastName || '';
+          return `${firstName} ${lastName}`.trim() || `Customer ID: ${customerId}`;
+        };
+
+        // Helper to format date
+        const formatDate = (dateStr) => {
+          if (!dateStr) return 'Unknown date';
+          try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr;
+            return date.toLocaleString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+          } catch {
+            return dateStr;
+          }
+        };
+
+        // Helper to process notes and get last 10
+        const getLast10Notes = (notes, getNoteFn) => {
+          return notes
+            .map(item => {
+              const note = getNoteFn(item);
+              const editedDate = note?.editedDate || note?.date || note?.createdAt || '';
+              return {
+                noteId: note?.id,
+                customerId: item.customerId || note?.customerId,
+                customerName: getCustomerName(item.customerId || note?.customerId),
+                editedDate: editedDate,
+                note: note
+              };
+            })
+            .sort((a, b) => {
+              const dateA = a.editedDate ? new Date(a.editedDate).getTime() : 0;
+              const dateB = b.editedDate ? new Date(b.editedDate).getTime() : 0;
+              return dateB - dateA; // Most recent first
+            })
+            .slice(0, 10);
+        };
+
+        // Process each category
+        const healthyNotes = getLast10Notes(results.healthy, (item) => item.note);
+        const corruptedNotes = results.corrupted
+          .map(item => {
+            const note = item.healthyVersion || item.corruptedVersion || {};
+            const editedDate = note?.editedDate || note?.date || note?.createdAt || '';
+            return {
+              noteId: note?.id || item.noteId,
+              customerId: item.customerId || note?.customerId,
+              customerName: getCustomerName(item.customerId || note?.customerId),
+              editedDate: editedDate,
+              note: note,
+              canRecover: !!item.healthyVersion,
+              source: item.source
+            };
+          })
+          .sort((a, b) => {
+            const dateA = a.editedDate ? new Date(a.editedDate).getTime() : 0;
+            const dateB = b.editedDate ? new Date(b.editedDate).getTime() : 0;
+            return dateB - dateA;
+          })
+          .slice(0, 10);
+        const localStorageNotes = getLast10Notes(results.localStorageOnly, (item) => item.note);
+        const indexedDBNotes = getLast10Notes(results.indexeddbOnly, (item) => item.note);
+
+        // Process conflicting notes
+        const conflictingNotes = results.conflicts
+          .map(item => {
+            const indexedDBDate = item.indexedDBVersion?.editedDate || item.indexedDBVersion?.date || item.indexedDBVersion?.createdAt || '';
+            const localStorageDate = item.localStorageVersion?.editedDate || item.localStorageVersion?.date || item.localStorageVersion?.createdAt || '';
+            
+            // Use the more recent date as the "last edited" date
+            const indexedDBTime = indexedDBDate ? new Date(indexedDBDate).getTime() : 0;
+            const localStorageTime = localStorageDate ? new Date(localStorageDate).getTime() : 0;
+            const mostRecentDate = indexedDBTime > localStorageTime ? indexedDBDate : localStorageDate;
+            
+            return {
+              noteId: item.noteId,
+              customerId: item.customerId,
+              customerName: getCustomerName(item.customerId),
+              indexedDBVersion: item.indexedDBVersion,
+              localStorageVersion: item.localStorageVersion,
+              indexedDBDate: indexedDBDate,
+              localStorageDate: localStorageDate,
+              editedDate: mostRecentDate,
+              indexedDBSvgSize: (item.indexedDBVersion?.svg || '').length,
+              localStorageSvgSize: (item.localStorageVersion?.svg || '').length
+            };
+          })
+          .sort((a, b) => {
+            const dateA = a.editedDate ? new Date(a.editedDate).getTime() : 0;
+            const dateB = b.editedDate ? new Date(b.editedDate).getTime() : 0;
+            return dateB - dateA;
+          })
+          .slice(0, 10);
+
+        // Helper to render notes list
+        const renderNotesList = (notes, title, color, icon = '', showRecoverable = false) => {
+          if (notes.length === 0) return '';
+          return `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+              <strong style="font-size: 13px; color: ${color};">${icon} ${title}:</strong>
+              <div style="margin-top: 8px; max-height: 300px; overflow-y: auto; font-size: 12px;">
+                ${notes.map((note, index) => `
+                  <div style="padding: 8px; margin-bottom: 6px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 3px solid ${color};">
+                    <div style="font-weight: 600; color: ${color};">
+                      ${index + 1}. ${escapeHtml(note.customerName)}
+                      ${showRecoverable && note.canRecover ? '<span style="color: #10b981; font-size: 11px; margin-left: 6px;">✓ Recoverable</span>' : ''}
+                      ${showRecoverable && !note.canRecover ? '<span style="color: #ef4444; font-size: 11px; margin-left: 6px;">⚠ No backup</span>' : ''}
+                    </div>
+                    <div style="color: rgba(255,255,255,0.7); font-size: 11px; margin-top: 4px;">
+                      Last edited: ${formatDate(note.editedDate)}
+                    </div>
+                    <div style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 2px;">
+                      Note ID: ${note.noteId}
+                      ${note.source ? ` | Source: ${note.source}` : ''}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        };
+
+        // Helper to render conflicting notes with both versions
+        const renderConflictingNotes = (notes, title, color, icon = '') => {
+          if (notes.length === 0) return '';
+          return `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+              <strong style="font-size: 13px; color: ${color};">${icon} ${title}:</strong>
+              <div style="margin-top: 8px; max-height: 400px; overflow-y: auto; font-size: 12px;">
+                ${notes.map((note, index) => {
+                  const indexedDBTime = note.indexedDBDate ? new Date(note.indexedDBDate).getTime() : 0;
+                  const localStorageTime = note.localStorageDate ? new Date(note.localStorageDate).getTime() : 0;
+                  const indexedDBNewer = indexedDBTime > localStorageTime;
+                  
+                  return `
+                    <div style="padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 3px solid ${color};">
+                      <div style="font-weight: 600; color: ${color}; margin-bottom: 8px;">
+                        ${index + 1}. ${escapeHtml(note.customerName)}
+                      </div>
+                      
+                      <div style="margin-bottom: 8px; padding: 8px; background: rgba(59, 130, 246, 0.1); border-radius: 4px; border-left: 3px solid #3b82f6;">
+                        <div style="font-weight: 600; color: #3b82f6; font-size: 11px; margin-bottom: 4px;">
+                          💾 IndexedDB Version ${indexedDBNewer ? '<span style="color: #10b981; font-size: 10px;">(Newer)</span>' : ''}
+                        </div>
+                        <div style="color: rgba(255,255,255,0.7); font-size: 10px;">
+                          Last edited: ${formatDate(note.indexedDBDate)}
+                        </div>
+                        <div style="color: rgba(255,255,255,0.6); font-size: 10px; margin-top: 2px;">
+                          SVG size: ${note.indexedDBSvgSize.toLocaleString()} characters
+                        </div>
+                      </div>
+                      
+                      <div style="padding: 8px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; border-left: 3px solid #8b5cf6;">
+                        <div style="font-weight: 600; color: #8b5cf6; font-size: 11px; margin-bottom: 4px;">
+                          📱 localStorage Version ${!indexedDBNewer ? '<span style="color: #10b981; font-size: 10px;">(Newer)</span>' : ''}
+                        </div>
+                        <div style="color: rgba(255,255,255,0.7); font-size: 10px;">
+                          Last edited: ${formatDate(note.localStorageDate)}
+                        </div>
+                        <div style="color: rgba(255,255,255,0.6); font-size: 10px; margin-top: 2px;">
+                          SVG size: ${note.localStorageSvgSize.toLocaleString()} characters
+                        </div>
+                      </div>
+                      
+                      <div style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 6px;">
+                        Note ID: ${note.noteId} | Customer ID: ${note.customerId}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        };
+
+        // Build summary HTML
         const summaryHTML = `
           <div style="margin-bottom: 8px;">
             <strong>Scan Results:</strong>
@@ -2614,6 +2807,11 @@
             <div style="color: #6366f1;">💾 Only in IndexedDB: ${results.indexeddbOnly.length}</div>
             ${results.conflicts.length > 0 ? `<div style="color: #f59e0b;">⚠ Conflicting versions: ${results.conflicts.length}</div>` : ''}
           </div>
+          ${renderNotesList(healthyNotes, 'Last 10 Healthy Notes', '#10b981', '✓')}
+          ${renderNotesList(corruptedNotes, 'Last 10 Corrupted Notes', '#ef4444', '⚠', true)}
+          ${renderConflictingNotes(conflictingNotes, 'Last 10 Conflicting Notes (Different SVG in IndexedDB vs localStorage)', '#f59e0b', '⚠')}
+          ${renderNotesList(localStorageNotes, 'Last 10 localStorage-Only Notes', '#6366f1', '📱')}
+          ${renderNotesList(indexedDBNotes, 'Last 10 IndexedDB-Only Notes', '#6366f1', '💾')}
         `;
         scanSummary.innerHTML = summaryHTML;
 
