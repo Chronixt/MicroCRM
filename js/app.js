@@ -2336,6 +2336,48 @@
           
           <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
           
+          <h3 style="margin-top: 16px; margin-bottom: 8px;">🔧 Note Recovery</h3>
+          <div class="card" style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3);">
+            <div class="muted" style="font-size: 12px; margin-bottom: 12px;">
+              If notes are missing content after editing, this tool can recover them from backups or alternate storage.
+            </div>
+            
+            <div class="row" style="gap: 8px; margin-bottom: 12px;">
+              <button id="scan-notes-btn" class="button" style="background: linear-gradient(135deg, #f59e0b, #d97706); flex: 1;">
+                🔍 Scan for Corrupted Notes
+              </button>
+            </div>
+            
+            <div id="scan-results" class="hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+              <div id="scan-summary" style="margin-bottom: 12px;"></div>
+              <div id="recovery-actions" class="hidden">
+                <div class="row" style="gap: 8px;">
+                  <button id="recover-notes-btn" class="button" style="background: linear-gradient(135deg, #10b981, #059669); flex: 1;">
+                    ✅ Recover Notes
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div id="recovery-status" style="margin-top: 12px; font-size: 12px;"></div>
+          </div>
+          
+          <h3 style="margin-top: 16px; margin-bottom: 8px;">Restore Notes from Backup</h3>
+          <div class="card" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3);">
+            <div class="muted" style="font-size: 12px; margin-bottom: 12px;">
+              Load a backup file and restore notes from it. This will only replace corrupted notes.
+            </div>
+            
+            <div class="row" style="gap: 8px;">
+              <input id="restore-notes-file" type="file" accept="application/json" style="flex: 1;" />
+              <button id="restore-notes-btn" class="button secondary">Load Backup</button>
+            </div>
+            
+            <div id="restore-notes-status" style="margin-top: 12px; font-size: 12px;"></div>
+          </div>
+          
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
           <div class="row">
             <button id="refresh-app-btn" class="button" style="background: linear-gradient(135deg, #667eea, #764ba2);">
               🔄 Refresh App (PWA)
@@ -2535,6 +2577,180 @@
         window.location.reload();
       });
     }
+
+    // Note Recovery handlers
+    const scanNotesBtn = document.getElementById('scan-notes-btn');
+    const recoverNotesBtn = document.getElementById('recover-notes-btn');
+    const scanResults = document.getElementById('scan-results');
+    const scanSummary = document.getElementById('scan-summary');
+    const recoveryActions = document.getElementById('recovery-actions');
+    const recoveryStatus = document.getElementById('recovery-status');
+    const restoreNotesFile = document.getElementById('restore-notes-file');
+    const restoreNotesBtn = document.getElementById('restore-notes-btn');
+    const restoreNotesStatus = document.getElementById('restore-notes-status');
+
+    let scanResultData = null;
+
+    // Scan for corrupted notes
+    scanNotesBtn.addEventListener('click', async () => {
+      try {
+        scanNotesBtn.disabled = true;
+        scanNotesBtn.textContent = 'Scanning...';
+        recoveryStatus.textContent = '🔍 Scanning notes... This may take a moment.';
+        recoveryStatus.style.color = '';
+
+        const results = await ChikasDB.scanForCorruptedNotes();
+        scanResultData = results;
+
+        // Display summary
+        const summaryHTML = `
+          <div style="margin-bottom: 8px;">
+            <strong>Scan Results:</strong>
+          </div>
+          <div style="font-size: 13px; line-height: 1.6;">
+            <div style="color: #10b981;">✓ Healthy notes: ${results.healthy.length}</div>
+            <div style="color: ${results.corrupted.length > 0 ? '#ef4444' : '#10b981'};">${results.corrupted.length > 0 ? '⚠' : '✓'} Corrupted notes: ${results.corrupted.length}</div>
+            <div style="color: #6366f1;">📱 Only in localStorage: ${results.localStorageOnly.length}</div>
+            <div style="color: #6366f1;">💾 Only in IndexedDB: ${results.indexeddbOnly.length}</div>
+            ${results.conflicts.length > 0 ? `<div style="color: #f59e0b;">⚠ Conflicting versions: ${results.conflicts.length}</div>` : ''}
+          </div>
+        `;
+        scanSummary.innerHTML = summaryHTML;
+
+        // Show recovery button if there are corrupted notes that can be recovered
+        const canRecover = results.corrupted.some(c => c.healthyVersion);
+        if (canRecover) {
+          const recoverableCount = results.corrupted.filter(c => c.healthyVersion).length;
+          recoveryActions.classList.remove('hidden');
+          recoveryStatus.innerHTML = `<span style="color: #10b981;">✅ Found ${recoverableCount} note(s) that can be recovered!</span>`;
+        } else if (results.corrupted.length > 0) {
+          recoveryActions.classList.add('hidden');
+          recoveryStatus.innerHTML = `<span style="color: #ef4444;">⚠ Found ${results.corrupted.length} corrupted note(s), but no healthy version found to recover from.</span><br><span style="font-size: 11px;">Try restoring from a backup file.</span>`;
+        } else {
+          recoveryActions.classList.add('hidden');
+          recoveryStatus.innerHTML = `<span style="color: #10b981;">✅ All notes appear healthy!</span>`;
+        }
+
+        scanResults.classList.remove('hidden');
+        scanNotesBtn.disabled = false;
+        scanNotesBtn.textContent = '🔍 Scan for Corrupted Notes';
+      } catch (error) {
+        console.error('Scan error:', error);
+        recoveryStatus.textContent = `❌ Scan failed: ${error.message}`;
+        recoveryStatus.style.color = '#ef4444';
+        scanNotesBtn.disabled = false;
+        scanNotesBtn.textContent = '🔍 Scan for Corrupted Notes';
+      }
+    });
+
+    // Recover corrupted notes
+    recoverNotesBtn.addEventListener('click', async () => {
+      if (!scanResultData) {
+        recoveryStatus.textContent = 'Please scan for corrupted notes first.';
+        recoveryStatus.style.color = '#ef4444';
+        return;
+      }
+
+      const recoverable = scanResultData.corrupted.filter(c => c.healthyVersion);
+      if (recoverable.length === 0) {
+        recoveryStatus.textContent = 'No recoverable notes found.';
+        recoveryStatus.style.color = '#ef4444';
+        return;
+      }
+
+      if (!confirm(`This will recover ${recoverable.length} corrupted note(s) from their healthy versions. Continue?`)) {
+        return;
+      }
+
+      try {
+        recoverNotesBtn.disabled = true;
+        recoverNotesBtn.textContent = 'Recovering...';
+        recoveryStatus.textContent = `🔄 Recovering ${recoverable.length} note(s)...`;
+        recoveryStatus.style.color = '';
+
+        const result = await ChikasDB.recoverCorruptedNotes(false); // dryRun = false
+
+        if (result.recovered > 0) {
+          recoveryStatus.innerHTML = `
+            <span style="color: #10b981;">✅ Successfully recovered ${result.recovered} note(s)!</span><br>
+            ${result.failed > 0 ? `<span style="color: #ef4444;">⚠ ${result.failed} note(s) failed to recover.</span>` : ''}
+            <br><span style="font-size: 11px;">Please refresh the customer page to see the recovered notes.</span>
+          `;
+          
+          // Refresh scan results
+          scanNotesBtn.click();
+        } else {
+          recoveryStatus.textContent = 'Recovery completed, but no notes were recovered.';
+          recoveryStatus.style.color = '#f59e0b';
+        }
+
+        recoverNotesBtn.disabled = false;
+        recoverNotesBtn.textContent = '✅ Recover Notes';
+      } catch (error) {
+        console.error('Recovery error:', error);
+        recoveryStatus.textContent = `❌ Recovery failed: ${error.message}`;
+        recoveryStatus.style.color = '#ef4444';
+        recoverNotesBtn.disabled = false;
+        recoverNotesBtn.textContent = '✅ Recover Notes';
+      }
+    });
+
+    // Restore notes from backup file
+    restoreNotesBtn.addEventListener('click', async () => {
+      const file = restoreNotesFile.files && restoreNotesFile.files[0];
+      if (!file) {
+        restoreNotesStatus.textContent = 'Please select a backup file first.';
+        restoreNotesStatus.style.color = '#ef4444';
+        return;
+      }
+
+      try {
+        restoreNotesBtn.disabled = true;
+        restoreNotesBtn.textContent = 'Loading...';
+        restoreNotesStatus.textContent = '📂 Loading backup file...';
+        restoreNotesStatus.style.color = '';
+
+        const text = await file.text();
+        const backupData = JSON.parse(text);
+
+        if (!backupData.customerNotes && (!backupData.notes || backupData.notes.length === 0)) {
+          restoreNotesStatus.textContent = '⚠ Backup file does not contain any notes.';
+          restoreNotesStatus.style.color = '#f59e0b';
+          restoreNotesBtn.disabled = false;
+          restoreNotesBtn.textContent = 'Load Backup';
+          return;
+        }
+
+        restoreNotesStatus.textContent = '🔄 Restoring notes from backup...';
+        
+        const result = await ChikasDB.restoreNotesFromBackup(backupData, {
+          mode: 'merge' // Smart mode - only replaces corrupted notes
+        });
+
+        if (result.restored > 0) {
+          restoreNotesStatus.innerHTML = `
+            <span style="color: #10b981;">✅ Successfully restored ${result.restored} note(s) from backup!</span><br>
+            ${result.skipped > 0 ? `<span style="color: #6366f1;">⏭️ Skipped ${result.skipped} note(s) (already healthy or no backup version).</span>` : ''}
+            ${result.failed > 0 ? `<span style="color: #ef4444;">⚠ ${result.failed} note(s) failed to restore.</span>` : ''}
+            <br><span style="font-size: 11px;">Please refresh the customer page to see the restored notes.</span>
+          `;
+        } else {
+          restoreNotesStatus.innerHTML = `
+            <span style="color: #6366f1;">ℹ️ No notes were restored. Current notes appear healthier than backup versions.</span><br>
+            ${result.skipped > 0 ? `<span style="font-size: 11px;">Skipped ${result.skipped} note(s).</span>` : ''}
+          `;
+        }
+
+        restoreNotesBtn.disabled = false;
+        restoreNotesBtn.textContent = 'Load Backup';
+      } catch (error) {
+        console.error('Restore error:', error);
+        restoreNotesStatus.textContent = `❌ Restore failed: ${error.message}`;
+        restoreNotesStatus.style.color = '#ef4444';
+        restoreNotesBtn.disabled = false;
+        restoreNotesBtn.textContent = 'Load Backup';
+      }
+    });
   }
 
   async function renderEmergencyBackup() {

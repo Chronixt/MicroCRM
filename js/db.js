@@ -660,13 +660,39 @@
   }
 
   function updateNote(updatedNote) {
-    return runTransaction(['notes'], 'readwrite', (notes) => (
+    // First, get the existing note to preserve all fields
+    return runTransaction(['notes'], 'readonly', (notes) => (
       new Promise((resolve, reject) => {
-        const req = notes.put(updatedNote);
-        req.onsuccess = () => resolve(req.result);
+        const noteId = parseInt(updatedNote.id);
+        const req = notes.get(noteId);
+        req.onsuccess = () => {
+          const existingNote = req.result;
+          if (!existingNote) {
+            reject(new Error(`Note with id ${noteId} not found`));
+            return;
+          }
+          resolve(existingNote);
+        };
         req.onerror = () => reject(req.error);
       })
-    ));
+    )).then((existingNote) => {
+      // Merge existing note with updates, preserving all original fields
+      const mergedNote = {
+        ...existingNote,
+        ...updatedNote,
+        // Ensure ID is preserved from existing note
+        id: existingNote.id
+      };
+      
+      // Now save the merged note
+      return runTransaction(['notes'], 'readwrite', (notes) => (
+        new Promise((resolve, reject) => {
+          const req = notes.put(mergedNote);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        })
+      ));
+    });
   }
 
   function deleteNote(noteId) {
@@ -692,6 +718,425 @@
         req.onerror = () => reject(req.error);
       })
     ));
+  }
+
+  // Recovery function: Scan and identify potentially corrupted notes
+  async function scanForCorruptedNotes() {
+    const results = {
+      corrupted: [],
+      healthy: [],
+      localStorageOnly: [],
+      indexeddbOnly: [],
+      conflicts: []
+    };
+
+    try {
+      // Get all notes from IndexedDB
+      const indexedDBNotes = await getAllNotes();
+      const indexedDBMap = new Map();
+      indexedDBNotes.forEach(note => {
+        indexedDBMap.set(note.id, note);
+      });
+
+      // Get all notes from localStorage
+      const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const localStorageNotes = [];
+      for (const customerId in customerNotes) {
+        const notes = customerNotes[customerId];
+        notes.forEach(note => {
+          note.customerId = parseInt(customerId); // Ensure customerId is set
+          localStorageNotes.push(note);
+        });
+      }
+
+      const localStorageMap = new Map();
+      localStorageNotes.forEach(note => {
+        localStorageMap.set(note.id, note);
+      });
+
+      // Check for notes that exist in both
+      const allNoteIds = new Set([...indexedDBMap.keys(), ...localStorageMap.keys()]);
+
+      for (const noteId of allNoteIds) {
+        const indexedDBNote = indexedDBMap.get(noteId);
+        const localStorageNote = localStorageMap.get(noteId);
+
+        // Helper to check if a note is corrupted (missing essential fields)
+        const isCorrupted = (note) => {
+          if (!note) return true;
+          // A note is corrupted if it's missing essential fields
+          const hasSvg = note.svg && typeof note.svg === 'string' && note.svg.length > 10;
+          const hasDate = note.date || note.createdAt;
+          return !hasSvg || !hasDate;
+        };
+
+        if (indexedDBNote && localStorageNote) {
+          // Note exists in both - compare them
+          const indexedDBCorrupted = isCorrupted(indexedDBNote);
+          const localStorageCorrupted = isCorrupted(localStorageNote);
+
+          if (indexedDBCorrupted && !localStorageCorrupted) {
+            // IndexedDB version is corrupted, localStorage is good
+            results.corrupted.push({
+              noteId,
+              customerId: indexedDBNote.customerId || localStorageNote.customerId,
+              source: 'indexeddb',
+              issue: 'Missing essential fields (svg or date)',
+              healthyVersion: localStorageNote,
+              corruptedVersion: indexedDBNote
+            });
+          } else if (!indexedDBCorrupted && localStorageCorrupted) {
+            // localStorage version is corrupted, IndexedDB is good
+            results.corrupted.push({
+              noteId,
+              customerId: indexedDBNote.customerId || localStorageNote.customerId,
+              source: 'localStorage',
+              issue: 'Missing essential fields (svg or date)',
+              healthyVersion: indexedDBNote,
+              corruptedVersion: localStorageNote
+            });
+          } else if (indexedDBCorrupted && localStorageCorrupted) {
+            // Both are corrupted - check if one has more data
+            const indexedDBDataSize = JSON.stringify(indexedDBNote).length;
+            const localStorageDataSize = JSON.stringify(localStorageNote).length;
+            if (indexedDBDataSize > localStorageDataSize) {
+              results.corrupted.push({
+                noteId,
+                customerId: indexedDBNote.customerId || localStorageNote.customerId,
+                source: 'both',
+                issue: 'Both corrupted, but IndexedDB has more data',
+                healthyVersion: indexedDBNote,
+                corruptedVersion: localStorageNote
+              });
+            } else {
+              results.corrupted.push({
+                noteId,
+                customerId: indexedDBNote.customerId || localStorageNote.customerId,
+                source: 'both',
+                issue: 'Both corrupted, but localStorage has more data',
+                healthyVersion: localStorageNote,
+                corruptedVersion: indexedDBNote
+              });
+            }
+          } else {
+            // Both are healthy - check for conflicts (different svg content)
+            const indexedDBSvg = indexedDBNote.svg || '';
+            const localStorageSvg = localStorageNote.svg || '';
+            if (indexedDBSvg !== localStorageSvg && indexedDBSvg.length > 10 && localStorageSvg.length > 10) {
+              results.conflicts.push({
+                noteId,
+                customerId: indexedDBNote.customerId || localStorageNote.customerId,
+                indexedDBVersion: indexedDBNote,
+                localStorageVersion: localStorageNote
+              });
+            } else {
+              results.healthy.push({
+                noteId,
+                customerId: indexedDBNote.customerId || localStorageNote.customerId,
+                note: indexedDBNote // Either is fine if they match
+              });
+            }
+          }
+        } else if (indexedDBNote) {
+          // Only in IndexedDB
+          if (isCorrupted(indexedDBNote)) {
+            results.corrupted.push({
+              noteId,
+              customerId: indexedDBNote.customerId,
+              source: 'indexeddb-only',
+              issue: 'Missing essential fields and only exists in IndexedDB',
+              corruptedVersion: indexedDBNote
+            });
+          } else {
+            results.indexeddbOnly.push({
+              noteId,
+              customerId: indexedDBNote.customerId,
+              note: indexedDBNote
+            });
+          }
+        } else if (localStorageNote) {
+          // Only in localStorage
+          if (isCorrupted(localStorageNote)) {
+            results.corrupted.push({
+              noteId,
+              customerId: localStorageNote.customerId,
+              source: 'localStorage-only',
+              issue: 'Missing essential fields and only exists in localStorage',
+              corruptedVersion: localStorageNote
+            });
+          } else {
+            results.localStorageOnly.push({
+              noteId,
+              customerId: localStorageNote.customerId,
+              note: localStorageNote
+            });
+          }
+        }
+      }
+
+      return results;
+    } catch (error) {
+      console.error('Error scanning for corrupted notes:', error);
+      throw error;
+    }
+  }
+
+  // Recovery function: Restore notes from backup file
+  async function restoreNotesFromBackup(backupData, options = {}) {
+    const { mode = 'merge', customerId = null } = options;
+    const results = {
+      restored: [],
+      skipped: [],
+      failed: []
+    };
+
+    try {
+      // Extract notes from backup
+      const backupNotes = backupData.customerNotes || {};
+      let notesToRestore = [];
+
+      if (customerId) {
+        // Restore notes for a specific customer only
+        const customerNotes = backupNotes[String(customerId)] || [];
+        notesToRestore = customerNotes.map(note => ({
+          ...note,
+          customerId: parseInt(customerId)
+        }));
+      } else {
+        // Restore all notes from backup
+        for (const custId in backupNotes) {
+          const customerNotes = backupNotes[custId];
+          customerNotes.forEach(note => {
+            notesToRestore.push({
+              ...note,
+              customerId: parseInt(custId)
+            });
+          });
+        }
+      }
+
+      // Also check for notes in IndexedDB format in backup
+      if (backupData.notes && Array.isArray(backupData.notes)) {
+        backupData.notes.forEach(note => {
+          if (!customerId || note.customerId === parseInt(customerId)) {
+            notesToRestore.push(note);
+          }
+        });
+      }
+
+      // Get current notes to check what needs restoring
+      const currentScan = await scanForCorruptedNotes();
+      const currentNoteIds = new Set();
+      
+      // Collect all current note IDs
+      currentScan.healthy.forEach(n => currentNoteIds.add(n.noteId));
+      currentScan.corrupted.forEach(n => currentNoteIds.add(n.noteId));
+      currentScan.indexeddbOnly.forEach(n => currentNoteIds.add(n.noteId));
+      currentScan.localStorageOnly.forEach(n => currentNoteIds.add(n.noteId));
+
+      for (const backupNote of notesToRestore) {
+        try {
+          const noteId = backupNote.id;
+          const exists = currentNoteIds.has(noteId);
+          
+          // Check if note is healthy in backup
+          const hasSvg = backupNote.svg && typeof backupNote.svg === 'string' && backupNote.svg.length > 10;
+          const hasDate = backupNote.date || backupNote.createdAt;
+          
+          if (!hasSvg || !hasDate) {
+            results.skipped.push({
+              noteId,
+              customerId: backupNote.customerId,
+              reason: 'Note in backup is also corrupted (missing essential fields)'
+            });
+            continue;
+          }
+
+          if (mode === 'replace' || !exists) {
+            // Restore the note
+            try {
+              if (exists) {
+                // Update existing note
+                await updateNote(backupNote);
+                results.restored.push({
+                  noteId,
+                  customerId: backupNote.customerId,
+                  method: 'indexeddb',
+                  action: 'replaced'
+                });
+              } else {
+                // Create new note (might be a note that was deleted)
+                try {
+                  await createNote(backupNote);
+                  results.restored.push({
+                    noteId,
+                    customerId: backupNote.customerId,
+                    method: 'indexeddb',
+                    action: 'added'
+                  });
+                } catch (createError) {
+                  // If create fails (e.g., ID conflict), try update
+                  await updateNote(backupNote);
+                  results.restored.push({
+                    noteId,
+                    customerId: backupNote.customerId,
+                    method: 'indexeddb',
+                    action: 'replaced'
+                  });
+                }
+              }
+            } catch (dbError) {
+              // Fallback to localStorage
+              const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+              const custId = String(backupNote.customerId);
+              const customerNotes = existingNotes[custId] || [];
+              
+              const noteIndex = customerNotes.findIndex(n => n.id === noteId);
+              if (noteIndex !== -1) {
+                customerNotes[noteIndex] = backupNote;
+              } else {
+                customerNotes.push(backupNote);
+              }
+              
+              existingNotes[custId] = customerNotes;
+              localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+              
+              results.restored.push({
+                noteId,
+                customerId: backupNote.customerId,
+                method: 'localStorage',
+                action: exists ? 'replaced' : 'added'
+              });
+            }
+          } else {
+            // Check if current version is corrupted and backup is better
+            const currentCorrupted = currentScan.corrupted.find(c => c.noteId === noteId);
+            if (currentCorrupted && currentCorrupted.healthyVersion) {
+              // Current is corrupted, backup might be better - compare sizes
+              const backupSize = JSON.stringify(backupNote).length;
+              const currentSize = JSON.stringify(currentCorrupted.corruptedVersion).length;
+              
+              if (backupSize > currentSize * 1.1) { // Backup has significantly more data
+                await updateNote(backupNote);
+                results.restored.push({
+                  noteId,
+                  customerId: backupNote.customerId,
+                  method: 'indexeddb',
+                  action: 'recovered-from-backup'
+                });
+              } else {
+                results.skipped.push({
+                  noteId,
+                  customerId: backupNote.customerId,
+                  reason: 'Current version appears healthier than backup'
+                });
+              }
+            } else {
+              results.skipped.push({
+                noteId,
+                customerId: backupNote.customerId,
+                reason: 'Note already exists and appears healthy'
+              });
+            }
+          }
+        } catch (error) {
+          results.failed.push({
+            noteId: backupNote.id,
+            customerId: backupNote.customerId,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        restored: results.restored.length,
+        skipped: results.skipped.length,
+        failed: results.failed.length,
+        details: results
+      };
+    } catch (error) {
+      console.error('Error restoring notes from backup:', error);
+      throw error;
+    }
+  }
+
+  // Recovery function: Restore corrupted notes from healthy versions
+  async function recoverCorruptedNotes(dryRun = true) {
+    const scanResults = await scanForCorruptedNotes();
+    const recoveryActions = [];
+
+    for (const corrupted of scanResults.corrupted) {
+      if (corrupted.healthyVersion) {
+        recoveryActions.push({
+          noteId: corrupted.noteId,
+          customerId: corrupted.customerId,
+          action: corrupted.source.includes('indexeddb') ? 'restore-to-indexeddb' : 'restore-to-localstorage',
+          healthyVersion: corrupted.healthyVersion
+        });
+      }
+    }
+
+    if (dryRun) {
+      return {
+        canRecover: recoveryActions.length,
+        actions: recoveryActions,
+        summary: scanResults
+      };
+    }
+
+    // Actually perform recovery
+    const recoveryResults = {
+      recovered: [],
+      failed: []
+    };
+
+    for (const action of recoveryActions) {
+      try {
+        if (action.action === 'restore-to-indexeddb') {
+          // Restore to IndexedDB
+          await updateNote(action.healthyVersion);
+          recoveryResults.recovered.push({
+            noteId: action.noteId,
+            customerId: action.customerId,
+            method: 'indexeddb'
+          });
+        } else if (action.action === 'restore-to-localstorage') {
+          // Restore to localStorage
+          const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+          const customerId = String(action.customerId);
+          const customerNotes = existingNotes[customerId] || [];
+          
+          const noteIndex = customerNotes.findIndex(n => n.id === action.noteId);
+          if (noteIndex !== -1) {
+            customerNotes[noteIndex] = action.healthyVersion;
+          } else {
+            customerNotes.push(action.healthyVersion);
+          }
+          
+          existingNotes[customerId] = customerNotes;
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+          
+          recoveryResults.recovered.push({
+            noteId: action.noteId,
+            customerId: action.customerId,
+            method: 'localStorage'
+          });
+        }
+      } catch (error) {
+        recoveryResults.failed.push({
+          noteId: action.noteId,
+          customerId: action.customerId,
+          error: error.message
+        });
+      }
+    }
+
+    return {
+      recovered: recoveryResults.recovered.length,
+      failed: recoveryResults.failed.length,
+      details: recoveryResults,
+      summary: scanResults
+    };
   }
 
   function clearAllStores() {
@@ -1110,6 +1555,10 @@
     updateNote,
     deleteNote,
     getAllNotes,
+    // Recovery functions
+    scanForCorruptedNotes,
+    recoverCorruptedNotes,
+    restoreNotesFromBackup,
   };
 })();
 
