@@ -4985,11 +4985,15 @@
           throw new Error('No drawing data to save');
         }
         
-        // Generate SVG data
+        // Generate SVG data with optimization for large drawings
         const svgData = this.canvasToSVG();
         if (!svgData || svgData.trim().length === 0) {
           throw new Error('Failed to generate SVG data');
         }
+        
+        // Optimize SVG if it's too large (iPad localStorage constraint)
+        const optimizedSvgData = this.optimizeSVGForStorage(svgData);
+        console.log(`SVG size: ${svgData.length} chars → ${optimizedSvgData.length} chars (${((1 - optimizedSvgData.length / svgData.length) * 100).toFixed(1)}% reduction)`);
         
         // Get customer ID with validation
         const customerId = this.getCurrentCustomerId();
@@ -5027,7 +5031,7 @@
           // Update the note data
           const updatedNote = {
             ...this.editingNote,
-            svg: svgData,
+            svg: optimizedSvgData,
             editedDate: formatDateYYYYMMDD(new Date())
           };
           
@@ -5071,11 +5075,49 @@
             
             customerNotes[noteIndex] = normalizedUpdatedNote;
             
-            // Update localStorage
-            existingNotes[customerId] = customerNotes;
-            localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-            
-            console.log('Note updated successfully in localStorage');
+            // Try to update localStorage with quota handling
+            try {
+              existingNotes[customerId] = customerNotes;
+              localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+              console.log('Note updated successfully in localStorage');
+            } catch (localStorageError) {
+              console.log('❌ localStorage update failed:', localStorageError.message);
+              
+              if (localStorageError.message.includes('quota') || localStorageError.message.includes('QuotaExceededError')) {
+                console.log('🔄 Moving note from localStorage to IndexedDB due to quota...');
+                
+                try {
+                  // Remove the note from localStorage first (restore original state)
+                  customerNotes.splice(noteIndex, 1);
+                  existingNotes[customerId] = customerNotes;
+                  localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+                  
+                  // Save updated note to IndexedDB
+                  const noteForDB = {
+                    customerId: parseInt(customerId),
+                    svg: normalizedUpdatedNote.svg,
+                    date: normalizedUpdatedNote.date,
+                    noteNumber: normalizedUpdatedNote.noteNumber,
+                    createdAt: normalizedUpdatedNote.createdAt || new Date().toISOString(),
+                    editedDate: normalizedUpdatedNote.editedDate,
+                    source: 'indexeddb-fallback',
+                    originalId: this.editingNote.id
+                  };
+                  
+                  const savedId = await ChikasDB.createNote(noteForDB);
+                  console.log('✅ Note migrated to IndexedDB successfully, new ID:', savedId);
+                  
+                  // Update the editing note reference for future operations
+                  this.editingNote.id = savedId;
+                  this.editingNote.source = 'indexeddb-fallback';
+                  
+                } catch (migrationError) {
+                  throw new Error(`Failed to migrate note to IndexedDB: ${migrationError.message}`);
+                }
+              } else {
+                throw localStorageError;
+              }
+            }
           }
           
           // Refresh the notes list using hybrid loading
@@ -5104,7 +5146,7 @@
           
           const noteData = {
             id: uniqueId,
-            svg: svgData,
+            svg: optimizedSvgData,
             date: formatDateYYYYMMDD(new Date()),
             noteNumber: nextNoteNumber
           };
@@ -5829,6 +5871,78 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         
       } catch (error) {
         console.error('Error refreshing notes display:', error);
+      }
+    }
+
+    // Optimize SVG for storage by reducing precision and removing redundant data
+    optimizeSVGForStorage(svgData) {
+      try {
+        // For very large SVGs (>100KB), apply aggressive optimization
+        if (svgData.length > 100000) {
+          console.log('Applying aggressive SVG optimization for large drawing...');
+          
+          // Reduce coordinate precision (from 6 decimals to 2)
+          let optimized = svgData.replace(/(\d+\.\d{3,})/g, (match) => {
+            return parseFloat(match).toFixed(2);
+          });
+          
+          // Remove unnecessary whitespace and newlines
+          optimized = optimized.replace(/\s+/g, ' ').trim();
+          
+          // Compress path data by removing redundant commands
+          optimized = optimized.replace(/([ML])\s*(\d+\.?\d*)\s*(\d+\.?\d*)\s*([ML])\s*(\d+\.?\d*)\s*(\d+\.?\d*)/g, 
+            (match, cmd1, x1, y1, cmd2, x2, y2) => {
+              // If consecutive M or L commands are very close, merge them
+              const dx = Math.abs(parseFloat(x2) - parseFloat(x1));
+              const dy = Math.abs(parseFloat(y2) - parseFloat(y1));
+              if (dx < 1 && dy < 1) {
+                return `${cmd1} ${x1} ${y1}`;
+              }
+              return match;
+            });
+          
+          // Remove very short path segments (less than 1 pixel)
+          optimized = optimized.replace(/<path[^>]*d="([^"]*)"[^>]*>/g, (match, pathData) => {
+            const commands = pathData.split(/(?=[ML])/);
+            const filteredCommands = commands.filter(cmd => {
+              if (cmd.length < 5) return false; // Very short commands
+              const coords = cmd.match(/(\d+\.?\d*)/g);
+              if (coords && coords.length >= 4) {
+                const dx = Math.abs(parseFloat(coords[2]) - parseFloat(coords[0]));
+                const dy = Math.abs(parseFloat(coords[3]) - parseFloat(coords[1]));
+                return dx > 0.5 || dy > 0.5; // Keep only meaningful movements
+              }
+              return true;
+            });
+            
+            if (filteredCommands.length < commands.length * 0.5) {
+              // If we filtered out more than 50%, the path might be too simplified
+              return match;
+            }
+            
+            return match.replace(pathData, filteredCommands.join(''));
+          });
+          
+          console.log(`SVG optimization: ${svgData.length} → ${optimized.length} chars (${((1 - optimized.length / svgData.length) * 100).toFixed(1)}% reduction)`);
+          return optimized;
+        }
+        
+        // For smaller SVGs, apply light optimization
+        let optimized = svgData;
+        
+        // Reduce coordinate precision slightly
+        optimized = optimized.replace(/(\d+\.\d{4,})/g, (match) => {
+          return parseFloat(match).toFixed(3);
+        });
+        
+        // Remove unnecessary whitespace
+        optimized = optimized.replace(/\s+/g, ' ').trim();
+        
+        return optimized;
+        
+      } catch (error) {
+        console.warn('SVG optimization failed, using original:', error);
+        return svgData;
       }
     }
 
