@@ -136,46 +136,12 @@
         console.log(`Upgrading database from version ${oldVersion} to ${DB_VERSION}`);
         console.log('Current stores:', Array.from(db.objectStoreNames));
         
-        // Handle upgrade from version 3 to 4 (add notes store)
-        if (oldVersion < 4) {
-          // For version 4, we need to add the notes store
-          if (!db.objectStoreNames.contains('notes')) {
-            console.log('Creating notes store...');
-            const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
-            notesStore.createIndex('customerId', 'customerId', { unique: false });
-            notesStore.createIndex('createdAt', 'createdAt', { unique: false });
-          }
-        }
-        
-        // Handle upgrade from version 4 to 5 or 5 to 6 (add noteVersions store for version history)
-        if (oldVersion < 5 || (!db.objectStoreNames.contains('noteVersions') && oldVersion < 6)) {
-          if (!db.objectStoreNames.contains('noteVersions')) {
-            console.log('Creating noteVersions store...');
-            try {
-              const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
-              noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
-              noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
-              console.log('noteVersions store created successfully');
-            } catch (createError) {
-              console.error('Failed to create noteVersions store:', createError);
-            }
-          }
-        }
-        
-        // For version 3 and below, recreate all stores (existing logic)
-        if (oldVersion < 3) {
-          console.log('Performing full database recreation for version < 3');
-          
-          // Delete existing stores if they exist (for clean upgrade)
-          if (db.objectStoreNames.contains('customers')) {
-            db.deleteObjectStore('customers');
-          }
-          if (db.objectStoreNames.contains('appointments')) {
-            db.deleteObjectStore('appointments');
-          }
-          if (db.objectStoreNames.contains('images')) {
-            db.deleteObjectStore('images');
-          }
+        // =====================================================================
+        // FRESH DATABASE CREATION (oldVersion = 0)
+        // Creates all stores from scratch with all indexes
+        // =====================================================================
+        if (oldVersion === 0) {
+          console.log('Creating fresh database with all stores...');
           
           // Create customers store with all indexes
           const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
@@ -184,36 +150,96 @@
           customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
           customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
           
-          // Create appointments store with all indexes
+          // Create appointments store with all indexes (including status for pipeline)
           const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
           appointmentStore.createIndex('customerId', 'customerId', { unique: false });
           appointmentStore.createIndex('start', 'start', { unique: false });
           appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
-          appointmentStore.createIndex('status', 'status', { unique: false }); // Status index for pipeline views
+          appointmentStore.createIndex('status', 'status', { unique: false });
           
           // Create images store with indexes
           const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
           imagesStore.createIndex('customerId', 'customerId', { unique: false });
           
-          // Create notes store for localStorage fallback
+          // Create notes store
           const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
           notesStore.createIndex('customerId', 'customerId', { unique: false });
           notesStore.createIndex('createdAt', 'createdAt', { unique: false });
-        }
-        
-        // Handle upgrade to add status index on appointments (TradieCRM v2+)
-        // This handles both fresh installs and upgrades from v1
-        if (oldVersion >= 1 && oldVersion < 2) {
-          console.log('Adding status index to appointments store...');
-          try {
-            const transaction = event.target.transaction;
-            const appointmentStore = transaction.objectStore('appointments');
-            if (!appointmentStore.indexNames.contains('status')) {
-              appointmentStore.createIndex('status', 'status', { unique: false });
-              console.log('Status index created successfully');
+          
+          // Create noteVersions store for version history
+          const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
+          noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
+          noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
+          
+          console.log('Fresh database created successfully');
+        } 
+        // =====================================================================
+        // INCREMENTAL UPGRADES (for existing databases)
+        // =====================================================================
+        else {
+          // Upgrade from version 1 or 2 to 3+ (legacy restructure)
+          if (oldVersion < 3) {
+            console.log('Performing database restructure for version < 3');
+            
+            // Delete existing stores if they exist (for clean upgrade)
+            if (db.objectStoreNames.contains('customers')) {
+              db.deleteObjectStore('customers');
             }
-          } catch (statusIndexError) {
-            console.error('Failed to create status index:', statusIndexError);
+            if (db.objectStoreNames.contains('appointments')) {
+              db.deleteObjectStore('appointments');
+            }
+            if (db.objectStoreNames.contains('images')) {
+              db.deleteObjectStore('images');
+            }
+            
+            // Create customers store with all indexes
+            const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
+            customerStore.createIndex('lastName', 'lastName', { unique: false });
+            customerStore.createIndex('firstName', 'firstName', { unique: false });
+            customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
+            customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            
+            // Create appointments store with all indexes
+            const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
+            appointmentStore.createIndex('customerId', 'customerId', { unique: false });
+            appointmentStore.createIndex('start', 'start', { unique: false });
+            appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
+            appointmentStore.createIndex('status', 'status', { unique: false });
+            
+            // Create images store with indexes
+            const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+            imagesStore.createIndex('customerId', 'customerId', { unique: false });
+          }
+          
+          // Upgrade to version 4+ (add notes store)
+          if (oldVersion < 4 && !db.objectStoreNames.contains('notes')) {
+            console.log('Creating notes store...');
+            const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+            notesStore.createIndex('customerId', 'customerId', { unique: false });
+            notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+          }
+          
+          // Upgrade to version 5+ (add noteVersions store)
+          if (oldVersion < 5 && !db.objectStoreNames.contains('noteVersions')) {
+            console.log('Creating noteVersions store...');
+            const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
+            noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
+            noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
+          }
+          
+          // Add status index if upgrading from version without it
+          if (oldVersion >= 1 && oldVersion < 2 && db.objectStoreNames.contains('appointments')) {
+            console.log('Adding status index to appointments store...');
+            try {
+              const transaction = event.target.transaction;
+              const appointmentStore = transaction.objectStore('appointments');
+              if (!appointmentStore.indexNames.contains('status')) {
+                appointmentStore.createIndex('status', 'status', { unique: false });
+                console.log('Status index created successfully');
+              }
+            } catch (statusIndexError) {
+              console.error('Failed to create status index:', statusIndexError);
+            }
           }
         }
       };
