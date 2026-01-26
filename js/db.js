@@ -1,7 +1,13 @@
-/* IndexedDB wrapper for Chikas DB */
+/* IndexedDB wrapper - Configurable for different product editions */
 (function () {
-  const DB_NAME = 'chikas-db';
-  const DB_VERSION = 6; // Increment version to force noteVersions store creation
+  // Use ProductConfig if available, otherwise fall back to defaults
+  const config = window.ProductConfig || {};
+  const DB_NAME = config.dbName || 'chikas-db';
+  const DB_VERSION = config.dbVersion || 6;
+  const STORAGE_PREFIX = config.storagePrefix || 'chikas_';
+  const APP_SLUG = config.appSlug || 'chikas-db';
+  
+  console.log(`[DB] Using database: ${DB_NAME} v${DB_VERSION}`);
 
   /** @type {IDBDatabase | null} */
   let database = null;
@@ -805,7 +811,7 @@
     
     return {
       __meta: {
-        app: 'chikas-db',
+        app: APP_SLUG,
         version: 3,
         exportedAt: new Date().toISOString(),
       },
@@ -1517,8 +1523,9 @@
   function importAllData(payload, options = { mode: 'replace' }) {
     const mode = options.mode || 'replace';
     const { customers = [], appointments = [], images = [], customerNotes = {}, __meta = {} } = payload || {};
-    if (!__meta || __meta.app !== 'chikas-db') {
-      // Allow import anyway, but basic validation failed
+    // Accept imports from any known app version (chikas-db or tradie-crm)
+    if (!__meta || (!__meta.app.includes('chikas') && !__meta.app.includes('tradie'))) {
+      console.warn('[DB] Import: Unknown app format, proceeding anyway');
     }
     const perform = async () => {
       if (mode === 'replace') await clearAllStores();
@@ -1669,7 +1676,7 @@
   // localStorage backup functions for iOS Safari IndexedDB issues
   async function storeImageReferenceInLocalStorage(imageId, imageData) {
     try {
-      const key = `chikas_image_${imageId}`;
+      const key = `${STORAGE_PREFIX}image_${imageId}`;
       const dataToStore = {
         id: imageData.id,
         customerId: imageData.customerId,
@@ -1690,7 +1697,7 @@
       const images = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('chikas_image_')) {
+        if (key && key.startsWith(`${STORAGE_PREFIX}image_`)) {
           const data = JSON.parse(localStorage.getItem(key));
           if (data.customerId === customerId) {
             // Try to recreate blob from fileUrl or use thumbnail
@@ -1746,7 +1753,7 @@
 
   function clearImageFromLocalStorage(imageId) {
     try {
-      localStorage.removeItem(`chikas_image_${imageId}`);
+      localStorage.removeItem(`${STORAGE_PREFIX}image_${imageId}`);
     } catch (error) {
     }
   }
@@ -1863,7 +1870,7 @@
       
       const result = {
         __meta: {
-          app: 'chikas-db',
+          app: APP_SLUG,
           version: 3,
           exportedAt: new Date().toISOString(),
           backupType: 'lightweight-no-images'
@@ -1976,7 +1983,7 @@
       // Start JSON structure
       jsonParts.push('{\n');
       jsonParts.push('  "__meta": {\n');
-      jsonParts.push('    "app": "chikas-db",\n');
+      jsonParts.push(`    "app": "${APP_SLUG}",\n`);
       jsonParts.push('    "version": 3,\n');
       jsonParts.push(`    "exportedAt": "${new Date().toISOString()}"\n`);
       jsonParts.push('  },\n');
@@ -2079,48 +2086,68 @@
     }
   }
 
-  // Expose API
-  window.ChikasDB = {
+  // Expose API - use generic name CrmDB, also expose as ChikasDB for backward compatibility
+  const dbAPI = {
+    // Config info
+    dbName: DB_NAME,
+    storagePrefix: STORAGE_PREFIX,
+    
+    // Customer operations
     createCustomer,
     updateCustomer,
     getCustomerById,
     getAllCustomers,
-    getRecentCustomers, // NEW
-    getAllAppointments,
+    getRecentCustomers,
     searchCustomers,
+    deleteCustomer,
+    
+    // Appointment/Job operations
+    createAppointment,
+    updateAppointment,
+    deleteAppointment,
+    getAllAppointments,
+    getAppointmentsBetween,
+    getAppointmentsForDate,
+    getFutureAppointmentsForCustomer,
+    getAppointmentsForCustomer,
+    getAppointmentById,
+    
+    // Image/Photo operations
     addImages,
     addImage,
     getImagesByCustomerId,
     deleteImage,
-    createAppointment,
-    updateAppointment,
-    deleteAppointment,
-    deleteCustomer,
-    getAppointmentsBetween,
-    getAppointmentsForDate, // NEW
-    getFutureAppointmentsForCustomer, // NEW
-    getAppointmentsForCustomer,
-    getAppointmentById,
     fileListToEntries,
-    exportAllData,
-    safeExportAllData, // NEW - safer backup function
-    exportDataWithoutImages, // NEW - lightweight backup (no images)
-    importAllData,
-    clearAllStores,
-    // Notes functions for localStorage fallback
+    
+    // Notes operations
     createNote,
     getNotesByCustomerId,
     updateNote,
     deleteNote,
     getAllNotes,
+    
+    // Backup/Restore operations
+    exportAllData,
+    safeExportAllData,
+    exportDataWithoutImages,
+    importAllData,
+    clearAllStores,
+    
     // Recovery functions
     scanForCorruptedNotes,
     recoverCorruptedNotes,
     restoreNotesFromBackup,
+    
     // Version history functions
     getNotePreviousVersion,
     restoreNoteToPreviousVersion,
   };
+  
+  // Expose under generic name
+  window.CrmDB = dbAPI;
+  
+  // Also expose as ChikasDB for backward compatibility with existing code
+  window.ChikasDB = dbAPI;
 })();
 
 
