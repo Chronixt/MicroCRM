@@ -343,6 +343,28 @@
     }).join('\n                    ');
   }
 
+  // Generate job status options (for tradie edition)
+  function generateStatusOptions(currentStatus) {
+    const statuses = productConfig.statuses || [];
+    return statuses.map(s => {
+      const selected = s.id === currentStatus ? ' selected' : '';
+      return `<option value="${s.id}"${selected}>${s.label}</option>`;
+    }).join('\n');
+  }
+
+  // Get status badge HTML
+  function getStatusBadge(statusId) {
+    const statuses = productConfig.statuses || [];
+    const status = statuses.find(s => s.id === statusId) || statuses[0];
+    if (!status) return '';
+    return `<span class="job-status-badge status-${status.id.replace('_', '-')}">${status.label}</span>`;
+  }
+
+  // Check if we're in tradie mode
+  function isTradie() {
+    return productConfig.activeProduct === 'tradie';
+  }
+
   function navigate(path) {
     window.location.hash = '#' + path;
   }

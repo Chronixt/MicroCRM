@@ -74,10 +74,21 @@
   --panel-2: #0b1220;
   --text: #e5e7eb;
   --muted: #9ca3af;
-  --brand: #22d3ee;
-  --brand-2: #60a5fa;
+  /* TradieCRM theme - amber/orange */
+  --brand: #f59e0b;
+  --brand-2: #fbbf24;
   --danger: #ef4444;
   --ok: #34d399;
+  
+  /* Job status colors */
+  --status-lead: #94a3b8;
+  --status-quoted: #60a5fa;
+  --status-scheduled: #a78bfa;
+  --status-in-progress: #fbbf24;
+  --status-completed: #34d399;
+  --status-invoiced: #f97316;
+  --status-paid: #22c55e;
+  --status-cancelled: #ef4444;
 }
 
 * { box-sizing: border-box; }
@@ -2087,4 +2098,154 @@ select option { color: black; }
   }
 }
 
+/* Job Status Badge Styles - TradieCRM */
+.job-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
+.job-status-badge.status-lead {
+  background: rgba(148, 163, 184, 0.2);
+  color: var(--status-lead);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.job-status-badge.status-quoted {
+  background: rgba(96, 165, 250, 0.2);
+  color: var(--status-quoted);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+.job-status-badge.status-scheduled {
+  background: rgba(167, 139, 250, 0.2);
+  color: var(--status-scheduled);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+
+.job-status-badge.status-in-progress {
+  background: rgba(251, 191, 36, 0.2);
+  color: var(--status-in-progress);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.job-status-badge.status-completed {
+  background: rgba(52, 211, 153, 0.2);
+  color: var(--status-completed);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.job-status-badge.status-invoiced {
+  background: rgba(249, 115, 22, 0.2);
+  color: var(--status-invoiced);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.job-status-badge.status-paid {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--status-paid);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.job-status-badge.status-cancelled {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--status-cancelled);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Job Status Select Dropdown */
+.job-status-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.job-status-select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+
+/* Pipeline View Styles */
+.pipeline-view {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 16px 0;
+}
+
+.pipeline-column {
+  min-width: 280px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.pipeline-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pipeline-column-title {
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.pipeline-column-count {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pipeline-job-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pipeline-job-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.pipeline-job-customer {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.pipeline-job-type {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pipeline-job-date {
+  font-size: 11px;
+  color: var(--brand);
+  margin-top: 8px;
+}
