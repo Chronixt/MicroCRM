@@ -189,6 +189,7 @@
           appointmentStore.createIndex('customerId', 'customerId', { unique: false });
           appointmentStore.createIndex('start', 'start', { unique: false });
           appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
+          appointmentStore.createIndex('status', 'status', { unique: false }); // Status index for pipeline views
           
           // Create images store with indexes
           const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
@@ -198,6 +199,22 @@
           const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
           notesStore.createIndex('customerId', 'customerId', { unique: false });
           notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+        
+        // Handle upgrade to add status index on appointments (TradieCRM v2+)
+        // This handles both fresh installs and upgrades from v1
+        if (oldVersion >= 1 && oldVersion < 2) {
+          console.log('Adding status index to appointments store...');
+          try {
+            const transaction = event.target.transaction;
+            const appointmentStore = transaction.objectStore('appointments');
+            if (!appointmentStore.indexNames.contains('status')) {
+              appointmentStore.createIndex('status', 'status', { unique: false });
+              console.log('Status index created successfully');
+            }
+          } catch (statusIndexError) {
+            console.error('Failed to create status index:', statusIndexError);
+          }
         }
       };
 
@@ -595,6 +612,66 @@
         req.onerror = () => reject(req.error);
       })
     ));
+  }
+
+  // Get appointments by status (for pipeline views)
+  function getAppointmentsByStatus(status) {
+    return runTransaction(['appointments'], 'readonly', (appointments) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        // Try to use status index if available, otherwise filter manually
+        try {
+          const index = appointments.index('status');
+          const req = index.openCursor(IDBKeyRange.only(status));
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              results.push(cursor.value);
+              cursor.continue();
+            } else {
+              // Sort by start date
+              results.sort((a, b) => new Date(a.start) - new Date(b.start));
+              resolve(results);
+            }
+          };
+          req.onerror = () => reject(req.error);
+        } catch (indexError) {
+          // Fallback: scan all appointments and filter
+          console.warn('Status index not available, using fallback');
+          const req = appointments.openCursor();
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              const apt = cursor.value;
+              if ((apt.status || 'scheduled') === status) {
+                results.push(apt);
+              }
+              cursor.continue();
+            } else {
+              results.sort((a, b) => new Date(a.start) - new Date(b.start));
+              resolve(results);
+            }
+          };
+          req.onerror = () => reject(req.error);
+        }
+      })
+    ));
+  }
+
+  // Get all appointments grouped by status (for pipeline views)
+  async function getAppointmentsGroupedByStatus() {
+    const all = await getAllAppointments();
+    const grouped = {};
+    all.forEach(apt => {
+      const status = apt.status || 'scheduled';
+      if (!grouped[status]) grouped[status] = [];
+      grouped[status].push(apt);
+    });
+    // Sort each group by start date
+    Object.keys(grouped).forEach(status => {
+      grouped[status].sort((a, b) => new Date(a.start) - new Date(b.start));
+    });
+    return grouped;
   }
 
   function updateAppointment(updated) {
@@ -2111,6 +2188,8 @@
     getFutureAppointmentsForCustomer,
     getAppointmentsForCustomer,
     getAppointmentById,
+    getAppointmentsByStatus,
+    getAppointmentsGroupedByStatus,
     
     // Image/Photo operations
     addImages,

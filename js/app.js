@@ -1291,8 +1291,10 @@
       const endISO = new Date(new Date(roundedStartLocal).getTime() + durationMin * 60000).toISOString();
       const typeLabel = types.length ? types.join(' + ') : '';
       const fullName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
-      const title = typeLabel || 'Appointment';
-      const appt = { customerId: id, title, start: startISO, end: endISO, createdAt: new Date().toISOString() };
+      const title = typeLabel || (isTradie() ? 'Job' : 'Appointment');
+      // Get default status (first status in pipeline, or 'scheduled' for hairdresser, 'lead' for tradie)
+      const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
+      const appt = { customerId: id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() };
       const appointmentId = await ChikasDB.createAppointment(appt);
       alert(t('appointmentBooked'));
       
@@ -1656,28 +1658,41 @@
     
     appRoot.innerHTML = wrapWithSidebar(`
         <div class="space-between" style="margin-bottom: 8px;">
-          <h2>${t('calendar')}</h2>
-          <button id="new-appointment-btn" style="
-            background: var(--brand);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 8px 16px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s ease;
-          ">
-            <span>+</span>
-            <span>${t('newAppointment')}</span>
-          </button>
+          <h2>${isTradie() ? 'Jobs' : t('calendar')}</h2>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            ${isTradie() ? `
+            <div class="view-toggle" style="display: flex; gap: 4px;">
+              <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">Calendar</button>
+              <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">Pipeline</button>
+            </div>
+            ` : ''}
+            <button id="new-appointment-btn" style="
+              background: var(--brand);
+              color: white;
+              border: none;
+              border-radius: 8px;
+              padding: 8px 16px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              transition: all 0.2s ease;
+            ">
+              <span>+</span>
+              <span>${isTradie() ? 'New Job' : t('newAppointment')}</span>
+            </button>
+          </div>
         </div>
-      <div class="card">
+      <div class="card" id="calendar-container">
         <div id="calendar"></div>
       </div>
+      ${isTradie() ? `
+      <div class="card hidden" id="pipeline-container">
+        <div id="pipeline" class="pipeline-view"></div>
+      </div>
+      ` : ''}
     `);
 
     const calendarEl = document.getElementById('calendar');
@@ -1715,14 +1730,15 @@
             const fallbackName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '';
             const mappedEvent = {
               id: String(e.id),
-              title: e.title || 'Appointment',
+              title: e.title || (isTradie() ? 'Job' : 'Appointment'),
               start: e.start,
               end: e.end,
               extendedProps: { 
                 customerId: e.customerId,
                 customerName: fallbackName,
                 customerInitials: customer ? getInitials(customer.firstName, customer.lastName) : '',
-                bookingType: e.title || ''
+                bookingType: e.title || '',
+                status: e.status || 'scheduled' // Include status
               }
             };
             return mappedEvent;
@@ -1744,11 +1760,15 @@
         // Render similar content for list and month views
         const customerName = arg.event.extendedProps.customerName || '';
         const bookingType = arg.event.extendedProps.bookingType || '';
+        const status = arg.event.extendedProps.status || 'scheduled';
         const start = new Date(arg.event.start);
         const end = new Date(arg.event.end);
         const durationMs = end - start;
         const durationMinutes = Math.round(durationMs / (1000 * 60));
         const duration = durationMinutes > 0 ? `${durationMinutes}m` : '';
+        
+        // Get status badge HTML for tradie edition
+        const statusBadgeHtml = isTradie() ? getStatusBadge(status) : '';
 
         // Custom content only for list and month views. Week/day views use FullCalendar defaults.
         if (arg.view.type === 'listWeek' || arg.view.type === 'dayGridMonth') {
@@ -1757,6 +1777,7 @@
               <div class="fc-list-event-content">
                 <div class="custom-start-time">${time}</div>
                 ${duration ? `<div class="custom-duration">${duration}</div>` : ''}
+                ${statusBadgeHtml ? `<div style="margin-left: auto;">${statusBadgeHtml}</div>` : ''}
                 ${customerName ? `<div class="fc-list-event-customer">${customerName}</div>` : ''}
                 ${bookingType ? `<div class="fc-list-event-type">${bookingType}</div>` : ''}
               </div>
@@ -1790,6 +1811,32 @@
       openQuickBookModal(todayStr);
     });
     
+    // Set up view toggle for tradie edition
+    if (isTradie()) {
+      const calendarViewBtn = document.getElementById('calendar-view-btn');
+      const pipelineViewBtn = document.getElementById('pipeline-view-btn');
+      const calendarContainer = document.getElementById('calendar-container');
+      const pipelineContainer = document.getElementById('pipeline-container');
+      
+      if (calendarViewBtn && pipelineViewBtn) {
+        calendarViewBtn.addEventListener('click', () => {
+          calendarViewBtn.classList.remove('secondary');
+          pipelineViewBtn.classList.add('secondary');
+          calendarContainer.classList.remove('hidden');
+          pipelineContainer.classList.add('hidden');
+        });
+        
+        pipelineViewBtn.addEventListener('click', async () => {
+          pipelineViewBtn.classList.remove('secondary');
+          calendarViewBtn.classList.add('secondary');
+          pipelineContainer.classList.remove('hidden');
+          calendarContainer.classList.add('hidden');
+          // Render pipeline view
+          await renderPipelineView();
+        });
+      }
+    }
+    
     // If we have an appointment ID, open it after calendar loads
     if (appointmentId) {
       // Wait for calendar to fully load events and then open the appointment
@@ -1814,6 +1861,104 @@
       
       // Wait for events to load, then open appointment
       setTimeout(openAppointment, 1000);
+    }
+
+    // Render pipeline/kanban view for tradie edition
+    async function renderPipelineView() {
+      const pipelineEl = document.getElementById('pipeline');
+      if (!pipelineEl) return;
+      
+      pipelineEl.innerHTML = '<div class="muted" style="text-align: center; padding: 20px;">Loading jobs...</div>';
+      
+      try {
+        const statuses = productConfig.statuses || [];
+        const grouped = await ChikasDB.getAppointmentsGroupedByStatus();
+        const customers = await ChikasDB.getAllCustomers();
+        const idToCustomer = new Map(customers.map(c => [c.id, c]));
+        
+        // Build pipeline HTML
+        let pipelineHtml = '';
+        
+        for (const status of statuses) {
+          const jobs = grouped[status.id] || [];
+          const count = jobs.length;
+          
+          pipelineHtml += `
+            <div class="pipeline-column">
+              <div class="pipeline-column-header">
+                <span class="pipeline-column-title" style="color: ${status.color};">${status.label}</span>
+                <span class="pipeline-column-count">${count}</span>
+              </div>
+              <div class="pipeline-column-jobs" data-status="${status.id}">
+          `;
+          
+          for (const job of jobs) {
+            const customer = idToCustomer.get(job.customerId);
+            const customerName = customer 
+              ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() 
+              : 'Unknown Customer';
+            const jobType = job.title || 'No type';
+            const jobDate = new Date(job.start);
+            const dateStr = jobDate.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-AU', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric'
+            });
+            const timeStr = jobDate.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-AU', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            });
+            
+            pipelineHtml += `
+              <div class="pipeline-job-card" data-job-id="${job.id}" data-customer-id="${job.customerId}">
+                <div class="pipeline-job-customer">${escapeHtml(customerName)}</div>
+                <div class="pipeline-job-type">${escapeHtml(jobType)}</div>
+                <div class="pipeline-job-date">${dateStr} at ${timeStr}</div>
+              </div>
+            `;
+          }
+          
+          pipelineHtml += `
+              </div>
+            </div>
+          `;
+        }
+        
+        pipelineEl.innerHTML = pipelineHtml;
+        
+        // Add click handlers for job cards
+        pipelineEl.querySelectorAll('.pipeline-job-card').forEach(card => {
+          card.addEventListener('click', async () => {
+            const jobId = card.dataset.jobId;
+            if (jobId) {
+              // Fetch the job and open the modal
+              const job = await ChikasDB.getAppointmentById(jobId);
+              if (job) {
+                const customer = idToCustomer.get(job.customerId);
+                // Create a mock event object for the modal
+                const mockEvent = {
+                  id: String(job.id),
+                  title: job.title,
+                  start: new Date(job.start),
+                  end: new Date(job.end),
+                  extendedProps: {
+                    customerId: job.customerId,
+                    customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
+                    status: job.status || 'scheduled'
+                  },
+                  toPlainObject: () => job
+                };
+                openAppointmentDetailsModal(mockEvent);
+              }
+            }
+          });
+        });
+        
+      } catch (error) {
+        console.error('Error rendering pipeline view:', error);
+        pipelineEl.innerHTML = '<div class="error" style="text-align: center; padding: 20px;">Error loading jobs</div>';
+      }
     }
 
     function openQuickBookModal(dateStr) {
@@ -1977,7 +2122,9 @@
         const endDate = new Date(startDate.getTime() + durationMin * 60000);
         const endISO = endDate.toISOString();
         
-        const appointmentId = await ChikasDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, createdAt: new Date().toISOString() });
+        // Get default status (first status in pipeline)
+        const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
+        const appointmentId = await ChikasDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() });
         
         hideModal();
         
@@ -2086,6 +2233,15 @@
                 </div>
               </div>
             </div>
+
+            ${isTradie() ? `
+            <label>Job Status</label>
+            <div class="select-wrap">
+              <select id="apt-status" class="job-status-select">
+                ${generateStatusOptions(event.extendedProps?.status || 'scheduled')}
+              </select>
+            </div>
+            ` : ''}
 
             <div class="row" style="margin-top: 16px; gap: 12px;">
               <button class="button" id="apt-save">${t('saveChanges')}</button>
@@ -2223,6 +2379,10 @@
             const typeLabel = types.length ? types.join(' + ') : '';
             const newTitle = typeLabel || titleInput || 'No service type';
             
+            // Get status (only for tradie edition)
+            const statusEl = document.getElementById('apt-status');
+            const status = statusEl ? statusEl.value : (event.extendedProps?.status || 'scheduled');
+            
             // Convert local datetime to ISO string
             const roundedLocal = roundDatetimeLocalToStep(startStr, 15);
             const startDate = new Date(roundedLocal);
@@ -2247,7 +2407,8 @@
                 customerId: customerId, // Use the validated customerId
                 title: newTitle,
                 start: startISO,
-                end: endISO
+                end: endISO,
+                status: status // Include status
               };
             } else {
               // Fallback for plain appointment objects
@@ -2257,6 +2418,7 @@
                 title: newTitle,
                 start: startISO,
                 end: endISO,
+                status: status, // Include status
                 createdAt: event.createdAt || new Date().toISOString()
               };
             }
