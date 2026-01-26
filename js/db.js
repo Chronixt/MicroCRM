@@ -487,12 +487,7 @@
   async function compressImage(blob, type) {
     return new Promise((resolve, reject) => {
       try {
-        // Check if image is already small enough
-        if (blob.size <= 500 * 1024) { // 500KB limit
-          resolve(blob);
-          return;
-        }
-        
+        // Always compress to save storage space
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const img = new Image();
@@ -515,14 +510,14 @@
             // Draw compressed image
             ctx.drawImage(img, 0, 0, width, height);
             
-            // Convert to blob with quality compression
+            // Convert to blob with quality compression (0.7 = 70% quality for better storage efficiency)
             canvas.toBlob((compressedBlob) => {
               if (compressedBlob && compressedBlob.size < blob.size) {
                 resolve(compressedBlob);
               } else {
                 resolve(blob); // Use original if compression didn't help
               }
-            }, type || 'image/jpeg', 0.8); // 80% quality
+            }, type || 'image/jpeg', 0.7); // 70% quality for storage efficiency
           } catch (error) {
             console.error('Error during image compression:', error);
             resolve(blob); // Fallback to original
@@ -881,6 +876,40 @@
       reader.onerror = () => reject(reader.error);
       reader.readAsDataURL(blob);
     });
+  }
+
+  // Calculate storage usage for images
+  async function getStorageStats() {
+    const images = await runTransaction(['images'], 'readonly', (store) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else resolve(items);
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+    
+    let totalBytes = 0;
+    for (const img of images) {
+      if (img.dataUrl) {
+        // Estimate base64 size (base64 is ~33% larger than binary)
+        const base64Length = img.dataUrl.length - (img.dataUrl.indexOf(',') + 1);
+        totalBytes += (base64Length * 0.75); // Convert from base64 to approximate binary size
+      }
+    }
+    
+    return {
+      imageCount: images.length,
+      totalBytes: totalBytes,
+      totalMB: (totalBytes / (1024 * 1024)).toFixed(2),
+      usagePercent: Math.min(100, (totalBytes / (50 * 1024 * 1024) * 100)).toFixed(1), // Assume 50MB limit
+      isWarning: totalBytes > (40 * 1024 * 1024), // >40MB
+      isCritical: totalBytes > (45 * 1024 * 1024) // >45MB
+    };
   }
 
   async function exportAllData() {
@@ -2612,6 +2641,7 @@
     exportDataWithoutImages,
     importAllData,
     clearAllStores,
+    getStorageStats,
     
     // Recovery functions
     scanForCorruptedNotes,

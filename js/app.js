@@ -124,6 +124,43 @@
     });
   }
 
+  async function loadStorageStats() {
+    const container = document.getElementById('storage-meter-container');
+    if (!container) return;
+    
+    try {
+      const stats = await ChikasDB.getStorageStats();
+      
+      let statusColor = '#22c55e'; // green
+      let statusText = 'Healthy';
+      if (stats.isCritical) {
+        statusColor = '#ef4444'; // red
+        statusText = 'Critical - consider deleting some photos';
+      } else if (stats.isWarning) {
+        statusColor = '#f97316'; // orange
+        statusText = 'High usage - consider cleaning up';
+      }
+      
+      container.innerHTML = `
+        <div style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+            <span>${stats.imageCount} photos</span>
+            <span>${stats.totalMB} MB used</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden;">
+            <div style="background: ${statusColor}; height: 100%; width: ${stats.usagePercent}%; transition: width 0.3s;"></div>
+          </div>
+          <div style="font-size: 11px; color: ${statusColor}; margin-top: 4px;">
+            ${statusText} (${stats.usagePercent}% of ~50MB limit)
+          </div>
+        </div>
+      `;
+    } catch (error) {
+      console.error('Error loading storage stats:', error);
+      container.innerHTML = '<div class="muted" style="font-size: 12px;">Could not calculate storage</div>';
+    }
+  }
+
   async function performDailyBackup() {
     try {
       // Show loading state
@@ -3813,6 +3850,16 @@
       <div class="space-between" style="margin-bottom: 8px;">
         <h2>Options</h2>
       </div>
+      
+      ${isTradie() ? `
+      <div class="card" style="margin-bottom: 16px;">
+        <h3 style="margin-top: 0;">📊 Storage Usage</h3>
+        <div id="storage-meter-container">
+          <div class="muted" style="font-size: 12px;">Calculating...</div>
+        </div>
+      </div>
+      ` : ''}
+      
       <div class="card">
         <div class="form">
           <div class="row">
@@ -3905,6 +3952,11 @@
         </div>
       </div>
     `);
+
+    // Load storage stats for tradie edition
+    if (isTradie()) {
+      loadStorageStats();
+    }
 
     const exportBtn = document.getElementById('export-btn');
     const downloadBtn = document.getElementById('download-btn');
