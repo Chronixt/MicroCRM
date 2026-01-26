@@ -124,6 +124,91 @@
     });
   }
 
+  // ============================================================================
+  // PRO FEATURES: APP LOCK & BACKUP REMINDERS
+  // ============================================================================
+
+  async function showPinLockScreen(hashedPin) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'pin-lock-overlay';
+      overlay.style.cssText = 'position: fixed; inset: 0; background: var(--bg, #1a1a2e); z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;';
+      
+      overlay.innerHTML = `
+        <div style="text-align: center; max-width: 300px;">
+          <div style="font-size: 48px; margin-bottom: 20px;">🔒</div>
+          <h2 style="margin: 0 0 8px 0; color: white;">TradieCRM Locked</h2>
+          <p style="margin: 0 0 24px 0; color: #94a3b8; font-size: 14px;">Enter your 4-digit PIN to unlock</p>
+          <input type="password" id="unlock-pin-input" placeholder="• • • •" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 12px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;" />
+          <button id="unlock-btn" style="width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; font-weight: 600; background: var(--brand, #f59e0b); color: white; border: none; border-radius: 12px; cursor: pointer;">Unlock</button>
+          <p id="pin-error" style="color: #ef4444; margin-top: 12px; font-size: 13px; display: none;">Incorrect PIN. Please try again.</p>
+        </div>
+      `;
+      
+      document.body.appendChild(overlay);
+      
+      const pinInput = document.getElementById('unlock-pin-input');
+      const unlockBtn = document.getElementById('unlock-btn');
+      const errorMsg = document.getElementById('pin-error');
+      
+      setTimeout(() => pinInput.focus(), 100);
+      
+      const attemptUnlock = () => {
+        const enteredPin = pinInput.value.trim();
+        const enteredHash = btoa(enteredPin + 'tradie_salt');
+        
+        if (enteredHash === hashedPin) {
+          overlay.remove();
+          resolve(true);
+        } else {
+          errorMsg.style.display = 'block';
+          pinInput.value = '';
+          pinInput.focus();
+        }
+      };
+      
+      unlockBtn.addEventListener('click', attemptUnlock);
+      pinInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') attemptUnlock();
+      });
+    });
+  }
+
+  function checkBackupReminder() {
+    const frequency = localStorage.getItem(`${STORAGE_PREFIX}backup_reminder_frequency`);
+    if (!frequency || frequency === 'off') return;
+    
+    const nextReminderStr = localStorage.getItem(`${STORAGE_PREFIX}next_backup_reminder`);
+    if (!nextReminderStr) return;
+    
+    const nextReminder = new Date(nextReminderStr);
+    const now = new Date();
+    
+    if (now >= nextReminder) {
+      // Show reminder after a short delay
+      setTimeout(() => {
+        const shouldBackup = confirm('It\'s time for your scheduled backup! Would you like to create a backup now?');
+        
+        if (shouldBackup) {
+          // Navigate to backup page
+          navigate('/backup');
+        }
+        
+        // Schedule next reminder
+        let nextDate;
+        if (frequency === 'weekly') {
+          nextDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        } else if (frequency === 'monthly') {
+          nextDate = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+        }
+        
+        if (nextDate) {
+          localStorage.setItem(`${STORAGE_PREFIX}next_backup_reminder`, nextDate.toISOString());
+        }
+      }, 2000);
+    }
+  }
+
   async function loadStorageStats() {
     const container = document.getElementById('storage-meter-container');
     if (!container) return;
@@ -4013,6 +4098,45 @@
             <div id="restore-notes-status" style="margin-top: 12px; font-size: 12px;"></div>
           </div>
           
+          ${isTradie() ? `
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
+          <h3 style="margin-top: 16px; margin-bottom: 8px;">⭐ Pro Settings</h3>
+          
+          <div class="card" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3);">
+            <div style="margin-bottom: 16px;">
+              <strong style="font-size: 14px;">🔔 Backup Reminders</strong>
+              <div class="muted" style="font-size: 12px; margin: 8px 0;">Get reminded to backup your data regularly.</div>
+              <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <select id="backup-reminder-frequency" style="flex: 1;">
+                  <option value="off">Off</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <button id="save-backup-reminder" class="button secondary" style="padding: 8px 12px;">Save</button>
+              </div>
+            </div>
+            
+            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px;">
+              <strong style="font-size: 14px;">🔒 App Lock</strong>
+              <div class="muted" style="font-size: 12px; margin: 8px 0;">Protect your data with a PIN code when opening the app.</div>
+              <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                  <input type="checkbox" id="app-lock-enabled" />
+                  <span>Enable PIN Lock</span>
+                </label>
+              </div>
+              <div id="pin-setup-section" style="display: none; margin-top: 12px;">
+                <div style="display: flex; gap: 8px;">
+                  <input type="password" id="app-lock-pin" placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="flex: 1; text-align: center; letter-spacing: 8px; font-size: 18px;" />
+                  <button id="save-app-lock" class="button" style="padding: 8px 16px;">Set PIN</button>
+                </div>
+              </div>
+              <div id="pin-status" style="margin-top: 8px; font-size: 12px;"></div>
+            </div>
+          </div>
+          ` : ''}
+          
           <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
           
           <div class="row">
@@ -4218,6 +4342,80 @@
         // Reload the page
         window.location.reload();
       });
+    }
+
+    // Pro Settings handlers (tradie edition)
+    if (isTradie()) {
+      // Load saved backup reminder setting
+      const backupReminderSelect = document.getElementById('backup-reminder-frequency');
+      if (backupReminderSelect) {
+        const savedFrequency = localStorage.getItem(`${STORAGE_PREFIX}backup_reminder_frequency`) || 'off';
+        backupReminderSelect.value = savedFrequency;
+        
+        document.getElementById('save-backup-reminder')?.addEventListener('click', () => {
+          const frequency = backupReminderSelect.value;
+          localStorage.setItem(`${STORAGE_PREFIX}backup_reminder_frequency`, frequency);
+          
+          // Schedule next reminder
+          if (frequency !== 'off') {
+            const now = new Date();
+            let nextReminder;
+            if (frequency === 'weekly') {
+              nextReminder = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            } else if (frequency === 'monthly') {
+              nextReminder = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+            }
+            localStorage.setItem(`${STORAGE_PREFIX}next_backup_reminder`, nextReminder.toISOString());
+          } else {
+            localStorage.removeItem(`${STORAGE_PREFIX}next_backup_reminder`);
+          }
+          
+          alert('Backup reminder setting saved!');
+        });
+      }
+      
+      // App Lock settings
+      const appLockCheckbox = document.getElementById('app-lock-enabled');
+      const pinSetupSection = document.getElementById('pin-setup-section');
+      const pinStatus = document.getElementById('pin-status');
+      
+      if (appLockCheckbox) {
+        // Load current setting
+        const hasPin = localStorage.getItem(`${STORAGE_PREFIX}app_lock_pin`);
+        appLockCheckbox.checked = !!hasPin;
+        if (hasPin) {
+          pinStatus.innerHTML = '<span style="color: #22c55e;">✓ PIN is set</span>';
+        }
+        
+        appLockCheckbox.addEventListener('change', () => {
+          if (appLockCheckbox.checked) {
+            pinSetupSection.style.display = 'block';
+          } else {
+            pinSetupSection.style.display = 'none';
+            // Clear the PIN
+            localStorage.removeItem(`${STORAGE_PREFIX}app_lock_pin`);
+            pinStatus.innerHTML = '<span style="color: #94a3b8;">PIN lock disabled</span>';
+          }
+        });
+        
+        document.getElementById('save-app-lock')?.addEventListener('click', () => {
+          const pinInput = document.getElementById('app-lock-pin');
+          const pin = pinInput.value.trim();
+          
+          if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+            alert('Please enter a 4-digit PIN');
+            return;
+          }
+          
+          // Store hashed PIN (simple hash for demo - in production use proper hashing)
+          const hashedPin = btoa(pin + 'tradie_salt');
+          localStorage.setItem(`${STORAGE_PREFIX}app_lock_pin`, hashedPin);
+          
+          pinInput.value = '';
+          pinSetupSection.style.display = 'none';
+          pinStatus.innerHTML = '<span style="color: #22c55e;">✓ PIN has been set!</span>';
+        });
+      }
     }
 
     // Note Recovery handlers
@@ -5554,7 +5752,22 @@
 
 
   window.addEventListener('hashchange', render);
-  window.addEventListener('load', () => {
+  window.addEventListener('load', async () => {
+    // Check for app lock (tradie edition)
+    if (isTradie()) {
+      const hashedPin = localStorage.getItem(`${STORAGE_PREFIX}app_lock_pin`);
+      if (hashedPin) {
+        const unlocked = await showPinLockScreen(hashedPin);
+        if (!unlocked) {
+          document.body.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; color: #ef4444; font-size: 18px;">App locked. Please reload and enter your PIN.</div>';
+          return;
+        }
+      }
+      
+      // Check for backup reminder
+      checkBackupReminder();
+    }
+    
     // Default route
     if (!window.location.hash) navigate('/');
     render();
