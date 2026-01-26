@@ -1,4 +1,11 @@
 (function () {
+  // Get product configuration
+  const productConfig = window.ProductConfig || {};
+  const STORAGE_PREFIX = productConfig.storagePrefix || 'chikas_';
+  const APP_NAME = productConfig.appName || 'CRM';
+  
+  console.log(`[App] Starting ${APP_NAME}`);
+  
   // Check for force update parameter
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('force') === 'true' || urlParams.get('v')) {
@@ -18,7 +25,7 @@
 
   // Smart Backup System - Check if daily backup is needed
   function checkDailyBackup() {
-    const lastBackup = localStorage.getItem('chikas_last_backup');
+    const lastBackup = localStorage.getItem(`${STORAGE_PREFIX}last_backup`);
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
@@ -30,7 +37,7 @@
 
   function showBackupReminder() {
     // Don't show if already showing or if user dismissed today
-    const dismissedToday = localStorage.getItem('chikas_backup_dismissed_today');
+    const dismissedToday = localStorage.getItem(`${STORAGE_PREFIX}backup_dismissed_today`);
     const today = new Date().toDateString();
     
     if (dismissedToday === today) {
@@ -55,7 +62,7 @@
       font-weight: 500;
     `;
 
-    const lastBackup = localStorage.getItem('chikas_last_backup');
+    const lastBackup = localStorage.getItem(`${STORAGE_PREFIX}last_backup`);
     const daysSinceBackup = lastBackup ? 
       Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 
       'unknown';
@@ -101,7 +108,7 @@
       
       if (dismissBtn) {
         dismissBtn.addEventListener('click', () => {
-          localStorage.setItem('chikas_backup_dismissed_today', today);
+          localStorage.setItem(`${STORAGE_PREFIX}backup_dismissed_today`, today);
           reminderBanner.remove();
         });
       } else {
@@ -111,7 +118,7 @@
     // Fallback: Use event delegation for the dismiss button
     document.addEventListener('click', (e) => {
       if (e.target && e.target.id === 'dismiss-backup-btn') {
-        localStorage.setItem('chikas_backup_dismissed_today', today);
+        localStorage.setItem(`${STORAGE_PREFIX}backup_dismissed_today`, today);
         reminderBanner.remove();
       }
     });
@@ -135,14 +142,14 @@
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `chikas-daily-backup-${timestamp}.json`;
+      a.download = `${productConfig.appSlug || 'crm'}-daily-backup-${timestamp}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
       // Update last backup time
-      localStorage.setItem('chikas_last_backup', new Date().toISOString());
+      localStorage.setItem(`${STORAGE_PREFIX}last_backup`, new Date().toISOString());
       
       // Show success message
       const reminderBanner = document.getElementById('backup-reminder');
@@ -268,13 +275,19 @@
   };
 
   function getLang() {
-    return localStorage.getItem('chikas_lang') || 'en';
+    return localStorage.getItem(`${STORAGE_PREFIX}lang`) || 'en';
   }
   function setLang(lang) {
-    localStorage.setItem('chikas_lang', lang);
+    localStorage.setItem(`${STORAGE_PREFIX}lang`, lang);
   }
   function t(key) {
     const lang = getLang();
+    // First check product-specific translations
+    if (productConfig.getProductTranslation) {
+      const productTrans = productConfig.getProductTranslation(key, lang);
+      if (productTrans) return productTrans;
+    }
+    // Fall back to base translations
     return (translations[lang] && translations[lang][key]) || translations.en[key] || key;
   }
   function formatReferralType(value) {
@@ -293,6 +306,41 @@
     const first = (firstName || '').charAt(0).toUpperCase();
     const last = (lastName || '').charAt(0).toUpperCase();
     return first + last;
+  }
+
+  // Generate service/booking type checkboxes from ProductConfig
+  function generateServiceTypeOptions(className) {
+    const serviceTypes = productConfig.serviceTypes || [];
+    const lang = getLang();
+    return serviceTypes.map(s => {
+      const label = lang === 'ja' ? (s.labelJa || s.label) : s.label;
+      return `<label class="check"><input type="checkbox" value="${s.label}" class="${className}" /> ${label}</label>`;
+    }).join('\n                  ');
+  }
+
+  // Get service type labels array (for backward compatibility)
+  function getBookingTypes() {
+    return (productConfig.serviceTypes || []).map(s => s.label);
+  }
+
+  // Generate duration options from ProductConfig
+  function generateDurationOptions() {
+    const options = productConfig.durationOptions || [30, 45, 60, 90, 120, 150, 180];
+    const defaultDuration = productConfig.defaultDuration || 60;
+    return options.map(mins => {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      let label;
+      if (hours === 0) {
+        label = `${mins} mins`;
+      } else if (remainingMins === 0) {
+        label = hours === 1 ? '1 hour' : `${hours} hours`;
+      } else {
+        label = `${hours}.5 hours`;
+      }
+      const selected = mins === defaultDuration ? ' selected' : '';
+      return `<option value="${mins}"${selected}>${label}</option>`;
+    }).join('\n                    ');
   }
 
   function navigate(path) {
@@ -961,19 +1009,11 @@
                 </div>
               </div>
               <div>
-                <label>Booking type</label>
+                <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : 'Booking type'}</label>
                 <div class="multi-select" id="appt-type-dropdown">
                   <div id="appt-type-display" class="multi-select-display" tabindex="0">${t('noneSelected')}</div>
                   <div class="dropdown-menu hidden" id="appt-type-menu">
-                                      <label class="check"><input type="checkbox" value="Cut" class="appt-type-opt" /> Cut</label>
-                  <label class="check"><input type="checkbox" value="Colour" class="appt-type-opt" /> Colour</label>
-                  <label class="check"><input type="checkbox" value="Touch up" class="appt-type-opt" /> Touch up</label>
-                  <label class="check"><input type="checkbox" value="Treatment" class="appt-type-opt" /> Treatment</label>
-                  <label class="check"><input type="checkbox" value="Bleach colour" class="appt-type-opt" /> Bleach colour</label>
-                  <label class="check"><input type="checkbox" value="Head Spa" class="appt-type-opt" /> Head Spa</label>
-                  <label class="check"><input type="checkbox" value="Perm" class="appt-type-opt" /> Perm</label>
-                  <label class="check"><input type="checkbox" value="Straightening" class="appt-type-opt" /> Straightening</label>
-                  <label class="check"><input type="checkbox" value="Fringe cut" class="appt-type-opt" /> Fringe cut</label>
+                  ${generateServiceTypeOptions('appt-type-opt')}
                   </div>
                 </div>
               </div>
@@ -1791,19 +1831,11 @@
             </div>
 
             <div>
-              <label>${t('bookingType')}</label>
+              <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : t('bookingType')}</label>
               <div class="multi-select" id="qb-type-dropdown">
                 <div id="qb-type-display" class="multi-select-display" tabindex="0">${t('noneSelected')}</div>
                 <div class="dropdown-menu hidden" id="qb-type-menu">
-                  <label class="check"><input type="checkbox" value="Cut" class="qb-type-opt" /> Cut</label>
-                  <label class="check"><input type="checkbox" value="Colour" class="qb-type-opt" /> Colour</label>
-                  <label class="check"><input type="checkbox" value="Touch up" class="qb-type-opt" /> Touch up</label>
-                  <label class="check"><input type="checkbox" value="Treatment" class="qb-type-opt" /> Treatment</label>
-                  <label class="check"><input type="checkbox" value="Bleach colour" class="qb-type-opt" /> Bleach colour</label>
-                  <label class="check"><input type="checkbox" value="Head Spa" class="qb-type-opt" /> Head Spa</label>
-                  <label class="check"><input type="checkbox" value="Perm" class="qb-type-opt" /> Perm</label>
-                  <label class="check"><input type="checkbox" value="Straightening" class="qb-type-opt" /> Straightening</label>
-                  <label class="check"><input type="checkbox" value="Fringe cut" class="qb-type-opt" /> Fringe cut</label>
+                  ${generateServiceTypeOptions('qb-type-opt')}
                 </div>
               </div>
             </div>
@@ -2023,20 +2055,12 @@
               </div>
             </div>
 
-            <label>${t('bookingType')}</label>
+            <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : t('bookingType')}</label>
             <div class="select-wrap">
               <div class="multi-select" id="apt-type-dropdown">
                 <div class="multi-select-display" id="apt-type-display">${t('noneSelected')}</div>
                 <div class="dropdown-menu hidden" id="apt-type-menu">
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Cut" /> Cut</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Colour" /> Colour</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Touch up" /> Touch up</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Treatment" /> Treatment</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Bleach colour" /> Bleach colour</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Head Spa" /> Head Spa</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Perm" /> Perm</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Straightening" /> Straightening</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Fringe cut" /> Fringe cut</label>
+                  ${generateServiceTypeOptions('apt-type-opt')}
                 </div>
               </div>
             </div>
@@ -2081,7 +2105,7 @@
         let hasSelectedTypes = false;
         
         // Check if title contains any of the booking types
-        const bookingTypes = ['Cut', 'Colour', 'Touch up', 'Treatment', 'Bleach colour', 'Head Spa', 'Perm', 'Straightening', 'Fringe cut'];
+        const bookingTypes = getBookingTypes();
         const foundTypes = [];
         
         typeOptions.forEach((option, index) => {
@@ -2426,7 +2450,7 @@
         // Use the pre-created blob
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
         lastExportBlobUrl = URL.createObjectURL(result.blob);
-        lastExportFileName = `chikas-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
         downloadBtn.disabled = false;
         statusEl.textContent = `✅ Backup ready: ${lastExportFileName}`;
         
@@ -2516,7 +2540,7 @@
             const chunkImages = images.filter(img => chunkCustomerIds.includes(img.customerId));
             
             const payload = {
-              __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 },
+              __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 },
               customers: chunk, 
               appointments: chunkAppointments, 
               images: chunkImages,
@@ -2543,7 +2567,7 @@
       } else {
         // Small dataset, import normally
         const payload = { 
-          __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, 
+          __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 }, 
           customers, 
           appointments, 
           images,
@@ -2572,7 +2596,7 @@
     if (refreshAppBtn) {
       refreshAppBtn.addEventListener('click', () => {
         // Clear migration completed flag to force re-migration
-        localStorage.removeItem('chikas_migration_completed');
+        localStorage.removeItem(`${STORAGE_PREFIX}migration_completed`);
         // Reload the page
         window.location.reload();
       });
@@ -3311,7 +3335,7 @@
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `chikas-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `${productConfig.appSlug || 'crm'}-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -3351,9 +3375,9 @@
         }
         
         // Clear localStorage (but keep language preference)
-        const lang = localStorage.getItem('chikas_lang');
+        const lang = localStorage.getItem(`${STORAGE_PREFIX}lang`);
         localStorage.clear();
-        if (lang) localStorage.setItem('chikas_lang', lang);
+        if (lang) localStorage.setItem(`${STORAGE_PREFIX}lang`, lang);
         
         // Force reload with cache busting
         const timestamp = Date.now();
@@ -5364,7 +5388,7 @@ Time: ${new Date().toISOString()}`;
 
       // Copy functionality
       copyButton.addEventListener('click', async () => {
-        const errorInfo = `Chikas DB - Save Error Report
+        const errorInfo = `${APP_NAME} - Save Error Report
 Time: ${new Date().toISOString()}
 Error: ${technicalDetails}
 
@@ -5553,7 +5577,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
               keysToRemove.push(key);
             }
             // Remove old image cache keys (if any)
-            if (key.startsWith('chikas_image_') && Math.random() < 0.1) { // Remove 10% randomly
+            if (key.startsWith(`${STORAGE_PREFIX}image_`) && Math.random() < 0.1) { // Remove 10% randomly
               keysToRemove.push(key);
             }
           }
@@ -6381,8 +6405,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Force database upgrade if needed by closing and reopening
         try {
           // Close any existing database connections to force upgrade
+          const dbName = productConfig.dbName || 'chikas-db';
           const existingDb = await new Promise((resolve) => {
-            const req = indexedDB.open('chikas-db');
+            const req = indexedDB.open(dbName);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
           });
@@ -6393,7 +6418,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             
             if (!hasStore) {
               // Force upgrade by opening with higher version
-              const upgradeReq = indexedDB.open('chikas-db', 5);
+              const upgradeReq = indexedDB.open(dbName, 5);
               upgradeReq.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains('noteVersions')) {
