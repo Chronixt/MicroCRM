@@ -606,14 +606,14 @@
               <label>${t('firstName')}</label>
               <div class="input-with-button">
                 <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="firstName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="firstName" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('lastName')}</label>
               <div class="input-with-button">
                 <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="lastName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="lastName" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -621,21 +621,21 @@
             <label>${t('contactNumber')}</label>
             <div class="input-with-button">
               <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
-              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
               <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>Referral</label>
             <div class="input-with-button">
               <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
@@ -656,28 +656,22 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      fullscreenNotesCanvas.show();
+      textNotesOverlay.show('temp-new-customer');
     });
     
     // Load any existing temporary notes for new customer
     loadExistingNotes('temp-new-customer');
     
-    // Add handwriting functionality for text inputs
+    // Text input buttons - focus on input to trigger keyboard
     document.querySelectorAll('.input-icon-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const fieldName = btn.dataset.field;
         const input = document.querySelector(`input[name="${fieldName}"]`);
-        const currentValue = input.value;
-        
-        // Get field label for modal title
-        const label = input.closest('.input-with-button').previousElementSibling.textContent;
-        
-        showHandwritingModal(`Handwrite ${label}`, currentValue, (newValue) => {
-          // Extract plain text from HTML (in case user used formatting)
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = newValue;
-          input.value = tempDiv.textContent || tempDiv.innerText || '';
-        });
+        if (input) {
+          input.focus();
+          // Move cursor to end
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
       });
     });
     
@@ -1222,7 +1216,7 @@
     
     // Add note button event listener
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      fullscreenNotesCanvas.show();
+      textNotesOverlay.show(id);
     });
 
     // Load next appointment
@@ -1390,14 +1384,14 @@
               <label>First Name</label>
               <div class="input-with-button">
                 <input type="text" name="firstName" />
-                <button type="button" class="input-icon-btn" data-field="firstName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="firstName" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>Last Name</label>
               <div class="input-with-button">
                 <input type="text" name="lastName" />
-                <button type="button" class="input-icon-btn" data-field="lastName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="lastName" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -1405,21 +1399,21 @@
             <label>Contact Number</label>
             <div class="input-with-button">
               <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
               <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>Referral</label>
             <div class="input-with-button">
               <input type="text" name="referralNotes" />
-              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
@@ -1455,28 +1449,22 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      fullscreenNotesCanvas.show();
+      textNotesOverlay.show(customer.id);
     });
     
     // Load existing notes
     loadExistingNotes(customer.id);
     
-    // Add handwriting functionality for text inputs
+    // Text input buttons - focus on input to trigger keyboard
     document.querySelectorAll('.input-icon-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const fieldName = btn.dataset.field;
         const input = document.querySelector(`input[name="${fieldName}"]`);
-        const currentValue = input.value;
-        
-        // Get field label for modal title
-        const label = input.closest('.input-with-button').previousElementSibling.textContent;
-        
-        showHandwritingModal(`Handwrite ${label}`, currentValue, (newValue) => {
-          // Extract plain text from HTML (in case user used formatting)
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = newValue;
-          input.value = tempDiv.textContent || tempDiv.innerText || '';
-        });
+        if (input) {
+          input.focus();
+          // Move cursor to end
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
       });
     });
 
@@ -4022,6 +4010,30 @@
     return String(str || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c] || c);
   }
 
+  // Helper function to get current customer ID from URL or page context
+  function getCurrentCustomerId() {
+    // Try to get customer ID from URL hash parameters
+    const hash = window.location.hash;
+    const idMatch = hash.match(/[?&]id=([^&]+)/);
+    if (idMatch) {
+      return idMatch[1];
+    }
+    
+    // Try to get from search params
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    if (id) {
+      return id;
+    }
+    
+    // Check for temp-new-customer (add customer screen)
+    if (hash.includes('#/add')) {
+      return 'temp-new-customer';
+    }
+    
+    return null;
+  }
+
   // Helper function to format date as yyyy-mm-dd (ISO date format)
   function formatDateYYYYMMDD(date = new Date()) {
     const d = date instanceof Date ? date : new Date(date);
@@ -6339,7 +6351,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         `;
         editButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
-          this.editNote(noteData);
+          // Use text overlay for text-based notes, canvas for SVG notes
+          const isTextNote = noteData.type === 'text' || (noteData.text && !noteData.svg);
+          if (isTextNote) {
+            textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
+          } else {
+            this.editNote(noteData);
+          }
         });
         editButton.addEventListener('mouseenter', () => {
           editButton.style.background = 'rgba(255,255,255,0.2)';
@@ -6440,127 +6458,152 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         overflow-y: auto;
       `;
 
-      const svgContainer = document.createElement('div');
-      svgContainer.innerHTML = noteData.svg;
-      svgContainer.style.cssText = `
-        max-width: 100%;
-        overflow: visible;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 4px;
-        padding: 8px;
-        background: transparent;
-        display: flex;
-        justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
-        align-items: flex-start;
-        min-height: 100px;
-      `;
+      // Check if this is a text-based note or SVG-based note
+      const isTextNote = noteData.type === 'text' || (noteData.text && !noteData.svg);
       
-      // Scale the SVG to fit the container - calculate proper dimensions for content
-      const svg = svgContainer.querySelector('svg');
-      if (svg) {
-        // Get the original viewBox to understand the intended dimensions
-        const originalViewBox = svg.getAttribute('viewBox');
-        const originalWidth = svg.getAttribute('width');
-        const originalHeight = svg.getAttribute('height');
-        
-        let contentWidth = 500; // default width
-        let contentHeight = 60; // default height
-        
-        // Parse original dimensions
-        if (originalViewBox) {
-          const parts = originalViewBox.split(' ');
-          if (parts.length >= 4) {
-            contentWidth = parseInt(parts[2]) || 500;
-            contentHeight = parseInt(parts[3]) || 60;
-          }
-        } else if (originalWidth && originalHeight) {
-          contentWidth = parseInt(originalWidth) || 500;
-          contentHeight = parseInt(originalHeight) || 60;
-        }
-        
-        // Calculate the actual content dimensions needed by analyzing all text elements
-        const textElements = svg.querySelectorAll('text, tspan');
-        let maxY = 0;
-        let maxX = 0;
-        let fontSize = 16; // default font size
-        
-        textElements.forEach(textEl => {
-          // Get font size from the element
-          const computedFontSize = textEl.getAttribute('font-size');
-          if (computedFontSize) {
-            fontSize = parseInt(computedFontSize) || 16;
-          }
-          
-          // Get x and y positions
-          const x = parseFloat(textEl.getAttribute('x')) || 0;
-          const y = parseFloat(textEl.getAttribute('y')) || 0;
-          
-          // Get dy offset for tspan elements
-          const dy = parseFloat(textEl.getAttribute('dy')) || 0;
-          const actualY = y + dy;
-          
-          // Calculate approximate height needed for this text element
-          const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
-          const textHeight = actualY + lineHeight;
-          
-          // Estimate text width based on content and font size
-          const textContent = textEl.textContent || '';
-          const estimatedTextWidth = textContent.length * fontSize * 0.6; // rough estimate
-          const textWidth = x + estimatedTextWidth;
-          
-          if (textHeight > maxY) {
-            maxY = textHeight;
-          }
-          
-          if (textWidth > maxX) {
-            maxX = textWidth;
-          }
-        });
-        
-        // Use the calculated dimensions if they're larger than the original
-        if (maxY > 0) {
-          contentHeight = Math.max(contentHeight, maxY + 20); // Add some padding
-        }
-        
-        if (maxX > 0) {
-          contentWidth = Math.max(contentWidth, maxX + 20); // Add some padding
-        }
-        
-        // Ensure dimensions don't exceed container bounds (with some margin)
-        const containerWidth = svgContainer.parentElement?.offsetWidth || 500;
-        const containerHeight = svgContainer.parentElement?.offsetHeight || 400;
-        const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
-        const maxAllowedHeight = containerHeight - 40; // Account for padding and borders
-        
-        // Calculate scale factor to fit within bounds while maintaining aspect ratio
-        const widthScale = maxAllowedWidth / contentWidth;
-        const heightScale = maxAllowedHeight / contentHeight;
-        const scale = Math.min(widthScale, heightScale, 1); // Don't scale up, only down
-        
-        // Apply scaling if needed
-        if (scale < 1) {
-          contentWidth = contentWidth * scale;
-          contentHeight = contentHeight * scale;
-        } else {
-          // Still respect max bounds even if no scaling needed
-          contentWidth = Math.min(contentWidth, maxAllowedWidth);
-          contentHeight = Math.min(contentHeight, maxAllowedHeight);
-        }
-        
-        // Update the SVG viewBox and dimensions to match content
-        svg.setAttribute('viewBox', `0 0 ${contentWidth / scale} ${contentHeight / scale}`);
-        svg.setAttribute('width', contentWidth);
-        svg.setAttribute('height', contentHeight);
-        
-        svg.style.cssText = `
+      let contentContainer;
+      
+      if (isTextNote) {
+        // Render text-based note
+        contentContainer = document.createElement('div');
+        contentContainer.className = 'text-note-content';
+        contentContainer.style.cssText = `
           max-width: 100%;
-          width: ${contentWidth}px;
-          height: ${contentHeight}px;
-          background: transparent;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 4px;
+          padding: 16px;
+          background: rgba(255,255,255,0.03);
+          color: var(--text);
+          font-size: 15px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-wrap: break-word;
         `;
+        contentContainer.textContent = noteData.text || '';
+      } else {
+        // Render SVG-based note (legacy handwriting)
+        contentContainer = document.createElement('div');
+        contentContainer.innerHTML = noteData.svg || '';
+        contentContainer.style.cssText = `
+          max-width: 100%;
+          overflow: visible;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 4px;
+          padding: 8px;
+          background: transparent;
+          display: flex;
+          justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
+          align-items: flex-start;
+          min-height: 100px;
+        `;
+        
+        // Scale the SVG to fit the container - calculate proper dimensions for content
+        const svg = contentContainer.querySelector('svg');
+        if (svg) {
+          // Get the original viewBox to understand the intended dimensions
+          const originalViewBox = svg.getAttribute('viewBox');
+          const originalWidth = svg.getAttribute('width');
+          const originalHeight = svg.getAttribute('height');
+          
+          let svgWidth = 500; // default width
+          let svgHeight = 60; // default height
+          
+          // Parse original dimensions
+          if (originalViewBox) {
+            const parts = originalViewBox.split(' ');
+            if (parts.length >= 4) {
+              svgWidth = parseInt(parts[2]) || 500;
+              svgHeight = parseInt(parts[3]) || 60;
+            }
+          } else if (originalWidth && originalHeight) {
+            svgWidth = parseInt(originalWidth) || 500;
+            svgHeight = parseInt(originalHeight) || 60;
+          }
+          
+          // Calculate the actual content dimensions needed by analyzing all text elements
+          const textElements = svg.querySelectorAll('text, tspan');
+          let maxY = 0;
+          let maxX = 0;
+          let fontSize = 16; // default font size
+          
+          textElements.forEach(textEl => {
+            // Get font size from the element
+            const computedFontSize = textEl.getAttribute('font-size');
+            if (computedFontSize) {
+              fontSize = parseInt(computedFontSize) || 16;
+            }
+            
+            // Get x and y positions
+            const x = parseFloat(textEl.getAttribute('x')) || 0;
+            const y = parseFloat(textEl.getAttribute('y')) || 0;
+            
+            // Get dy offset for tspan elements
+            const dy = parseFloat(textEl.getAttribute('dy')) || 0;
+            const actualY = y + dy;
+            
+            // Calculate approximate height needed for this text element
+            const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
+            const textHeight = actualY + lineHeight;
+            
+            // Estimate text width based on content and font size
+            const textContent = textEl.textContent || '';
+            const estimatedTextWidth = textContent.length * fontSize * 0.6; // rough estimate
+            const textWidth = x + estimatedTextWidth;
+            
+            if (textHeight > maxY) {
+              maxY = textHeight;
+            }
+            
+            if (textWidth > maxX) {
+              maxX = textWidth;
+            }
+          });
+          
+          // Use the calculated dimensions if they're larger than the original
+          if (maxY > 0) {
+            svgHeight = Math.max(svgHeight, maxY + 20); // Add some padding
+          }
+          
+          if (maxX > 0) {
+            svgWidth = Math.max(svgWidth, maxX + 20); // Add some padding
+          }
+          
+          // Ensure dimensions don't exceed container bounds (with some margin)
+          const containerWidth = contentContainer.parentElement?.offsetWidth || 500;
+          const containerHeight = contentContainer.parentElement?.offsetHeight || 400;
+          const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
+          const maxAllowedHeight = containerHeight - 40; // Account for padding and borders
+          
+          // Calculate scale factor to fit within bounds while maintaining aspect ratio
+          const widthScale = maxAllowedWidth / svgWidth;
+          const heightScale = maxAllowedHeight / svgHeight;
+          const scale = Math.min(widthScale, heightScale, 1); // Don't scale up, only down
+          
+          // Apply scaling if needed
+          if (scale < 1) {
+            svgWidth = svgWidth * scale;
+            svgHeight = svgHeight * scale;
+          } else {
+            // Still respect max bounds even if no scaling needed
+            svgWidth = Math.min(svgWidth, maxAllowedWidth);
+            svgHeight = Math.min(svgHeight, maxAllowedHeight);
+          }
+          
+          // Update the SVG viewBox and dimensions to match content
+          svg.setAttribute('viewBox', `0 0 ${svgWidth / scale} ${svgHeight / scale}`);
+          svg.setAttribute('width', svgWidth);
+          svg.setAttribute('height', svgHeight);
+          
+          svg.style.cssText = `
+            max-width: 100%;
+            width: ${svgWidth}px;
+            height: ${svgHeight}px;
+            background: transparent;
+          `;
+        }
       }
 
-      noteContent.appendChild(svgContainer);
+      noteContent.appendChild(contentContainer);
       noteElement.appendChild(noteHeader);
       noteElement.appendChild(noteContent);
 
@@ -6839,9 +6882,296 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     }
   }
 
-  // Global instance
-  // Initialize fullscreen notes canvas
+  // ============================================================================
+  // TEXT-BASED NOTES OVERLAY (Primary note-taking method)
+  // ============================================================================
+  class FullscreenTextNotesOverlay {
+    constructor() {
+      this.overlay = null;
+      this.textarea = null;
+      this.editingNote = null;
+      this.customerId = null;
+      this.onSaveCallback = null;
+    }
+
+    show(customerId = null, editingNote = null) {
+      this.customerId = customerId || getCurrentCustomerId();
+      this.editingNote = editingNote;
+      this.createOverlay();
+      
+      // Focus the textarea after a brief delay to ensure DOM is ready
+      setTimeout(() => {
+        if (this.textarea) {
+          this.textarea.focus();
+          // Scroll to end if editing
+          if (this.editingNote && this.editingNote.text) {
+            this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
+          }
+        }
+      }, 100);
+    }
+
+    createOverlay() {
+      this.overlay = document.createElement('div');
+      this.overlay.id = 'fullscreen-text-notes-overlay';
+      this.overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(17, 24, 39, 0.98);
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        padding-bottom: env(safe-area-inset-bottom, 20px);
+      `;
+      
+      // Header
+      const header = document.createElement('div');
+      header.className = 'header';
+      header.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        flex-shrink: 0;
+      `;
+      
+      const title = document.createElement('h2');
+      title.textContent = this.editingNote ? `Edit Note ${this.editingNote.noteNumber || ''}` : 'Add Note';
+      title.style.margin = '0';
+      title.style.color = 'var(--text)';
+      
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+      
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: none;
+        color: var(--text);
+        border-radius: 6px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      `;
+      
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save';
+      saveBtn.style.cssText = `
+        background: var(--brand);
+        border: none;
+        color: white;
+        border-radius: 6px;
+        padding: 10px 20px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
+      buttonContainer.appendChild(cancelBtn);
+      buttonContainer.appendChild(saveBtn);
+      header.appendChild(title);
+      header.appendChild(buttonContainer);
+
+      // Textarea container
+      const textareaContainer = document.createElement('div');
+      textareaContainer.style.cssText = `
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      `;
+
+      this.textarea = document.createElement('textarea');
+      this.textarea.placeholder = 'Type your note here...';
+      this.textarea.style.cssText = `
+        flex: 1;
+        width: 100%;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 16px;
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.6;
+        resize: none;
+        font-family: inherit;
+        outline: none;
+      `;
+      this.textarea.addEventListener('focus', () => {
+        this.textarea.style.borderColor = 'var(--brand)';
+      });
+      this.textarea.addEventListener('blur', () => {
+        this.textarea.style.borderColor = 'rgba(255,255,255,0.1)';
+      });
+
+      // Pre-fill if editing
+      if (this.editingNote) {
+        // Handle both text-based notes and legacy SVG notes
+        if (this.editingNote.text) {
+          this.textarea.value = this.editingNote.text;
+        } else if (this.editingNote.svg) {
+          // Try to extract text from SVG (for legacy notes)
+          const textContent = this.extractTextFromSVG(this.editingNote.svg);
+          this.textarea.value = textContent || '[This note contains handwritten content that cannot be edited as text]';
+        }
+      }
+
+      textareaContainer.appendChild(this.textarea);
+
+      this.overlay.appendChild(header);
+      this.overlay.appendChild(textareaContainer);
+
+      // Event listeners
+      cancelBtn.addEventListener('click', () => this.hide());
+      saveBtn.addEventListener('click', () => this.handleSave());
+      
+      // Handle keyboard shortcuts
+      this.textarea.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Enter to save
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          this.handleSave();
+        }
+        // Escape to cancel
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.hide();
+        }
+      });
+
+      document.body.appendChild(this.overlay);
+    }
+
+    extractTextFromSVG(svgString) {
+      // Try to extract text content from SVG text elements
+      try {
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+        const textElements = svgDoc.querySelectorAll('text');
+        if (textElements.length > 0) {
+          return Array.from(textElements).map(el => el.textContent).join('\n');
+        }
+      } catch (e) {
+        console.warn('Could not extract text from SVG:', e);
+      }
+      return null;
+    }
+
+    async handleSave() {
+      const text = this.textarea.value.trim();
+      
+      if (!text) {
+        // Don't save empty notes
+        this.hide();
+        return;
+      }
+
+      try {
+        const customerId = this.customerId;
+        const now = new Date();
+        const dateStr = formatDateYYYYMMDD(now);
+        
+        if (this.editingNote) {
+          // Update existing note
+          await this.updateNote(text);
+        } else {
+          // Create new note
+          await this.createNote(customerId, text, dateStr);
+        }
+        
+        // Refresh the notes list
+        loadExistingNotes(customerId);
+        
+        this.hide();
+      } catch (error) {
+        console.error('Error saving note:', error);
+        alert('Error saving note: ' + error.message);
+      }
+    }
+
+    async createNote(customerId, text, dateStr) {
+      // Get existing notes to determine note number
+      const existingNotes = await this.getNotesForCustomer(customerId);
+      const noteNumber = existingNotes.length + 1;
+      
+      const noteData = {
+        customerId: customerId,
+        text: text,
+        svg: null, // No SVG for text-based notes
+        date: dateStr,
+        noteNumber: noteNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        type: 'text' // Mark as text-based note
+      };
+      
+      // Save to IndexedDB
+      const savedId = await ChikasDB.createNote(noteData);
+      console.log('✅ Text note saved to IndexedDB, ID:', savedId);
+      
+      return savedId;
+    }
+
+    async updateNote(text) {
+      if (!this.editingNote) return;
+      
+      const updatedNote = {
+        ...this.editingNote,
+        text: text,
+        updatedAt: new Date().toISOString(),
+        type: 'text'
+      };
+      
+      // If the note has an ID, update it in IndexedDB
+      if (this.editingNote.id && (this.editingNote.source === 'indexeddb' || this.editingNote.source === 'indexeddb-fallback')) {
+        await ChikasDB.updateNote(updatedNote);
+        console.log('✅ Text note updated in IndexedDB');
+      } else {
+        // For localStorage-based notes, migrate to IndexedDB
+        const savedId = await ChikasDB.createNote({
+          ...updatedNote,
+          customerId: this.customerId
+        });
+        console.log('✅ Note migrated to IndexedDB with ID:', savedId);
+      }
+    }
+
+    async getNotesForCustomer(customerId) {
+      try {
+        // Get notes from IndexedDB
+        const dbNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        return dbNotes || [];
+      } catch (error) {
+        console.error('Error getting notes:', error);
+        return [];
+      }
+    }
+
+    hide() {
+      if (this.overlay && document.body.contains(this.overlay)) {
+        document.body.removeChild(this.overlay);
+        this.overlay = null;
+      }
+      this.textarea = null;
+      this.editingNote = null;
+      this.customerId = null;
+    }
+  }
+
+  // Global instances
+  // Initialize fullscreen notes canvas (kept for legacy SVG note viewing)
   const fullscreenNotesCanvas = new FullscreenNotesCanvas();
+  
+  // Initialize text-based notes overlay (primary note-taking method)
+  const textNotesOverlay = new FullscreenTextNotesOverlay();
 
   // Debug utility for testing save functionality
   window.debugNoteSave = {
