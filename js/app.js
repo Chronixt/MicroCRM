@@ -407,6 +407,9 @@
     if (isTradie()) {
       const fabPages = ['/', '/find', '/calendar', '/follow-ups', '/customer'];
       renderFAB(fabPages.includes(base));
+      
+      // Attach global search handler
+      attachGlobalSearchHandler();
     }
     
     // Check if daily backup is needed (only on main pages)
@@ -598,7 +601,16 @@
           </nav>
         </aside>
         <section class="content">
-          <div class="content-toolbar"><button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button></div>
+          <div class="content-toolbar" style="display: flex; align-items: center; gap: 12px;">
+            ${isTradie() ? `
+            <div class="global-search-container" style="flex: 1; max-width: 300px; position: relative;">
+              <input type="text" id="global-search-input" placeholder="Search customers, jobs..." style="width: 100%; padding: 6px 32px 6px 12px; font-size: 13px; border-radius: 6px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text);" />
+              <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+              <div id="global-search-results" class="search-results-dropdown" style="display: none;"></div>
+            </div>
+            ` : ''}
+            <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+          </div>
           ${contentHtml}
         </section>
       </div>
@@ -3254,6 +3266,163 @@
     });
 
     document.getElementById('cancel-reminder-btn')?.addEventListener('click', hideModal);
+  }
+
+  // ============================================================================
+  // GLOBAL SEARCH
+  // ============================================================================
+
+  let searchDebounceTimer = null;
+
+  function attachGlobalSearchHandler() {
+    const searchInput = document.getElementById('global-search-input');
+    const resultsContainer = document.getElementById('global-search-results');
+    if (!searchInput || !resultsContainer) return;
+    
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim();
+      
+      // Clear previous debounce
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      
+      if (query.length < 2) {
+        resultsContainer.style.display = 'none';
+        return;
+      }
+      
+      // Debounce search
+      searchDebounceTimer = setTimeout(() => {
+        performGlobalSearch(query);
+      }, 200);
+    });
+    
+    // Hide results when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.global-search-container')) {
+        resultsContainer.style.display = 'none';
+      }
+    });
+    
+    // Show results on focus if there's a query
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim().length >= 2) {
+        performGlobalSearch(searchInput.value.trim());
+      }
+    });
+  }
+
+  async function performGlobalSearch(query) {
+    const resultsContainer = document.getElementById('global-search-results');
+    if (!resultsContainer) return;
+    
+    const lowerQuery = query.toLowerCase();
+    
+    try {
+      // Search in parallel
+      const [customers, appointments, notes] = await Promise.all([
+        ChikasDB.getAllCustomers(),
+        ChikasDB.getAllAppointments(),
+        ChikasDB.getAllNotes()
+      ]);
+      
+      // Filter customers
+      const matchingCustomers = customers.filter(c => {
+        const name = ((c.firstName || '') + ' ' + (c.lastName || '')).toLowerCase();
+        const phone = (c.contactNumber || '').toLowerCase();
+        const social = (c.socialMediaName || '').toLowerCase();
+        return name.includes(lowerQuery) || phone.includes(lowerQuery) || social.includes(lowerQuery);
+      }).slice(0, 5);
+      
+      // Filter jobs
+      const matchingJobs = appointments.filter(a => {
+        const title = (a.title || '').toLowerCase();
+        const address = (a.address || '').toLowerCase();
+        return title.includes(lowerQuery) || address.includes(lowerQuery);
+      }).slice(0, 5);
+      
+      // Filter notes
+      const matchingNotes = notes.filter(n => {
+        const content = (n.content || '').toLowerCase();
+        return content.includes(lowerQuery);
+      }).slice(0, 3);
+      
+      // Build customer map for job display
+      const customerMap = new Map(customers.map(c => [c.id, c]));
+      
+      // Build results HTML
+      let html = '';
+      
+      if (matchingCustomers.length > 0) {
+        html += '<div class="search-section"><div class="search-section-title">Customers</div>';
+        for (const c of matchingCustomers) {
+          const name = ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || 'Unnamed';
+          html += '<div class="search-result-item" data-type="customer" data-id="' + c.id + '">';
+          html += '<span class="search-icon">👤</span>';
+          html += '<span class="search-text">' + escapeHtml(name) + '</span>';
+          if (c.contactNumber) html += '<span class="search-meta">' + escapeHtml(c.contactNumber) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      
+      if (matchingJobs.length > 0) {
+        html += '<div class="search-section"><div class="search-section-title">Jobs</div>';
+        for (const j of matchingJobs) {
+          const customer = customerMap.get(j.customerId);
+          const customerName = customer ? ((customer.firstName || '') + ' ' + (customer.lastName || '')).trim() : '';
+          html += '<div class="search-result-item" data-type="job" data-id="' + j.id + '">';
+          html += '<span class="search-icon">📋</span>';
+          html += '<span class="search-text">' + escapeHtml(j.title || 'Job') + '</span>';
+          if (customerName) html += '<span class="search-meta">' + escapeHtml(customerName) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      
+      if (matchingNotes.length > 0) {
+        html += '<div class="search-section"><div class="search-section-title">Notes</div>';
+        for (const n of matchingNotes) {
+          const preview = (n.content || '').substring(0, 50) + (n.content && n.content.length > 50 ? '...' : '');
+          html += '<div class="search-result-item" data-type="note" data-customer-id="' + n.customerId + '">';
+          html += '<span class="search-icon">📝</span>';
+          html += '<span class="search-text">' + escapeHtml(preview) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      
+      if (!html) {
+        html = '<div class="search-no-results">No results found</div>';
+      }
+      
+      resultsContainer.innerHTML = html;
+      resultsContainer.style.display = 'block';
+      
+      // Attach click handlers
+      resultsContainer.querySelectorAll('.search-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const type = item.dataset.type;
+          const id = item.dataset.id;
+          const customerId = item.dataset.customerId;
+          
+          resultsContainer.style.display = 'none';
+          document.getElementById('global-search-input').value = '';
+          
+          if (type === 'customer') {
+            navigate('/customer?id=' + id);
+          } else if (type === 'job') {
+            navigate('/calendar?appointment=' + id);
+          } else if (type === 'note' && customerId) {
+            navigate('/customer?id=' + customerId);
+          }
+        });
+      });
+      
+    } catch (error) {
+      console.error('Search error:', error);
+      resultsContainer.innerHTML = '<div class="search-no-results">Error searching</div>';
+      resultsContainer.style.display = 'block';
+    }
   }
 
   // ============================================================================
