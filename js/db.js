@@ -160,6 +160,7 @@
           // Create images store with indexes
           const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
           imagesStore.createIndex('customerId', 'customerId', { unique: false });
+          imagesStore.createIndex('appointmentId', 'appointmentId', { unique: false });
           
           // Create notes store
           const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
@@ -274,6 +275,21 @@
             jobEventsStore.createIndex('customerId', 'customerId', { unique: false });
             jobEventsStore.createIndex('createdAt', 'createdAt', { unique: false });
             console.log('JobEvents store created successfully');
+          }
+          
+          // Upgrade to version 6+ (add appointmentId index on images)
+          if (oldVersion < 6 && db.objectStoreNames.contains('images')) {
+            try {
+              console.log('Adding appointmentId index to images store...');
+              const transaction = event.target.transaction;
+              const imagesStore = transaction.objectStore('images');
+              if (!imagesStore.indexNames.contains('appointmentId')) {
+                imagesStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+                console.log('appointmentId index created successfully');
+              }
+            } catch (indexError) {
+              console.error('Failed to create appointmentId index:', indexError);
+            }
           }
         }
       };
@@ -456,7 +472,8 @@
   }
 
   // Add a single image - avoids transaction timeout issues
-  async function addImage(customerId, entry) {
+  // appointmentId is optional - if provided, links to a specific job
+  async function addImage(customerId, entry, appointmentId = null) {
     try {
       // Process image outside of transaction
       const compressedBlob = await compressImage(entry.blob, entry.type);
@@ -464,6 +481,7 @@
       
       const toStore = {
         customerId,
+        appointmentId: appointmentId ? parseInt(appointmentId) : null,
         name: entry.name,
         type: entry.type,
         dataUrl: dataUrl,
@@ -481,6 +499,23 @@
     } catch (error) {
       throw error;
     }
+  }
+
+  // Get images for a specific job
+  function getImagesByAppointmentId(appointmentId) {
+    return runTransaction(['images'], 'readonly', (images) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = images.index('appointmentId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(appointmentId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else resolve(results);
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
   }
   
   // Image compression function for iPad memory optimization
@@ -2601,6 +2636,7 @@
     addImages,
     addImage,
     getImagesByCustomerId,
+    getImagesByAppointmentId,
     deleteImage,
     fileListToEntries,
     

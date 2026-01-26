@@ -102,7 +102,7 @@
       
       // Database
       dbName: 'tradie-crm-db',
-      dbVersion: 5, // Version 5: Added jobEvents store for timeline
+      dbVersion: 6, // Version 6: Added appointmentId index on images
       storagePrefix: 'tradie_',
       
       // Entity names

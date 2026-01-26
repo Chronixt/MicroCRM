@@ -2574,6 +2574,19 @@
                 <div class="muted" style="font-size: 12px; text-align: center;">Loading timeline...</div>
               </div>
             </div>
+            
+            <div class="job-photos-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">📷 Job Photos</strong>
+                <label class="button secondary" style="font-size: 12px; padding: 6px 10px; cursor: pointer;">
+                  + Add
+                  <input type="file" id="job-photo-input" accept="image/*" multiple style="display: none;" />
+                </label>
+              </div>
+              <div id="job-photos-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px;">
+                <div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">Loading...</div>
+              </div>
+            </div>
             ` : ''}
 
             <div class="row" style="margin-top: 16px; gap: 12px;">
@@ -2712,6 +2725,69 @@
         
         // Load timeline on modal open
         loadJobTimeline();
+
+        // Load and display job photos
+        async function loadJobPhotos() {
+          const photosGrid = document.getElementById('job-photos-grid');
+          if (!photosGrid) return;
+          
+          try {
+            const photos = await ChikasDB.getImagesByAppointmentId(event.id);
+            
+            if (photos.length === 0) {
+              photosGrid.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">No photos attached to this job</div>';
+              return;
+            }
+            
+            let html = '';
+            for (const photo of photos) {
+              html += '<div style="position: relative;">' +
+                '<img src="' + photo.dataUrl + '" style="width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer;" data-id="' + photo.id + '" class="job-photo-thumb" />' +
+              '</div>';
+            }
+            
+            photosGrid.innerHTML = html;
+            
+            // Click handlers for photos
+            photosGrid.querySelectorAll('.job-photo-thumb').forEach(img => {
+              img.addEventListener('click', () => {
+                // Simple lightbox
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 10000; display: flex; align-items: center; justify-content: center; cursor: pointer;';
+                overlay.innerHTML = '<img src="' + img.src + '" style="max-width: 90%; max-height: 90%; object-fit: contain;" />';
+                overlay.addEventListener('click', () => overlay.remove());
+                document.body.appendChild(overlay);
+              });
+            });
+          } catch (error) {
+            console.error('Error loading job photos:', error);
+            photosGrid.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">Error loading photos</div>';
+          }
+        }
+        
+        // Handle job photo upload
+        const jobPhotoInput = document.getElementById('job-photo-input');
+        if (jobPhotoInput) {
+          jobPhotoInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            try {
+              const entries = await ChikasDB.fileListToEntries(files);
+              for (const entry of entries) {
+                await ChikasDB.addImage(customer.id, entry, event.id);
+              }
+              await loadJobPhotos();
+              e.target.value = ''; // Reset input
+            } catch (error) {
+              console.error('Error uploading job photos:', error);
+              alert('Error uploading photos: ' + error.message);
+            }
+          });
+        }
+        
+        // Load job photos on modal open
+        loadJobPhotos();
 
         // Make customer name clickable to open customer view
         const customerLink = document.getElementById('apt-customer-link');
