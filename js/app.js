@@ -1072,7 +1072,28 @@
           <div class="detail-item"><span class="detail-icon">📞</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || '—')}</span></div>
           <div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>
           <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
+          ${isTradie() && customer.preferredContactMethod ? `
+          <div class="detail-item"><span class="detail-icon">❤️</span><span class="detail-label">Preferred Contact</span><span class="detail-value">${escapeHtml(customer.preferredContactMethod === 'phone' ? 'Phone Call' : customer.preferredContactMethod === 'sms' ? 'SMS' : customer.preferredContactMethod === 'email' ? 'Email' : customer.preferredContactMethod)}</span></div>
+          ` : ''}
         </div>
+
+        ${isTradie() && (customer.addressLine1 || customer.suburb) ? `
+        <div class="address-section" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <h3 style="margin: 0 0 8px 0; font-size: 14px;">📍 Address</h3>
+              <div style="font-size: 14px; line-height: 1.5;">
+                ${customer.addressLine1 ? escapeHtml(customer.addressLine1) + '<br>' : ''}
+                ${customer.suburb ? escapeHtml(customer.suburb) : ''}${customer.state ? ' ' + escapeHtml(customer.state) : ''}${customer.postcode ? ' ' + escapeHtml(customer.postcode) : ''}
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="copy-address-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Copy Address">📋 Copy</button>
+              <button id="open-maps-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Open in Maps">🗺️ Maps</button>
+            </div>
+          </div>
+        </div>
+        ` : ''}
 
         ${isTradie() ? `
         <div class="recent-activity" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
@@ -1390,6 +1411,56 @@
     // Load recent activity for tradie edition
     if (isTradie()) {
       loadCustomerRecentActivity(id);
+      
+      // Address buttons
+      const copyAddressBtn = document.getElementById('copy-address-btn');
+      if (copyAddressBtn) {
+        copyAddressBtn.addEventListener('click', () => {
+          const addressParts = [
+            customer.addressLine1,
+            customer.suburb,
+            customer.state,
+            customer.postcode
+          ].filter(p => p);
+          const fullAddress = addressParts.join(', ');
+          
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(fullAddress).then(() => {
+              copyAddressBtn.textContent = '✓ Copied';
+              setTimeout(() => {
+                copyAddressBtn.innerHTML = '📋 Copy';
+              }, 2000);
+            });
+          } else {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = fullAddress;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            copyAddressBtn.textContent = '✓ Copied';
+            setTimeout(() => {
+              copyAddressBtn.innerHTML = '📋 Copy';
+            }, 2000);
+          }
+        });
+      }
+      
+      const openMapsBtn = document.getElementById('open-maps-btn');
+      if (openMapsBtn) {
+        openMapsBtn.addEventListener('click', () => {
+          const addressParts = [
+            customer.addressLine1,
+            customer.suburb,
+            customer.state,
+            customer.postcode
+          ].filter(p => p);
+          const fullAddress = addressParts.join(', ');
+          const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(fullAddress);
+          window.open(mapsUrl, '_blank');
+        });
+      }
     }
 
     // Delete customer functionality
@@ -1463,6 +1534,53 @@
               <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
+          
+          ${isTradie() ? `
+          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <strong style="font-size: 14px;">📍 Address</strong>
+            <div style="margin-top: 12px;">
+              <label style="font-size: 12px;">Street Address</label>
+              <input type="text" name="addressLine1" placeholder="123 Main Street" />
+            </div>
+            <div class="grid-2" style="margin-top: 8px;">
+              <div>
+                <label style="font-size: 12px;">Suburb</label>
+                <input type="text" name="suburb" placeholder="Suburb" />
+              </div>
+              <div class="grid-2">
+                <div>
+                  <label style="font-size: 12px;">State</label>
+                  <select name="state">
+                    <option value="">-</option>
+                    <option value="NSW">NSW</option>
+                    <option value="VIC">VIC</option>
+                    <option value="QLD">QLD</option>
+                    <option value="WA">WA</option>
+                    <option value="SA">SA</option>
+                    <option value="TAS">TAS</option>
+                    <option value="ACT">ACT</option>
+                    <option value="NT">NT</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px;">Postcode</label>
+                  <input type="text" name="postcode" placeholder="0000" maxlength="4" />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="margin-top: 12px;">
+            <label style="font-size: 12px;">Preferred Contact Method</label>
+            <select name="preferredContactMethod">
+              <option value="">No preference</option>
+              <option value="phone">📞 Phone Call</option>
+              <option value="sms">💬 SMS</option>
+              <option value="email">✉️ Email</option>
+            </select>
+          </div>
+          ` : ''}
+          
           <div>
             <label>Notes</label>
             <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
@@ -1493,6 +1611,23 @@
     setInputValue(form, 'contactNumber', customer.contactNumber || '');
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
+    
+    // Set tradie-specific fields
+    if (isTradie()) {
+      setInputValue(form, 'addressLine1', customer.addressLine1 || '');
+      setInputValue(form, 'suburb', customer.suburb || '');
+      setInputValue(form, 'postcode', customer.postcode || '');
+      
+      // Set select values
+      const stateSelect = form.querySelector('select[name="state"]');
+      if (stateSelect && customer.state) {
+        stateSelect.value = customer.state;
+      }
+      const contactMethodSelect = form.querySelector('select[name="preferredContactMethod"]');
+      if (contactMethodSelect && customer.preferredContactMethod) {
+        contactMethodSelect.value = customer.preferredContactMethod;
+      }
+    }
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
@@ -1663,6 +1798,15 @@
         notesImageData: hasNotes ? notesImageData : '',
         updatedAt: new Date().toISOString(),
       };
+      
+      // Add tradie-specific address fields
+      if (isTradie()) {
+        updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
+        updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
+        updated.state = form.querySelector('select[name="state"]')?.value || '';
+        updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
+        updated.preferredContactMethod = form.querySelector('select[name="preferredContactMethod"]')?.value || '';
+      }
       
       try {
         await ChikasDB.updateCustomer(updated);
