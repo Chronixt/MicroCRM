@@ -403,6 +403,12 @@
     attachLangToggleHandler();
     attachVerticalBackupHandler();
     
+    // Show FAB on main pages (tradie edition only)
+    if (isTradie()) {
+      const fabPages = ['/', '/find', '/calendar', '/follow-ups', '/customer'];
+      renderFAB(fabPages.includes(base));
+    }
+    
     // Check if daily backup is needed (only on main pages)
     if (base === '/' || base === '/find' || base === '/calendar') {
       setTimeout(checkDailyBackup, 1000); // Small delay to let page render
@@ -3248,6 +3254,245 @@
     });
 
     document.getElementById('cancel-reminder-btn')?.addEventListener('click', hideModal);
+  }
+
+  // ============================================================================
+  // FLOATING ACTION BUTTON (FAB) & QUICK ADD JOB
+  // ============================================================================
+
+  function renderFAB(show) {
+    // Remove existing FAB
+    const existingFab = document.getElementById('quick-add-fab');
+    if (existingFab) existingFab.remove();
+    
+    if (!show) return;
+    
+    const fab = document.createElement('button');
+    fab.id = 'quick-add-fab';
+    fab.innerHTML = '+';
+    fab.title = 'Quick Add Job';
+    fab.setAttribute('aria-label', 'Quick Add Job');
+    fab.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: white;
+      font-size: 28px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    `;
+    
+    fab.addEventListener('mouseenter', () => {
+      fab.style.transform = 'scale(1.1)';
+    });
+    fab.addEventListener('mouseleave', () => {
+      fab.style.transform = 'scale(1)';
+    });
+    
+    fab.addEventListener('click', () => {
+      // Pre-fill customer if on customer page
+      const customerId = window.currentCustomerId || null;
+      openQuickAddJobModal(customerId);
+    });
+    
+    document.body.appendChild(fab);
+  }
+
+  async function openQuickAddJobModal(prefilledCustomerId = null) {
+    // Load customers for the dropdown
+    const customers = await ChikasDB.getAllCustomers();
+    customers.sort((a, b) => {
+      const nameA = (a.firstName + ' ' + a.lastName).trim().toLowerCase();
+      const nameB = (b.firstName + ' ' + b.lastName).trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    
+    const customerOptions = customers.map(c => {
+      const name = (c.firstName + ' ' + c.lastName).trim() || 'Unnamed';
+      const selected = c.id === prefilledCustomerId ? 'selected' : '';
+      return '<option value="' + c.id + '" ' + selected + '>' + escapeHtml(name) + '</option>';
+    }).join('');
+    
+    // Get service types for job suggestions
+    const serviceTypes = productConfig.serviceTypes || [];
+    const jobSuggestions = serviceTypes.map(t => 
+      '<button type="button" class="job-suggestion-btn button secondary" data-value="' + escapeHtml(t.label) + '" style="font-size: 11px; padding: 4px 8px;">' + escapeHtml(t.label) + '</button>'
+    ).join('');
+    
+    showModal(`
+      <div class="modal" style="max-width: 400px;">
+        <h3 style="margin-top: 0;">Quick Add Job</h3>
+        <div class="form">
+          <label>Customer</label>
+          <div style="display: flex; gap: 8px;">
+            <select id="quick-add-customer" style="flex: 1;">
+              <option value="">-- Select Customer --</option>
+              ${customerOptions}
+              <option value="__new__">+ Create New Customer</option>
+            </select>
+          </div>
+          
+          <div id="new-customer-fields" style="display: none; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+            <label style="font-size: 12px;">New Customer Name *</label>
+            <input type="text" id="quick-add-customer-name" placeholder="Name" />
+            <label style="font-size: 12px; margin-top: 8px;">Phone</label>
+            <input type="tel" id="quick-add-customer-phone" placeholder="Phone number" />
+          </div>
+          
+          <label style="margin-top: 12px;">Job Title</label>
+          <input type="text" id="quick-add-title" placeholder="e.g., Quote, Repair, Installation..." />
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">
+            ${jobSuggestions}
+          </div>
+          
+          <label style="margin-top: 12px;">Address (optional)</label>
+          <input type="text" id="quick-add-address" placeholder="Job address" />
+          
+          <label style="margin-top: 12px;">Set Reminder</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button type="button" class="reminder-preset-btn button" data-days="0" style="font-size: 11px; padding: 6px 10px;">None</button>
+            <button type="button" class="reminder-preset-btn button secondary" data-days="1" style="font-size: 11px; padding: 6px 10px;">Tomorrow</button>
+            <button type="button" class="reminder-preset-btn button secondary" data-days="3" style="font-size: 11px; padding: 6px 10px;">3 Days</button>
+            <button type="button" class="reminder-preset-btn button secondary" data-days="7" style="font-size: 11px; padding: 6px 10px;">1 Week</button>
+          </div>
+          <input type="hidden" id="quick-add-reminder-days" value="0" />
+          
+          <div class="row" style="margin-top: 20px; gap: 12px;">
+            <button class="button" id="quick-add-save">Create Job</button>
+            <button class="button secondary" id="quick-add-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+    
+    // Customer dropdown change handler
+    document.getElementById('quick-add-customer')?.addEventListener('change', (e) => {
+      const newCustomerFields = document.getElementById('new-customer-fields');
+      if (e.target.value === '__new__') {
+        newCustomerFields.style.display = 'block';
+      } else {
+        newCustomerFields.style.display = 'none';
+      }
+    });
+    
+    // Job suggestion buttons
+    document.querySelectorAll('.job-suggestion-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('quick-add-title').value = btn.dataset.value;
+      });
+    });
+    
+    // Reminder preset buttons
+    document.querySelectorAll('.reminder-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.reminder-preset-btn').forEach(b => b.classList.add('secondary'));
+        btn.classList.remove('secondary');
+        document.getElementById('quick-add-reminder-days').value = btn.dataset.days;
+      });
+    });
+    
+    // Save handler
+    document.getElementById('quick-add-save')?.addEventListener('click', async () => {
+      const customerSelect = document.getElementById('quick-add-customer');
+      const title = document.getElementById('quick-add-title').value.trim();
+      const address = document.getElementById('quick-add-address').value.trim();
+      const reminderDays = parseInt(document.getElementById('quick-add-reminder-days').value) || 0;
+      
+      let customerId = customerSelect.value;
+      
+      // Create new customer if selected
+      if (customerId === '__new__') {
+        const newName = document.getElementById('quick-add-customer-name').value.trim();
+        const newPhone = document.getElementById('quick-add-customer-phone').value.trim();
+        
+        if (!newName) {
+          alert('Please enter a customer name');
+          return;
+        }
+        
+        // Split name into first/last
+        const nameParts = newName.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        try {
+          customerId = await ChikasDB.createCustomer({
+            firstName,
+            lastName,
+            contactNumber: newPhone,
+            socialMediaName: '',
+            referralNotes: ''
+          });
+        } catch (error) {
+          console.error('Error creating customer:', error);
+          alert('Error creating customer: ' + error.message);
+          return;
+        }
+      }
+      
+      if (!customerId) {
+        alert('Please select or create a customer');
+        return;
+      }
+      
+      if (!title) {
+        alert('Please enter a job title');
+        return;
+      }
+      
+      try {
+        // Create the job (appointment) with status "lead"
+        const now = new Date();
+        const appointmentId = await ChikasDB.createAppointment({
+          customerId: parseInt(customerId),
+          title: title,
+          start: now.toISOString(),
+          end: new Date(now.getTime() + 3600000).toISOString(), // 1 hour default
+          status: 'lead',
+          address: address || null,
+          quotedAmount: null,
+          invoiceAmount: null,
+          paidAmount: null
+        });
+        
+        // Create reminder if requested
+        if (reminderDays > 0) {
+          const dueAt = new Date();
+          dueAt.setDate(dueAt.getDate() + reminderDays);
+          dueAt.setHours(9, 0, 0, 0); // 9am
+          
+          await ChikasDB.createReminder({
+            customerId: parseInt(customerId),
+            appointmentId: appointmentId,
+            message: 'Follow up on: ' + title,
+            dueAt: dueAt.toISOString(),
+            status: 'pending'
+          });
+        }
+        
+        hideModal();
+        
+        // Refresh the current view
+        render();
+        
+      } catch (error) {
+        console.error('Error creating job:', error);
+        alert('Error creating job: ' + error.message);
+      }
+    });
+    
+    document.getElementById('quick-add-cancel')?.addEventListener('click', hideModal);
   }
 
   async function renderBackup() {
