@@ -102,7 +102,7 @@
       
       // Database
       dbName: 'tradie-crm-db',
-      dbVersion: 4, // Version 4: Added payment fields to appointments
+      dbVersion: 5, // Version 5: Added jobEvents store for timeline
       storagePrefix: 'tradie_',
       
       // Entity names

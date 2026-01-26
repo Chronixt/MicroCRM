@@ -178,6 +178,12 @@
           remindersStore.createIndex('dueAt', 'dueAt', { unique: false });
           remindersStore.createIndex('status', 'status', { unique: false });
           
+          // Create jobEvents store for activity timeline
+          const jobEventsStore = db.createObjectStore('jobEvents', { keyPath: 'id', autoIncrement: true });
+          jobEventsStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+          jobEventsStore.createIndex('customerId', 'customerId', { unique: false });
+          jobEventsStore.createIndex('createdAt', 'createdAt', { unique: false });
+          
           console.log('Fresh database created successfully');
         } 
         // =====================================================================
@@ -258,6 +264,16 @@
             remindersStore.createIndex('dueAt', 'dueAt', { unique: false });
             remindersStore.createIndex('status', 'status', { unique: false });
             console.log('Reminders store created successfully');
+          }
+          
+          // Upgrade to version 5+ (add jobEvents store)
+          if (oldVersion < 5 && !db.objectStoreNames.contains('jobEvents')) {
+            console.log('Creating jobEvents store...');
+            const jobEventsStore = db.createObjectStore('jobEvents', { keyPath: 'id', autoIncrement: true });
+            jobEventsStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+            jobEventsStore.createIndex('customerId', 'customerId', { unique: false });
+            jobEventsStore.createIndex('createdAt', 'createdAt', { unique: false });
+            console.log('JobEvents store created successfully');
           }
         }
       };
@@ -1407,6 +1423,124 @@
     ));
   }
 
+  // ============================================================================
+  // JOB EVENTS / TIMELINE OPERATIONS
+  // ============================================================================
+
+  const JOB_EVENT_TYPES = ['call', 'sms', 'email', 'site_visit', 'quote_sent', 'invoice_sent', 'payment_received', 'note', 'other'];
+
+  function createJobEvent(event) {
+    const now = new Date().toISOString();
+    const eventData = {
+      appointmentId: event.appointmentId ? parseInt(event.appointmentId) : null,
+      customerId: event.customerId ? parseInt(event.customerId) : null,
+      type: event.type || 'other',
+      note: event.note || null,
+      createdAt: now
+    };
+    return runTransaction(['jobEvents'], 'readwrite', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const req = jobEvents.add(eventData);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getJobEventById(id) {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const req = jobEvents.get(parseInt(id));
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getEventsForAppointment(appointmentId) {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = jobEvents.index('appointmentId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(appointmentId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            // Sort by createdAt descending (newest first)
+            results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getEventsForCustomer(customerId) {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = jobEvents.index('customerId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(customerId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            // Sort by createdAt descending (newest first)
+            results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  async function getRecentEventsForCustomer(customerId, limit = 5) {
+    const allEvents = await getEventsForCustomer(customerId);
+    return allEvents.slice(0, limit);
+  }
+
+  function getAllJobEvents() {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = jobEvents.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else {
+            items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(items);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function deleteJobEvent(id) {
+    return runTransaction(['jobEvents'], 'readwrite', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const req = jobEvents.delete(parseInt(id));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  // Helper to get last contact time for a customer
+  async function getLastContactTime(customerId) {
+    const events = await getEventsForCustomer(customerId);
+    const contactTypes = ['call', 'sms', 'email'];
+    const contactEvents = events.filter(e => contactTypes.includes(e.type));
+    if (contactEvents.length > 0) {
+      return new Date(contactEvents[0].createdAt);
+    }
+    return null;
+  }
+
   // Recovery function: Scan and identify potentially corrupted notes
   async function scanForCorruptedNotes() {
     const results = {
@@ -2460,6 +2594,17 @@
     getUpcomingReminders,
     updateReminder,
     deleteReminder,
+    
+    // Job Events / Timeline operations
+    createJobEvent,
+    getJobEventById,
+    getEventsForAppointment,
+    getEventsForCustomer,
+    getRecentEventsForCustomer,
+    getAllJobEvents,
+    deleteJobEvent,
+    getLastContactTime,
+    JOB_EVENT_TYPES,
     
     // Backup/Restore operations
     exportAllData,

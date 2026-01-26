@@ -1056,6 +1056,15 @@
           <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
         </div>
 
+        ${isTradie() ? `
+        <div class="recent-activity" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px;">📋 Recent Activity</h3>
+          <div id="customer-recent-activity">
+            <div class="muted" style="font-size: 12px; text-align: center;">Loading...</div>
+          </div>
+        </div>
+        ` : ''}
+
         <div class="notes-view">
           <h3 style="margin:0 0 6px 0;">Notes</h3>
           <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
@@ -1359,6 +1368,11 @@
     document.getElementById('reminder-btn')?.addEventListener('click', () => {
       openCreateReminderModal(id, null);
     });
+
+    // Load recent activity for tradie edition
+    if (isTradie()) {
+      loadCustomerRecentActivity(id);
+    }
 
     // Delete customer functionality
     document.getElementById('delete-btn').addEventListener('click', async () => {
@@ -2344,6 +2358,23 @@
                 </div>
               </div>
             </div>
+            
+            <div class="timeline-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">📋 Quick Log</strong>
+              </div>
+              <div class="quick-actions" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                <button class="quick-action-btn" data-type="call" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">📞 Call</button>
+                <button class="quick-action-btn" data-type="sms" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(96,165,250,0.2); border: 1px solid rgba(96,165,250,0.4); color: #60a5fa; border-radius: 6px; cursor: pointer;">💬 SMS</button>
+                <button class="quick-action-btn" data-type="email" style="padding: 8px 12px; font-size: 12px; background: rgba(167,139,250,0.2); border: 1px solid rgba(167,139,250,0.4); color: #a78bfa; border-radius: 6px; cursor: pointer;">✉️ Email</button>
+                <button class="quick-action-btn" data-type="quote_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.4); color: #fbbf24; border-radius: 6px; cursor: pointer;">📄 Quote Sent</button>
+                <button class="quick-action-btn" data-type="invoice_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(249,115,22,0.2); border: 1px solid rgba(249,115,22,0.4); color: #f97316; border-radius: 6px; cursor: pointer;">🧾 Invoice Sent</button>
+                <button class="quick-action-btn" data-type="payment_received" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">💵 Payment</button>
+              </div>
+              <div id="job-timeline" style="max-height: 200px; overflow-y: auto;">
+                <div class="muted" style="font-size: 12px; text-align: center;">Loading timeline...</div>
+              </div>
+            </div>
             ` : ''}
 
             <div class="row" style="margin-top: 16px; gap: 12px;">
@@ -2403,6 +2434,85 @@
         document.getElementById('apt-quoted')?.addEventListener('input', updatePaymentStatusBadge);
         document.getElementById('apt-invoiced')?.addEventListener('input', updatePaymentStatusBadge);
         document.getElementById('apt-paid')?.addEventListener('input', updatePaymentStatusBadge);
+
+        // Load and display timeline
+        async function loadJobTimeline() {
+          const timelineEl = document.getElementById('job-timeline');
+          if (!timelineEl) return;
+          
+          try {
+            const events = await ChikasDB.getEventsForAppointment(event.id);
+            
+            if (events.length === 0) {
+              timelineEl.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center;">No activity logged yet</div>';
+              return;
+            }
+            
+            const eventIcons = {
+              call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
+              quote_sent: '📄', invoice_sent: '🧾', payment_received: '💵', note: '📝', other: '•'
+            };
+            const eventLabels = {
+              call: 'Called', sms: 'Sent SMS', email: 'Sent Email', site_visit: 'Site Visit',
+              quote_sent: 'Quote Sent', invoice_sent: 'Invoice Sent', payment_received: 'Payment Received', note: 'Note', other: 'Activity'
+            };
+            
+            let html = '';
+            for (const evt of events) {
+              const icon = eventIcons[evt.type] || '•';
+              const label = eventLabels[evt.type] || evt.type;
+              const timeAgo = formatRelativeTime(new Date(evt.createdAt));
+              const noteHtml = evt.note ? '<div style="font-size: 11px; color: var(--muted);">' + escapeHtml(evt.note) + '</div>' : '';
+              
+              html += '<div style="display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">' +
+                '<span style="font-size: 14px;">' + icon + '</span>' +
+                '<div style="flex: 1;">' +
+                  '<div style="font-size: 12px; font-weight: 500;">' + label + '</div>' +
+                  noteHtml +
+                  '<div style="font-size: 10px; color: var(--muted); margin-top: 2px;">' + timeAgo + '</div>' +
+                '</div>' +
+              '</div>';
+            }
+            
+            timelineEl.innerHTML = html;
+          } catch (error) {
+            console.error('Error loading timeline:', error);
+            timelineEl.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center;">Error loading timeline</div>';
+          }
+        }
+        
+        // Quick action button handlers
+        document.querySelectorAll('.quick-action-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const type = btn.dataset.type;
+            const phone = btn.dataset.phone;
+            
+            // Log the event
+            try {
+              await ChikasDB.createJobEvent({
+                appointmentId: event.id,
+                customerId: customer.id,
+                type: type
+              });
+              
+              // Reload timeline
+              await loadJobTimeline();
+              
+              // Open deep link if applicable
+              if (type === 'call' && phone) {
+                window.location.href = 'tel:' + phone;
+              } else if (type === 'sms' && phone) {
+                window.location.href = 'sms:' + phone;
+              }
+            } catch (error) {
+              console.error('Error logging event:', error);
+              alert('Error logging event: ' + error.message);
+            }
+          });
+        });
+        
+        // Load timeline on modal open
+        loadJobTimeline();
 
         // Make customer name clickable to open customer view
         const customerLink = document.getElementById('apt-customer-link');
@@ -2879,6 +2989,56 @@
       if (diffDays === 1) return 'Tomorrow';
       if (diffDays < 7) return `In ${diffDays} days`;
       return date.toLocaleDateString();
+    }
+  }
+
+  async function loadCustomerRecentActivity(customerId) {
+    const container = document.getElementById('customer-recent-activity');
+    if (!container) return;
+    
+    try {
+      const events = await ChikasDB.getRecentEventsForCustomer(customerId, 5);
+      const lastContact = await ChikasDB.getLastContactTime(customerId);
+      
+      const eventIcons = {
+        call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
+        quote_sent: '📄', invoice_sent: '🧾', payment_received: '💵', note: '📝', other: '•'
+      };
+      const eventLabels = {
+        call: 'Called', sms: 'SMS', email: 'Email', site_visit: 'Site Visit',
+        quote_sent: 'Quote Sent', invoice_sent: 'Invoice', payment_received: 'Payment', note: 'Note', other: 'Activity'
+      };
+      
+      let html = '';
+      
+      // Last contacted info
+      if (lastContact) {
+        const timeAgo = formatRelativeTime(lastContact);
+        html += `<div style="font-size: 12px; margin-bottom: 12px; color: var(--muted);">Last contacted: <strong>${timeAgo}</strong></div>`;
+      }
+      
+      if (events.length === 0) {
+        html += '<div class="muted" style="font-size: 12px; text-align: center;">No recent activity</div>';
+      } else {
+        for (const evt of events) {
+          const icon = eventIcons[evt.type] || '•';
+          const label = eventLabels[evt.type] || evt.type;
+          const timeAgo = formatRelativeTime(new Date(evt.createdAt));
+          
+          html += `
+            <div style="display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px;">
+              <span>${icon}</span>
+              <span style="flex: 1;">${label}${evt.note ? ': ' + escapeHtml(evt.note) : ''}</span>
+              <span style="color: var(--muted);">${timeAgo}</span>
+            </div>
+          `;
+        }
+      }
+      
+      container.innerHTML = html;
+    } catch (error) {
+      console.error('Error loading recent activity:', error);
+      container.innerHTML = '<div class="muted" style="font-size: 12px;">Error loading activity</div>';
     }
   }
 
