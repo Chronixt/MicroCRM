@@ -718,6 +718,41 @@
     return grouped;
   }
 
+  // Get unpaid jobs (invoiced but not fully paid)
+  async function getUnpaidJobs() {
+    const all = await getAllAppointments();
+    return all.filter(apt => {
+      const invoiced = apt.invoiceAmount || 0;
+      const paid = apt.paidAmount || 0;
+      return invoiced > 0 && paid < invoiced;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
+
+  // Get jobs that need invoicing (completed but not invoiced)
+  async function getNeedsInvoiceJobs() {
+    const all = await getAllAppointments();
+    const completedStatuses = ['completed', 'invoiced', 'paid'];
+    return all.filter(apt => {
+      const status = apt.status || 'scheduled';
+      const isCompleted = completedStatuses.includes(status) || status === 'completed';
+      const invoiced = apt.invoiceAmount || 0;
+      return isCompleted && invoiced === 0;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
+
+  // Helper to compute payment status from amounts
+  function computePaymentStatus(apt) {
+    const quoted = apt.quotedAmount || 0;
+    const invoiced = apt.invoiceAmount || 0;
+    const paid = apt.paidAmount || 0;
+
+    if (paid > 0 && paid >= invoiced && invoiced > 0) return 'paid';
+    if (paid > 0 && paid < invoiced) return 'part_paid';
+    if (invoiced > 0) return 'invoiced';
+    if (quoted > 0) return 'quoted';
+    return 'not_quoted';
+  }
+
   function updateAppointment(updated) {
     return runTransaction(['appointments'], 'readwrite', (appointments) => (
       new Promise((resolve, reject) => {
@@ -2395,6 +2430,9 @@
     getAppointmentById,
     getAppointmentsByStatus,
     getAppointmentsGroupedByStatus,
+    getUnpaidJobs,
+    getNeedsInvoiceJobs,
+    computePaymentStatus,
     
     // Image/Photo operations
     addImages,

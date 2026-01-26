@@ -102,7 +102,7 @@
       
       // Database
       dbName: 'tradie-crm-db',
-      dbVersion: 3, // Version 3: Added reminders store
+      dbVersion: 4, // Version 4: Added payment fields to appointments
       storagePrefix: 'tradie_',
       
       // Entity names

@@ -1662,11 +1662,16 @@
     appRoot.innerHTML = wrapWithSidebar(`
         <div class="space-between" style="margin-bottom: 8px;">
           <h2>${isTradie() ? 'Jobs' : t('calendar')}</h2>
-          <div style="display: flex; gap: 8px; align-items: center;">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             ${isTradie() ? `
             <div class="view-toggle" style="display: flex; gap: 4px;">
               <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">Calendar</button>
               <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">Pipeline</button>
+            </div>
+            <div class="payment-filters" style="display: flex; gap: 4px;">
+              <button id="filter-all-btn" class="button" style="padding: 6px 10px; font-size: 11px;">All</button>
+              <button id="filter-needs-invoice-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">📄 Needs Invoice</button>
+              <button id="filter-unpaid-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">💰 Unpaid</button>
             </div>
             ` : ''}
             <button id="new-appointment-btn" style="
@@ -1741,7 +1746,10 @@
                 customerName: fallbackName,
                 customerInitials: customer ? getInitials(customer.firstName, customer.lastName) : '',
                 bookingType: e.title || '',
-                status: e.status || 'scheduled' // Include status
+                status: e.status || 'scheduled',
+                quotedAmount: e.quotedAmount || null,
+                invoiceAmount: e.invoiceAmount || null,
+                paidAmount: e.paidAmount || null
               }
             };
             return mappedEvent;
@@ -1814,12 +1822,43 @@
       openQuickBookModal(todayStr);
     });
     
+    // Current filter state
+    let currentFilter = 'all';
+    
     // Set up view toggle for tradie edition
     if (isTradie()) {
       const calendarViewBtn = document.getElementById('calendar-view-btn');
       const pipelineViewBtn = document.getElementById('pipeline-view-btn');
       const calendarContainer = document.getElementById('calendar-container');
       const pipelineContainer = document.getElementById('pipeline-container');
+      
+      // Payment filter buttons
+      const filterAllBtn = document.getElementById('filter-all-btn');
+      const filterNeedsInvoiceBtn = document.getElementById('filter-needs-invoice-btn');
+      const filterUnpaidBtn = document.getElementById('filter-unpaid-btn');
+      
+      function updateFilterButtons(activeFilter) {
+        currentFilter = activeFilter;
+        filterAllBtn?.classList.toggle('secondary', activeFilter !== 'all');
+        filterNeedsInvoiceBtn?.classList.toggle('secondary', activeFilter !== 'needs-invoice');
+        filterUnpaidBtn?.classList.toggle('secondary', activeFilter !== 'unpaid');
+        if (filterAllBtn && activeFilter === 'all') filterAllBtn.classList.remove('secondary');
+      }
+      
+      filterAllBtn?.addEventListener('click', async () => {
+        updateFilterButtons('all');
+        await renderPipelineView();
+      });
+      
+      filterNeedsInvoiceBtn?.addEventListener('click', async () => {
+        updateFilterButtons('needs-invoice');
+        await renderPipelineView();
+      });
+      
+      filterUnpaidBtn?.addEventListener('click', async () => {
+        updateFilterButtons('unpaid');
+        await renderPipelineView();
+      });
       
       if (calendarViewBtn && pipelineViewBtn) {
         calendarViewBtn.addEventListener('click', () => {
@@ -1879,11 +1918,30 @@
         const customers = await ChikasDB.getAllCustomers();
         const idToCustomer = new Map(customers.map(c => [c.id, c]));
         
+        // Apply payment filter
+        const filterJob = (job) => {
+          if (currentFilter === 'all') return true;
+          
+          const invoiced = job.invoiceAmount || 0;
+          const paid = job.paidAmount || 0;
+          const status = job.status || 'scheduled';
+          const completedStatuses = ['completed', 'invoiced', 'paid'];
+          
+          if (currentFilter === 'needs-invoice') {
+            return completedStatuses.includes(status) && invoiced === 0;
+          }
+          if (currentFilter === 'unpaid') {
+            return invoiced > 0 && paid < invoiced;
+          }
+          return true;
+        };
+        
         // Build pipeline HTML
         let pipelineHtml = '';
         
         for (const status of statuses) {
-          const jobs = grouped[status.id] || [];
+          const allJobs = grouped[status.id] || [];
+          const jobs = allJobs.filter(filterJob);
           const count = jobs.length;
           
           pipelineHtml += `
@@ -1913,9 +1971,27 @@
               hour12: true
             });
             
+            // Payment indicator
+            const quoted = job.quotedAmount || 0;
+            const invoiced = job.invoiceAmount || 0;
+            const paid = job.paidAmount || 0;
+            let paymentBadge = '';
+            if (paid > 0 && paid >= invoiced && invoiced > 0) {
+              paymentBadge = '<span style="color: #22c55e; font-size: 11px;">✓ Paid</span>';
+            } else if (paid > 0 && paid < invoiced) {
+              paymentBadge = '<span style="color: #f97316; font-size: 11px;">◐ Part Paid</span>';
+            } else if (invoiced > 0) {
+              paymentBadge = '<span style="color: #60a5fa; font-size: 11px;">📄 Invoiced</span>';
+            } else if (quoted > 0) {
+              paymentBadge = `<span style="color: #a78bfa; font-size: 11px;">$${quoted.toLocaleString()}</span>`;
+            }
+            
             pipelineHtml += `
               <div class="pipeline-job-card" data-job-id="${job.id}" data-customer-id="${job.customerId}">
-                <div class="pipeline-job-customer">${escapeHtml(customerName)}</div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div class="pipeline-job-customer">${escapeHtml(customerName)}</div>
+                  ${paymentBadge ? `<div>${paymentBadge}</div>` : ''}
+                </div>
                 <div class="pipeline-job-type">${escapeHtml(jobType)}</div>
                 <div class="pipeline-job-date">${dateStr} at ${timeStr}</div>
               </div>
@@ -1948,7 +2024,10 @@
                   extendedProps: {
                     customerId: job.customerId,
                     customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
-                    status: job.status || 'scheduled'
+                    status: job.status || 'scheduled',
+                    quotedAmount: job.quotedAmount || null,
+                    invoiceAmount: job.invoiceAmount || null,
+                    paidAmount: job.paidAmount || null
                   },
                   toPlainObject: () => job
                 };
@@ -2244,6 +2323,27 @@
                 ${generateStatusOptions(event.extendedProps?.status || 'scheduled')}
               </select>
             </div>
+            
+            <div class="payment-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">💰 Payment Tracking</strong>
+                <span id="payment-status-badge" class="job-status-badge" style="font-size: 11px;"></span>
+              </div>
+              <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div>
+                  <label style="font-size: 12px; margin-bottom: 4px;">Quoted $</label>
+                  <input type="number" id="apt-quoted" placeholder="0.00" step="0.01" min="0" value="${event.extendedProps?.quotedAmount || ''}" style="font-size: 14px;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; margin-bottom: 4px;">Invoiced $</label>
+                  <input type="number" id="apt-invoiced" placeholder="0.00" step="0.01" min="0" value="${event.extendedProps?.invoiceAmount || ''}" style="font-size: 14px;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; margin-bottom: 4px;">Paid $</label>
+                  <input type="number" id="apt-paid" placeholder="0.00" step="0.01" min="0" value="${event.extendedProps?.paidAmount || ''}" style="font-size: 14px;" />
+                </div>
+              </div>
+            </div>
             ` : ''}
 
             <div class="row" style="margin-top: 16px; gap: 12px;">
@@ -2268,6 +2368,41 @@
             }, 100);
           });
         }
+
+        // Payment status badge update function
+        function updatePaymentStatusBadge() {
+          const badge = document.getElementById('payment-status-badge');
+          if (!badge) return;
+          
+          const quoted = parseFloat(document.getElementById('apt-quoted')?.value) || 0;
+          const invoiced = parseFloat(document.getElementById('apt-invoiced')?.value) || 0;
+          const paid = parseFloat(document.getElementById('apt-paid')?.value) || 0;
+          
+          let status, color;
+          if (paid > 0 && paid >= invoiced && invoiced > 0) {
+            status = 'Paid'; color = '#22c55e';
+          } else if (paid > 0 && paid < invoiced) {
+            status = 'Part Paid'; color = '#f97316';
+          } else if (invoiced > 0) {
+            status = 'Invoiced'; color = '#60a5fa';
+          } else if (quoted > 0) {
+            status = 'Quoted'; color = '#a78bfa';
+          } else {
+            status = 'Not Quoted'; color = '#94a3b8';
+          }
+          
+          badge.textContent = status;
+          badge.style.background = color;
+          badge.style.color = 'white';
+          badge.style.padding = '2px 8px';
+          badge.style.borderRadius = '4px';
+        }
+        
+        // Update badge on load and on change
+        updatePaymentStatusBadge();
+        document.getElementById('apt-quoted')?.addEventListener('input', updatePaymentStatusBadge);
+        document.getElementById('apt-invoiced')?.addEventListener('input', updatePaymentStatusBadge);
+        document.getElementById('apt-paid')?.addEventListener('input', updatePaymentStatusBadge);
 
         // Make customer name clickable to open customer view
         const customerLink = document.getElementById('apt-customer-link');
@@ -2398,6 +2533,14 @@
             const statusEl = document.getElementById('apt-status');
             const status = statusEl ? statusEl.value : (event.extendedProps?.status || 'scheduled');
             
+            // Get payment fields (only for tradie edition)
+            const quotedEl = document.getElementById('apt-quoted');
+            const invoicedEl = document.getElementById('apt-invoiced');
+            const paidEl = document.getElementById('apt-paid');
+            const quotedAmount = quotedEl && quotedEl.value ? parseFloat(quotedEl.value) : null;
+            const invoiceAmount = invoicedEl && invoicedEl.value ? parseFloat(invoicedEl.value) : null;
+            const paidAmount = paidEl && paidEl.value ? parseFloat(paidEl.value) : null;
+            
             // Convert local datetime to ISO string
             const roundedLocal = roundDatetimeLocalToStep(startStr, 15);
             const startDate = new Date(roundedLocal);
@@ -2423,7 +2566,10 @@
                 title: newTitle,
                 start: startISO,
                 end: endISO,
-                status: status // Include status
+                status: status,
+                quotedAmount: quotedAmount,
+                invoiceAmount: invoiceAmount,
+                paidAmount: paidAmount
               };
             } else {
               // Fallback for plain appointment objects
@@ -2433,7 +2579,10 @@
                 title: newTitle,
                 start: startISO,
                 end: endISO,
-                status: status, // Include status
+                status: status,
+                quotedAmount: quotedAmount,
+                invoiceAmount: invoiceAmount,
+                paidAmount: paidAmount,
                 createdAt: event.createdAt || new Date().toISOString()
               };
             }
