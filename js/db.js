@@ -171,6 +171,13 @@
           noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
           noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
           
+          // Create reminders store for follow-ups
+          const remindersStore = db.createObjectStore('reminders', { keyPath: 'id', autoIncrement: true });
+          remindersStore.createIndex('customerId', 'customerId', { unique: false });
+          remindersStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+          remindersStore.createIndex('dueAt', 'dueAt', { unique: false });
+          remindersStore.createIndex('status', 'status', { unique: false });
+          
           console.log('Fresh database created successfully');
         } 
         // =====================================================================
@@ -240,6 +247,17 @@
             } catch (statusIndexError) {
               console.error('Failed to create status index:', statusIndexError);
             }
+          }
+          
+          // Upgrade to version 3+ (add reminders store)
+          if (oldVersion < 3 && !db.objectStoreNames.contains('reminders')) {
+            console.log('Creating reminders store...');
+            const remindersStore = db.createObjectStore('reminders', { keyPath: 'id', autoIncrement: true });
+            remindersStore.createIndex('customerId', 'customerId', { unique: false });
+            remindersStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+            remindersStore.createIndex('dueAt', 'dueAt', { unique: false });
+            remindersStore.createIndex('status', 'status', { unique: false });
+            console.log('Reminders store created successfully');
           }
         }
       };
@@ -1188,6 +1206,167 @@
           if (cursor) { items.push(cursor.value); cursor.continue(); }
           else resolve(items);
         };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  // ============================================================================
+  // REMINDERS / FOLLOW-UPS OPERATIONS
+  // ============================================================================
+
+  function createReminder(reminder) {
+    const now = new Date().toISOString();
+    const reminderData = {
+      ...reminder,
+      status: reminder.status || 'pending',
+      createdAt: now,
+      updatedAt: now
+    };
+    return runTransaction(['reminders'], 'readwrite', (reminders) => (
+      new Promise((resolve, reject) => {
+        const req = reminders.add(reminderData);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getReminderById(id) {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const req = reminders.get(parseInt(id));
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getRemindersForCustomer(customerId) {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = reminders.index('customerId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(customerId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            results.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getRemindersForAppointment(appointmentId) {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = reminders.index('appointmentId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(appointmentId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            results.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getAllReminders() {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = reminders.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else {
+            items.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(items);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getPendingReminders() {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = reminders.index('status');
+        const req = index.openCursor(IDBKeyRange.only('pending'));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { 
+            results.push(cursor.value); 
+            cursor.continue(); 
+          } else {
+            results.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  async function getOverdueReminders() {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    return pending.filter(r => new Date(r.dueAt) < now);
+  }
+
+  async function getTodayReminders() {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    return pending.filter(r => {
+      const dueAt = new Date(r.dueAt);
+      return dueAt >= startOfDay && dueAt < endOfDay;
+    });
+  }
+
+  async function getUpcomingReminders(days = 7) {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days + 1);
+    return pending.filter(r => {
+      const dueAt = new Date(r.dueAt);
+      return dueAt >= startOfTomorrow && dueAt < endDate;
+    });
+  }
+
+  function updateReminder(updated) {
+    return runTransaction(['reminders'], 'readwrite', (reminders) => (
+      new Promise((resolve, reject) => {
+        const reminderToUpdate = {
+          ...updated,
+          id: parseInt(updated.id),
+          updatedAt: new Date().toISOString()
+        };
+        const req = reminders.put(reminderToUpdate);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function deleteReminder(id) {
+    return runTransaction(['reminders'], 'readwrite', (reminders) => (
+      new Promise((resolve, reject) => {
+        const req = reminders.delete(parseInt(id));
+        req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
       })
     ));
@@ -2230,6 +2409,19 @@
     updateNote,
     deleteNote,
     getAllNotes,
+    
+    // Reminders/Follow-ups operations
+    createReminder,
+    getReminderById,
+    getRemindersForCustomer,
+    getRemindersForAppointment,
+    getAllReminders,
+    getPendingReminders,
+    getOverdueReminders,
+    getTodayReminders,
+    getUpcomingReminders,
+    updateReminder,
+    deleteReminder,
     
     // Backup/Restore operations
     exportAllData,

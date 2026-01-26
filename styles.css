@@ -2249,3 +2249,56 @@ select option { color: black; }
   color: var(--brand);
   margin-top: 8px;
 }
+
+/* ============================================================================
+   FOLLOW-UPS / REMINDERS
+   ============================================================================ */
+
+.reminder-section {
+  margin-bottom: 24px;
+}
+
+.reminder-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reminder-card {
+  transition: all 0.2s ease;
+}
+
+.reminder-card:hover {
+  transform: translateX(4px);
+  cursor: pointer;
+}
+
+.reminder-actions button {
+  transition: all 0.2s ease;
+}
+
+.reminder-actions button:hover {
+  transform: scale(1.1);
+}
+
+.reminder-done-btn:hover {
+  background: #16a34a !important;
+}
+
+.reminder-snooze-btn:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.reminder-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Overdue pulse animation */
+@keyframes overduePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.reminder-section[data-type="overdue"] .reminder-card {
+  animation: overduePulse 2s ease-in-out infinite;
+}

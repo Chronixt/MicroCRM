@@ -102,7 +102,7 @@
       
       // Database
       dbName: 'tradie-crm-db',
-      dbVersion: 2, // Version 2: Added status index on appointments
+      dbVersion: 3, // Version 3: Added reminders store
       storagePrefix: 'tradie_',
       
       // Entity names

@@ -212,6 +212,7 @@
     '/add': renderAddRecord,
     '/find': renderFind,
     '/calendar': renderCalendar,
+    '/follow-ups': renderFollowUps,
     '/backup': renderBackup,
     '/customer': renderCustomer, // expects id query ?id=123
     '/customer-edit': renderCustomerEdit,
@@ -431,6 +432,10 @@
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
+            <a class="menu-tile" href="#/follow-ups" aria-label="Follow-ups">
+              <div class="tile-icon" aria-hidden="true">🔔</div>
+              <div class="tile-label">Follow-ups</div>
+            </a>
             <a class="menu-tile" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
@@ -571,6 +576,10 @@
             <a class="menu-tile small" href="#/calendar" aria-label="Calendar">
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
+            </a>
+            <a class="menu-tile small" href="#/follow-ups" aria-label="Follow-ups">
+              <div class="tile-icon" aria-hidden="true">🔔</div>
+              <div class="tile-label">Follow-ups</div>
             </a>
             <a class="menu-tile small" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
@@ -989,7 +998,8 @@
       <div class="card customer-view">
         <div class="view-header">
           <h2 class="customer-title" style="text-align: left; font-size: 24px; margin: 0; padding-left: 16px;">👤 ${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
-          <div class="view-actions">
+          <div class="view-actions" style="display: flex; gap: 8px;">
+            <button id="reminder-btn" class="edit-btn-custom" title="Set Follow-up" aria-label="Set Follow-up" style="background: rgba(251,191,36,0.2); border: 2px solid rgba(251,191,36,0.4); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">🔔</button>
             <button id="edit-btn" class="edit-btn-custom" title="Edit" aria-label="Edit" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">✏️</button>
           </div>
         </div>
@@ -1343,6 +1353,11 @@
     // Edit customer functionality
     document.getElementById('edit-btn').addEventListener('click', () => {
       navigate(`/customer-edit?id=${encodeURIComponent(id)}`);
+    });
+
+    // Reminder button functionality
+    document.getElementById('reminder-btn')?.addEventListener('click', () => {
+      openCreateReminderModal(id, null);
     });
 
     // Delete customer functionality
@@ -2233,6 +2248,7 @@
 
             <div class="row" style="margin-top: 16px; gap: 12px;">
               <button class="button" id="apt-save">${t('saveChanges')}</button>
+              <button class="button secondary" id="apt-reminder" title="Set Reminder">🔔 Reminder</button>
               <button class="button secondary" id="apt-delete">${t('delete')}</button>
               <button class="button secondary" id="apt-cancel">${t('cancel')}</button>
             </div>
@@ -2242,6 +2258,17 @@
 
       // Wait for DOM to be ready, then set up event listeners
       setTimeout(() => {
+        // Add reminder button
+        const reminderBtn = document.getElementById('apt-reminder');
+        if (reminderBtn) {
+          reminderBtn.addEventListener('click', () => {
+            hideModal();
+            setTimeout(() => {
+              openCreateReminderModal(customer.id, parseInt(event.id));
+            }, 100);
+          });
+        }
+
         // Make customer name clickable to open customer view
         const customerLink = document.getElementById('apt-customer-link');
         if (customerLink) {
@@ -2488,6 +2515,430 @@
       setLang(current === 'en' ? 'ja' : 'en');
       render();
     }, { once: true });
+  }
+
+  // ============================================================================
+  // FOLLOW-UPS / REMINDERS VIEW
+  // ============================================================================
+
+  async function renderFollowUps() {
+    appRoot.innerHTML = wrapWithSidebar(`
+      <div class="space-between" style="margin-bottom: 8px;">
+        <h2>Follow-ups</h2>
+        <button id="add-reminder-btn" class="button" style="padding: 8px 16px;">
+          + New Reminder
+        </button>
+      </div>
+      <div id="follow-ups-container">
+        <div class="muted" style="text-align: center; padding: 40px;">Loading...</div>
+      </div>
+    `);
+
+    await loadFollowUpsView();
+
+    // Add reminder button handler
+    document.getElementById('add-reminder-btn')?.addEventListener('click', () => {
+      openCreateReminderModal();
+    });
+  }
+
+  async function loadFollowUpsView() {
+    const container = document.getElementById('follow-ups-container');
+    if (!container) return;
+
+    try {
+      const [overdue, today, upcoming, allPending] = await Promise.all([
+        ChikasDB.getOverdueReminders(),
+        ChikasDB.getTodayReminders(),
+        ChikasDB.getUpcomingReminders(7),
+        ChikasDB.getPendingReminders()
+      ]);
+
+      // Get later reminders (beyond 7 days)
+      const now = new Date();
+      const sevenDaysFromNow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 8);
+      const later = allPending.filter(r => new Date(r.dueAt) >= sevenDaysFromNow);
+
+      // Get all customers and appointments for linking
+      const customers = await ChikasDB.getAllCustomers();
+      const appointments = await ChikasDB.getAllAppointments();
+      const customerMap = new Map(customers.map(c => [c.id, c]));
+      const appointmentMap = new Map(appointments.map(a => [a.id, a]));
+
+      let html = '';
+
+      // Overdue section
+      if (overdue.length > 0) {
+        html += renderReminderSection('Overdue', overdue, customerMap, appointmentMap, 'overdue');
+      }
+
+      // Today section
+      if (today.length > 0) {
+        html += renderReminderSection('Today', today, customerMap, appointmentMap, 'today');
+      }
+
+      // Next 7 days section
+      if (upcoming.length > 0) {
+        html += renderReminderSection('Next 7 Days', upcoming, customerMap, appointmentMap, 'upcoming');
+      }
+
+      // Later section
+      if (later.length > 0) {
+        html += renderReminderSection('Later', later, customerMap, appointmentMap, 'later');
+      }
+
+      // Empty state
+      if (!html) {
+        html = `
+          <div class="card" style="text-align: center; padding: 40px;">
+            <div style="font-size: 48px; margin-bottom: 16px;">🔔</div>
+            <h3 style="margin: 0 0 8px 0;">No Follow-ups</h3>
+            <p class="muted" style="margin: 0;">Create a reminder from a job or customer to track follow-ups.</p>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+
+      // Attach event handlers
+      attachReminderEventHandlers();
+
+    } catch (error) {
+      console.error('Error loading follow-ups:', error);
+      container.innerHTML = `
+        <div class="card" style="text-align: center; padding: 40px; color: #ef4444;">
+          <p>Error loading follow-ups: ${error.message}</p>
+        </div>
+      `;
+    }
+  }
+
+  function renderReminderSection(title, reminders, customerMap, appointmentMap, sectionType) {
+    const sectionColors = {
+      overdue: 'rgba(239, 68, 68, 0.2)',
+      today: 'rgba(251, 191, 36, 0.15)',
+      upcoming: 'rgba(96, 165, 250, 0.1)',
+      later: 'rgba(148, 163, 184, 0.1)'
+    };
+    const borderColors = {
+      overdue: '#ef4444',
+      today: '#fbbf24',
+      upcoming: '#60a5fa',
+      later: '#94a3b8'
+    };
+
+    let html = `
+      <div class="reminder-section" style="margin-bottom: 20px;">
+        <h3 style="margin: 0 0 12px 0; color: ${borderColors[sectionType]};">${title} (${reminders.length})</h3>
+        <div class="reminder-cards">
+    `;
+
+    for (const reminder of reminders) {
+      const customer = reminder.customerId ? customerMap.get(reminder.customerId) : null;
+      const appointment = reminder.appointmentId ? appointmentMap.get(reminder.appointmentId) : null;
+      
+      const customerName = customer 
+        ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed'
+        : null;
+      const jobTitle = appointment?.title || null;
+
+      const dueDate = new Date(reminder.dueAt);
+      const timeStr = formatRelativeTime(dueDate);
+
+      html += `
+        <div class="reminder-card" data-reminder-id="${reminder.id}" style="
+          background: ${sectionColors[sectionType]};
+          border-left: 4px solid ${borderColors[sectionType]};
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 12px;
+        ">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+            <div style="flex: 1;">
+              <div style="font-weight: 600; margin-bottom: 4px;">
+                ${escapeHtml(reminder.message || 'Follow-up reminder')}
+              </div>
+              <div class="muted" style="font-size: 13px;">
+                ${customerName ? `<span>👤 ${escapeHtml(customerName)}</span>` : ''}
+                ${jobTitle ? `<span style="margin-left: 8px;">📋 ${escapeHtml(jobTitle)}</span>` : ''}
+              </div>
+              <div class="muted" style="font-size: 12px; margin-top: 4px;">
+                ⏰ ${timeStr}
+              </div>
+            </div>
+            <div class="reminder-actions" style="display: flex; gap: 8px; flex-shrink: 0;">
+              <button class="reminder-done-btn" data-id="${reminder.id}" title="Mark Done" style="
+                background: #22c55e;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: white;
+                cursor: pointer;
+                font-size: 14px;
+              ">✓</button>
+              <button class="reminder-snooze-btn" data-id="${reminder.id}" title="Snooze" style="
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.2);
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: white;
+                cursor: pointer;
+                font-size: 14px;
+              ">💤</button>
+              <button class="reminder-delete-btn" data-id="${reminder.id}" title="Delete" style="
+                background: rgba(239, 68, 68, 0.2);
+                border: 1px solid rgba(239, 68, 68, 0.4);
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #ef4444;
+                cursor: pointer;
+                font-size: 14px;
+              ">🗑️</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function formatRelativeTime(date) {
+    const now = new Date();
+    const diffMs = date - now;
+    const diffMins = Math.round(diffMs / 60000);
+    const diffHours = Math.round(diffMs / 3600000);
+    const diffDays = Math.round(diffMs / 86400000);
+
+    if (diffMs < 0) {
+      // Past
+      const absMins = Math.abs(diffMins);
+      const absHours = Math.abs(diffHours);
+      const absDays = Math.abs(diffDays);
+      
+      if (absMins < 60) return `${absMins} min ago`;
+      if (absHours < 24) return `${absHours} hours ago`;
+      if (absDays === 1) return 'Yesterday';
+      if (absDays < 7) return `${absDays} days ago`;
+      return date.toLocaleDateString();
+    } else {
+      // Future
+      if (diffMins < 60) return `In ${diffMins} min`;
+      if (diffHours < 24) return `In ${diffHours} hours`;
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Tomorrow';
+      if (diffDays < 7) return `In ${diffDays} days`;
+      return date.toLocaleDateString();
+    }
+  }
+
+  function attachReminderEventHandlers() {
+    // Done buttons
+    document.querySelectorAll('.reminder-done-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        try {
+          const reminder = await ChikasDB.getReminderById(id);
+          if (reminder) {
+            reminder.status = 'done';
+            await ChikasDB.updateReminder(reminder);
+            await loadFollowUpsView();
+          }
+        } catch (error) {
+          console.error('Error marking reminder done:', error);
+          alert('Error: ' + error.message);
+        }
+      });
+    });
+
+    // Snooze buttons
+    document.querySelectorAll('.reminder-snooze-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        openSnoozeModal(id);
+      });
+    });
+
+    // Delete buttons
+    document.querySelectorAll('.reminder-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        if (confirm('Delete this reminder?')) {
+          try {
+            await ChikasDB.deleteReminder(id);
+            await loadFollowUpsView();
+          } catch (error) {
+            console.error('Error deleting reminder:', error);
+            alert('Error: ' + error.message);
+          }
+        }
+      });
+    });
+
+    // Card click to view details
+    document.querySelectorAll('.reminder-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const id = card.dataset.reminderId;
+        const reminder = await ChikasDB.getReminderById(id);
+        if (reminder) {
+          if (reminder.appointmentId) {
+            navigate(`/calendar?appointment=${reminder.appointmentId}`);
+          } else if (reminder.customerId) {
+            navigate(`/customer?id=${reminder.customerId}`);
+          }
+        }
+      });
+    });
+  }
+
+  function openSnoozeModal(reminderId) {
+    showModal(`
+      <div class="modal">
+        <h3 style="margin-top: 0;">Snooze Reminder</h3>
+        <div class="form">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <button class="button secondary snooze-option" data-hours="1">1 Hour</button>
+            <button class="button secondary snooze-option" data-hours="3">3 Hours</button>
+            <button class="button secondary snooze-option" data-days="1">Tomorrow 9am</button>
+            <button class="button secondary snooze-option" data-days="3">3 Days</button>
+            <button class="button secondary snooze-option" data-days="7">1 Week</button>
+            <button class="button secondary" id="snooze-custom-btn">Custom...</button>
+          </div>
+          <div id="snooze-custom-picker" style="display: none; margin-top: 12px;">
+            <input type="datetime-local" id="snooze-custom-datetime" class="form-input" />
+          </div>
+          <div class="row" style="margin-top: 16px;">
+            <button class="button secondary" id="snooze-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Snooze option handlers
+    document.querySelectorAll('.snooze-option').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const hours = btn.dataset.hours ? parseInt(btn.dataset.hours) : 0;
+        const days = btn.dataset.days ? parseInt(btn.dataset.days) : 0;
+        
+        let newDueAt;
+        if (days === 1) {
+          // Tomorrow 9am
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(9, 0, 0, 0);
+          newDueAt = tomorrow;
+        } else if (hours > 0) {
+          newDueAt = new Date(Date.now() + hours * 3600000);
+        } else if (days > 0) {
+          newDueAt = new Date(Date.now() + days * 86400000);
+        }
+
+        await snoozeReminder(reminderId, newDueAt);
+      });
+    });
+
+    // Custom picker
+    document.getElementById('snooze-custom-btn')?.addEventListener('click', () => {
+      document.getElementById('snooze-custom-picker').style.display = 'block';
+    });
+
+    document.getElementById('snooze-custom-datetime')?.addEventListener('change', async (e) => {
+      const newDueAt = new Date(e.target.value);
+      if (!isNaN(newDueAt.getTime())) {
+        await snoozeReminder(reminderId, newDueAt);
+      }
+    });
+
+    document.getElementById('snooze-cancel')?.addEventListener('click', hideModal);
+  }
+
+  async function snoozeReminder(reminderId, newDueAt) {
+    try {
+      const reminder = await ChikasDB.getReminderById(reminderId);
+      if (reminder) {
+        reminder.dueAt = newDueAt.toISOString();
+        reminder.snoozedUntil = newDueAt.toISOString();
+        await ChikasDB.updateReminder(reminder);
+        hideModal();
+        await loadFollowUpsView();
+      }
+    } catch (error) {
+      console.error('Error snoozing reminder:', error);
+      alert('Error: ' + error.message);
+    }
+  }
+
+  function openCreateReminderModal(prefilledCustomerId = null, prefilledAppointmentId = null) {
+    const now = new Date();
+    const tomorrow9am = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0);
+    const defaultDateTime = tomorrow9am.toISOString().slice(0, 16);
+
+    showModal(`
+      <div class="modal">
+        <h3 style="margin-top: 0;">New Reminder</h3>
+        <div class="form">
+          <label>Message</label>
+          <input type="text" id="reminder-message" placeholder="e.g., Call back, Send quote..." />
+          
+          <label>Due Date/Time</label>
+          <input type="datetime-local" id="reminder-due" value="${defaultDateTime}" />
+          
+          <div style="margin-top: 12px;">
+            <strong style="font-size: 13px;">Quick Presets:</strong>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+              <button class="button secondary preset-btn" data-message="Call back" style="font-size: 12px; padding: 6px 12px;">📞 Call back</button>
+              <button class="button secondary preset-btn" data-message="Send quote" style="font-size: 12px; padding: 6px 12px;">📄 Send quote</button>
+              <button class="button secondary preset-btn" data-message="Chase invoice" style="font-size: 12px; padding: 6px 12px;">💰 Chase invoice</button>
+              <button class="button secondary preset-btn" data-message="Follow up" style="font-size: 12px; padding: 6px 12px;">🔔 Follow up</button>
+            </div>
+          </div>
+          
+          <div class="row" style="margin-top: 20px; gap: 12px;">
+            <button class="button" id="save-reminder-btn">Save Reminder</button>
+            <button class="button secondary" id="cancel-reminder-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Preset buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('reminder-message').value = btn.dataset.message;
+      });
+    });
+
+    // Save button
+    document.getElementById('save-reminder-btn')?.addEventListener('click', async () => {
+      const message = document.getElementById('reminder-message').value.trim();
+      const dueAt = document.getElementById('reminder-due').value;
+
+      if (!dueAt) {
+        alert('Please select a due date/time');
+        return;
+      }
+
+      try {
+        await ChikasDB.createReminder({
+          customerId: prefilledCustomerId,
+          appointmentId: prefilledAppointmentId,
+          message: message || 'Follow-up reminder',
+          dueAt: new Date(dueAt).toISOString(),
+          status: 'pending'
+        });
+        hideModal();
+        await loadFollowUpsView();
+      } catch (error) {
+        console.error('Error creating reminder:', error);
+        alert('Error: ' + error.message);
+      }
+    });
+
+    document.getElementById('cancel-reminder-btn')?.addEventListener('click', hideModal);
   }
 
   async function renderBackup() {
