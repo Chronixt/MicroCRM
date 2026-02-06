@@ -773,6 +773,41 @@
               <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
+          ${isTradie() ? `
+          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <strong style="font-size: 14px;">📍 Address</strong>
+            <div style="margin-top: 12px;">
+              <label style="font-size: 12px;">Street Address</label>
+              <input type="text" name="addressLine1" placeholder="123 Main Street" />
+            </div>
+            <div class="grid-2" style="margin-top: 8px;">
+              <div>
+                <label style="font-size: 12px;">Suburb</label>
+                <input type="text" name="suburb" placeholder="Suburb" />
+              </div>
+              <div class="grid-2">
+                <div>
+                  <label style="font-size: 12px;">State</label>
+                  <select name="state">
+                    <option value="">-</option>
+                    <option value="NSW">NSW</option>
+                    <option value="VIC">VIC</option>
+                    <option value="QLD">QLD</option>
+                    <option value="WA">WA</option>
+                    <option value="SA">SA</option>
+                    <option value="TAS">TAS</option>
+                    <option value="ACT">ACT</option>
+                    <option value="NT">NT</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px;">Postcode</label>
+                  <input type="text" name="postcode" placeholder="0000" maxlength="4" />
+                </div>
+              </div>
+            </div>
+          </div>
+          ` : `
           <div>
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
@@ -780,6 +815,7 @@
               <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
+          `}
           <div>
             <label>Referral</label>
             <div class="input-with-button">
@@ -829,8 +865,12 @@
       const firstName = form.querySelector('input[name="firstName"]').value.trim();
       const lastName = form.querySelector('input[name="lastName"]').value.trim();
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
-      const socialMediaName = form.querySelector('input[name="socialMediaName"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
+      const socialMediaName = isTradie() ? '' : (form.querySelector('input[name="socialMediaName"]')?.value?.trim() || '');
+      const addressLine1 = isTradie() ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
+      const suburb = isTradie() ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
+      const state = isTradie() ? (form.querySelector('select[name="state"]')?.value || '') : '';
+      const postcode = isTradie() ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
@@ -846,14 +886,31 @@
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      if (isTradie()) {
+        customer.addressLine1 = addressLine1;
+        customer.suburb = suburb;
+        customer.state = state;
+        customer.postcode = postcode;
+      }
 
       const newId = await ChikasDB.createCustomer(customer);
 
-      // Transfer any temporary notes from 'temp-new-customer' to the real customer ID
+      // Persist any temporary notes from 'temp-new-customer' into the DB, then clear localStorage
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
       const tempNotes = existingNotes['temp-new-customer'] || [];
       if (tempNotes.length > 0) {
-        existingNotes[newId] = tempNotes;
+        for (let i = 0; i < tempNotes.length; i++) {
+          const note = tempNotes[i];
+          await ChikasDB.createNote({
+            customerId: newId,
+            text: note.text || note.content,
+            svg: note.svg || null,
+            date: note.date,
+            noteNumber: note.noteNumber != null ? note.noteNumber : i + 1,
+            createdAt: note.createdAt || new Date().toISOString(),
+            updatedAt: note.updatedAt || new Date().toISOString()
+          });
+        }
         delete existingNotes['temp-new-customer'];
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
       }
@@ -965,7 +1022,7 @@
           <div class=\"list-item\" data-id=\"${c.id}\"> 
             <div>
               <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
             </div>
             ${rightHtml}
           </div>`;
@@ -1010,7 +1067,7 @@
         <div class=\"list-item\" data-id=\"${c.id}\"> 
           <div>
             <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
           </div>
           ${rightHtml}
         </div>`;
@@ -1077,7 +1134,7 @@
             <div class=\"list-item\" data-first-letter=\"${(c.firstName || '').charAt(0).toUpperCase()}\" data-id=\"${c.id}\"> 
               <div>
                 <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
               </div>
               ${rightHtml}
             </div>`;
@@ -1192,7 +1249,7 @@
 
         <div class="detail-list">
           <div class="detail-item"><span class="detail-icon">📞</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || '—')}</span></div>
-          <div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>
+          ${!isTradie() ? `<div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>` : ''}
           <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
           ${isTradie() && customer.preferredContactMethod ? `
           <div class="detail-item"><span class="detail-icon">❤️</span><span class="detail-label">Preferred Contact</span><span class="detail-value">${escapeHtml(customer.preferredContactMethod === 'phone' ? 'Phone Call' : customer.preferredContactMethod === 'sms' ? 'SMS' : customer.preferredContactMethod === 'email' ? 'Email' : customer.preferredContactMethod)}</span></div>
@@ -1642,6 +1699,7 @@
               <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
+          ${!isTradie() ? `
           <div>
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
@@ -1649,6 +1707,7 @@
               <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
+          ` : ''}
           <div>
             <label>Referral</label>
             <div class="input-with-button">
@@ -3867,8 +3926,49 @@
             ${jobSuggestions}
           </div>
           
+          ${isTradie() ? `
+          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 12px;">
+              <input type="checkbox" id="quick-add-address-different" />
+              <span>Different from customer address</span>
+            </label>
+            <div id="quick-add-address-fields">
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px;">Street Address</label>
+                <input type="text" id="quick-add-address-line1" placeholder="123 Main Street" />
+              </div>
+              <div class="grid-2" style="gap: 8px;">
+                <div>
+                  <label style="font-size: 12px;">Suburb</label>
+                  <input type="text" id="quick-add-suburb" placeholder="Suburb" />
+                </div>
+                <div class="grid-2" style="gap: 4px;">
+                  <div>
+                    <label style="font-size: 12px;">State</label>
+                    <select id="quick-add-state">
+                      <option value="">-</option>
+                      <option value="NSW">NSW</option>
+                      <option value="VIC">VIC</option>
+                      <option value="QLD">QLD</option>
+                      <option value="WA">WA</option>
+                      <option value="SA">SA</option>
+                      <option value="TAS">TAS</option>
+                      <option value="ACT">ACT</option>
+                      <option value="NT">NT</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size: 12px;">Postcode</label>
+                    <input type="text" id="quick-add-postcode" placeholder="0000" maxlength="4" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          ` : `
           <label style="margin-top: 12px;">Address (optional)</label>
           <input type="text" id="quick-add-address" placeholder="Job address" />
+          `}
           
           <label style="margin-top: 12px;">Set Reminder</label>
           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
@@ -3887,13 +3987,66 @@
       </div>
     `);
     
+    function setQuickAddAddressFromCustomer(customer) {
+      if (!customer || !isTradie()) return;
+      const line1 = document.getElementById('quick-add-address-line1');
+      const suburb = document.getElementById('quick-add-suburb');
+      const state = document.getElementById('quick-add-state');
+      const postcode = document.getElementById('quick-add-postcode');
+      if (line1) line1.value = customer.addressLine1 || '';
+      if (suburb) suburb.value = customer.suburb || '';
+      if (state) state.value = customer.state || '';
+      if (postcode) postcode.value = customer.postcode || '';
+    }
+    function clearQuickAddAddressFields() {
+      if (!isTradie()) return;
+      const line1 = document.getElementById('quick-add-address-line1');
+      const suburb = document.getElementById('quick-add-suburb');
+      const state = document.getElementById('quick-add-state');
+      const postcode = document.getElementById('quick-add-postcode');
+      if (line1) line1.value = '';
+      if (suburb) suburb.value = '';
+      if (state) state.value = '';
+      if (postcode) postcode.value = '';
+    }
+    async function refreshQuickAddAddressFromCustomer() {
+      const different = document.getElementById('quick-add-address-different');
+      const customerSelect = document.getElementById('quick-add-customer');
+      if (!isTradie() || !customerSelect) return;
+      const customerId = customerSelect.value;
+      if (different && different.checked) {
+        clearQuickAddAddressFields();
+        return;
+      }
+      if (!customerId || customerId === '__new__') {
+        clearQuickAddAddressFields();
+        return;
+      }
+      try {
+        const customer = await ChikasDB.getCustomerById(parseInt(customerId, 10));
+        setQuickAddAddressFromCustomer(customer || {});
+      } catch (e) {
+        clearQuickAddAddressFields();
+      }
+    }
+
     // Customer dropdown change handler
-    document.getElementById('quick-add-customer')?.addEventListener('change', (e) => {
+    document.getElementById('quick-add-customer')?.addEventListener('change', async (e) => {
       const newCustomerFields = document.getElementById('new-customer-fields');
       if (e.target.value === '__new__') {
         newCustomerFields.style.display = 'block';
       } else {
         newCustomerFields.style.display = 'none';
+      }
+      await refreshQuickAddAddressFromCustomer();
+    });
+
+    // "Different from customer address" checkbox
+    document.getElementById('quick-add-address-different')?.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        clearQuickAddAddressFields();
+      } else {
+        await refreshQuickAddAddressFromCustomer();
       }
     });
     
@@ -3917,7 +4070,16 @@
     document.getElementById('quick-add-save')?.addEventListener('click', async () => {
       const customerSelect = document.getElementById('quick-add-customer');
       const title = document.getElementById('quick-add-title').value.trim();
-      const address = document.getElementById('quick-add-address').value.trim();
+      let address = '';
+      if (isTradie()) {
+        const line1 = document.getElementById('quick-add-address-line1')?.value?.trim() || '';
+        const suburb = document.getElementById('quick-add-suburb')?.value?.trim() || '';
+        const state = document.getElementById('quick-add-state')?.value?.trim() || '';
+        const postcode = document.getElementById('quick-add-postcode')?.value?.trim() || '';
+        address = [line1, suburb, state, postcode].filter(Boolean).join(', ');
+      } else {
+        address = document.getElementById('quick-add-address')?.value?.trim() || '';
+      }
       const reminderDays = parseInt(document.getElementById('quick-add-reminder-days').value) || 0;
       
       let customerId = customerSelect.value;
@@ -4004,6 +4166,11 @@
     });
     
     document.getElementById('quick-add-cancel')?.addEventListener('click', hideModal);
+
+    // Populate address from prefilled customer when modal opens
+    if (prefilledCustomerId && isTradie()) {
+      setTimeout(() => refreshQuickAddAddressFromCustomer(), 0);
+    }
   }
 
   async function renderBackup() {
@@ -8739,16 +8906,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const dateStr = formatDateYYYYMMDD(now);
         
         if (this.editingNote) {
-          // Update existing note
           await this.updateNote(text);
         } else {
-          // Create new note
           await this.createNote(customerId, text, dateStr);
         }
         
-        // Refresh the notes list
-        loadExistingNotes(customerId);
-        
+        await loadExistingNotes(customerId);
         this.hide();
       } catch (error) {
         console.error('Error saving note:', error);
@@ -8757,25 +8920,34 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     }
 
     async createNote(customerId, text, dateStr) {
-      // Get existing notes to determine note number
-      const existingNotes = await this.getNotesForCustomer(customerId);
-      const noteNumber = existingNotes.length + 1;
+      const existingNotesList = await this.getNotesForCustomer(customerId);
+      const noteNumber = existingNotesList.length + 1;
       
       const noteData = {
         customerId: customerId,
         text: text,
-        svg: null, // No SVG for text-based notes
+        svg: null,
         date: dateStr,
         noteNumber: noteNumber,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        type: 'text' // Mark as text-based note
+        type: 'text'
       };
       
-      // Save to IndexedDB
-      const savedId = await ChikasDB.createNote(noteData);
-      console.log('✅ Text note saved to IndexedDB, ID:', savedId);
+      // New customer flow: queue in localStorage until customer is saved
+      if (customerId === 'temp-new-customer') {
+        const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+        noteData.id = tempId;
+        noteData.source = 'localStorage';
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const tempNotes = existingNotes['temp-new-customer'] || [];
+        tempNotes.push(noteData);
+        existingNotes['temp-new-customer'] = tempNotes;
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        return tempId;
+      }
       
+      const savedId = await ChikasDB.createNote(noteData);
       return savedId;
     }
 
@@ -8789,23 +8961,33 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         type: 'text'
       };
       
-      // If the note has an ID, update it in IndexedDB
+      // Temp-new-customer: update in localStorage queue
+      if (this.customerId === 'temp-new-customer') {
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const tempNotes = existingNotes['temp-new-customer'] || [];
+        const idx = tempNotes.findIndex(n => (n.id === this.editingNote.id) || (n.id === this.editingNote.originalId));
+        if (idx !== -1) {
+          tempNotes[idx] = { ...tempNotes[idx], ...updatedNote };
+          existingNotes['temp-new-customer'] = tempNotes;
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        }
+        return;
+      }
+      
       if (this.editingNote.id && (this.editingNote.source === 'indexeddb' || this.editingNote.source === 'indexeddb-fallback')) {
         await ChikasDB.updateNote(updatedNote);
-        console.log('✅ Text note updated in IndexedDB');
       } else {
-        // For localStorage-based notes, migrate to IndexedDB
-        const savedId = await ChikasDB.createNote({
-          ...updatedNote,
-          customerId: this.customerId
-        });
-        console.log('✅ Note migrated to IndexedDB with ID:', savedId);
+        await ChikasDB.createNote({ ...updatedNote, customerId: this.customerId });
       }
     }
 
     async getNotesForCustomer(customerId) {
+      // Temp notes (new customer flow): queue in localStorage until customer is saved
+      if (customerId === 'temp-new-customer') {
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        return existingNotes['temp-new-customer'] || [];
+      }
       try {
-        // Get notes from IndexedDB
         const dbNotes = await ChikasDB.getNotesByCustomerId(customerId);
         return dbNotes || [];
       } catch (error) {

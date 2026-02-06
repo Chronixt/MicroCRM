@@ -1518,7 +1518,9 @@ select option { color: black; }
 .modal-root { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 10000; background: rgba(0,0,0,0.45); }
 .modal-root[aria-hidden="false"] { display: flex; }
 .modal {
-  width: min(92vw, 520px);
+  width: min(92vw, 627.333px);
+  max-height: 90vh;
+  overflow-y: auto;
   background: rgba(17, 24, 39, 0.95);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px;

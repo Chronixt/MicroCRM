@@ -104,6 +104,7 @@
       dbName: 'tradie-crm-db',
       dbVersion: 6, // Version 6: Added appointmentId index on images
       storagePrefix: 'tradie_',
+      useSupabase: true, // When true, load dbSupabase.js instead of db.js (IndexedDB)
       
       // Entity names
       entities: {
@@ -137,13 +138,16 @@
         { id: 'other', label: 'Other', labelJa: 'その他' },
       ],
       
-      // Customer fields for tradies
+      // Customer fields for tradies (address in dedicated columns, not socialMediaName)
       customerFields: {
         firstName: { enabled: true, required: false, label: 'First Name', labelJa: '名' },
         lastName: { enabled: true, required: false, label: 'Last Name', labelJa: '姓' },
         contactNumber: { enabled: true, required: false, label: 'Phone', labelJa: '電話番号', placeholder: '0400 123 456' },
-        // Repurpose socialMediaName as address for tradies
-        socialMediaName: { enabled: true, required: false, label: 'Address', labelJa: '住所', placeholder: '123 Main St, Suburb' },
+        socialMediaName: { enabled: false, required: false, label: 'Social Media', labelJa: 'SNS' },
+        addressLine1: { enabled: true, required: false, label: 'Street Address', labelJa: '住所', placeholder: '123 Main Street' },
+        suburb: { enabled: true, required: false, label: 'Suburb', labelJa: '市区町村' },
+        state: { enabled: true, required: false, label: 'State', labelJa: '州' },
+        postcode: { enabled: true, required: false, label: 'Postcode', labelJa: '郵便番号', placeholder: '0000' },
         email: { enabled: true, required: false, label: 'Email', labelJa: 'メール', placeholder: 'email@example.com' },
         referralType: { enabled: true, required: false, label: 'Lead Source', labelJa: 'リード元' },
         referralNotes: { enabled: true, required: false, label: 'Notes', labelJa: 'メモ' },
@@ -251,9 +255,9 @@
         noUpcomingAppointments: 'No upcoming jobs',
         confirmDelete: 'Are you sure you want to delete this job?',
         
-        // Override for address field (repurposed socialMediaName)
-        socialMediaName: 'Address',
-        socialMediaNamePlaceholder: '123 Main St, Suburb',
+        // Tradie uses dedicated address fields; socialMediaName not shown
+        socialMediaName: 'Social Media',
+        socialMediaNamePlaceholder: 'Username',
         
         // Tradie-specific
         leadSource: 'Lead Source',
@@ -272,8 +276,8 @@
         nextAppointment: '次のジョブ',
         noUpcomingAppointments: '予定のジョブはありません',
         confirmDelete: 'このジョブを削除してもよろしいですか？',
-        socialMediaName: '住所',
-        socialMediaNamePlaceholder: '住所を入力',
+        socialMediaName: 'SNS',
+        socialMediaNamePlaceholder: 'ユーザー名',
         leadSource: 'リード元',
         jobStatus: 'ジョブ状況',
         jobType: 'ジョブ種類',
@@ -315,6 +319,7 @@
     dbName: config.dbName,
     dbVersion: config.dbVersion,
     storagePrefix: config.storagePrefix,
+    useSupabase: config.useSupabase || false,
     
     // Data
     serviceTypes: config.serviceTypes,

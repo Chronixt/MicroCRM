@@ -40,8 +40,16 @@
     <div id="modal-root" class="modal-root" aria-hidden="true"></div>
 
     <script src="js/productConfig.js?v=1.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabaseClient.js?v=1.0.0"></script>
+    <script>
+    (function(){
+      var cfg = window.ProductConfig || {};
+      var useSupabase = !!cfg.useSupabase && !!window.SupabaseClient;
+      document.write('<script src="js/' + (useSupabase ? 'dbSupabase' : 'db') + '.js?v=1.0.6"><\/script>');
+    })();
+    </script>
     <script src="js/storageDriver.js?v=1.0.0"></script>
-    <script src="js/db.js?v=1.0.5"></script>
     <script src="js/app.js?v=1.0.5"></script>
   </body>
   </html>
