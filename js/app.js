@@ -200,6 +200,21 @@
   const appRoot = document.getElementById('app');
   const modalRoot = document.getElementById('modal-root');
 
+  // Restrict contact number inputs to digits, + ( ) and space
+  appRoot.addEventListener('input', function (e) {
+    const el = e.target;
+    if (el && el.nodeName === 'INPUT' && el.getAttribute('name') === 'contactNumber') {
+      var start = el.selectionStart;
+      var oldVal = el.value;
+      var newVal = oldVal.replace(/[^\d+() ]/g, '');
+      if (newVal !== oldVal) {
+        el.value = newVal;
+        var pos = Math.min(start, newVal.length);
+        el.setSelectionRange(pos, pos);
+      }
+    }
+  });
+
   const routes = {
     '/': renderMenu,
     '/add': renderAddRecord,
@@ -222,6 +237,8 @@
         newCustomer: 'New Customer', newAppointment: 'New Appointment', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
       firstName: 'First Name', lastName: 'Last Name', contactNumber: 'Contact Number', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'Social Media Name', socialMediaNamePlaceholder: 'Enter social media username',
       referralType: 'Referral Type', referralNotes: 'Referral notes', referralNotesPlaceholder: 'Details related to referral', notes: 'Notes', attachImages: 'Attach Images',
+      address: 'Address', addressLookup: 'Address lookup', addressLookupPlaceholder: 'Search address (optional)',
+      addressLine1: 'Address line 1', addressLine2: 'Address line 2', suburb: 'Suburb', state: 'State', postcode: 'Postcode', country: 'Country',
       save: 'Save', saveChanges: 'Save Changes', cancel: 'Cancel', open: 'Open', select: 'Select',
       walkIn: 'Walk in', friend: 'Friend', instagram: 'Instagram', website: 'Website', googleMaps: 'Google Maps', other: 'Other',
       addNotes: 'Add notes', edit: 'Edit', images: 'Images', contact: 'Contact', referral: 'Referral', noNotesAdded: 'No notes added',
@@ -248,6 +265,8 @@
         newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
       firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
       referralType: '紹介区分', referralNotes: '紹介メモ', referralNotesPlaceholder: '紹介に関する詳細', notes: 'ノート', attachImages: '画像を追加',
+      address: '住所', addressLookup: '住所検索', addressLookupPlaceholder: '住所を検索（任意）',
+      addressLine1: '住所1', addressLine2: '住所2', suburb: '市区町村', state: '都道府県', postcode: '郵便番号', country: '国',
       save: '保存', saveChanges: '変更を保存', cancel: 'キャンセル', open: '開く', select: '選択',
       walkIn: '飛び込み', friend: '友人', instagram: 'インスタ', website: 'ウェブサイト', googleMaps: 'Googleマップ', other: 'その他',
       addNotes: 'ノート追加', edit: '編集', images: '画像', contact: '連絡先', referral: '紹介', noNotesAdded: 'ノートはありません',
@@ -287,6 +306,19 @@
       case 'Other': return t('other');
       default: return value || '';
     }
+  }
+
+  function formatCustomerAddress(customer) {
+    const line1 = (customer.addressLine1 || '').trim();
+    const line2 = (customer.addressLine2 || '').trim();
+    const suburb = (customer.suburb || '').trim();
+    const state = (customer.state || '').trim();
+    const postcode = (customer.postcode || '').trim();
+    const country = (customer.country || '').trim();
+
+    const suburbStatePostcode = [suburb, state, postcode].filter(Boolean).join(' ');
+    const parts = [line1, line2, suburbStatePostcode, country].filter(Boolean);
+    return parts.length ? parts.join(', ') : '—';
   }
 
   function getInitials(firstName, lastName) {
@@ -550,7 +582,7 @@
           <div>
             <label>${t('contactNumber')}</label>
             <div class="input-with-button">
-              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
+              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" pattern="[\d+() ]*" maxlength="20" />
               <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
             </div>
           </div>
@@ -569,8 +601,59 @@
             </div>
           </div>
           <div>
+            <label>${t('address')}</label>
+            <input type="text" name="addressLookup" placeholder="${t('addressLookupPlaceholder')}" inputmode="text" autocomplete="off" />
+            <div class="address-lookup-results" data-address-lookup-results></div>
+          </div>
+          <div>
+            <label>${t('addressLine1')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Handwrite">✏️</button>
+            </div>
+          </div>
+          <div>
+            <label>${t('addressLine2')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Handwrite">✏️</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('suburb')}</label>
+              <div class="input-with-button">
+                <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="suburb" title="Handwrite">✏️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('state')}</label>
+              <div class="input-with-button">
+                <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="state" title="Handwrite">✏️</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('postcode')}</label>
+              <div class="input-with-button">
+                <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="postcode" title="Handwrite">✏️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('country')}</label>
+              <div class="input-with-button">
+                <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="country" title="Handwrite">✏️</button>
+              </div>
+            </div>
+          </div>
+          <div>
             <label>${t('notes')}</label>
-            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+            <button type="button" class="add-note-btn" style="background: var(--brand); color: black; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
             <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
           <div>
@@ -610,6 +693,8 @@
         });
       });
     });
+
+    initializeAddressLookup(document.getElementById('new-form'));
     
     document.getElementById('save-btn').addEventListener('click', async () => {
       const form = document.getElementById('new-form');
@@ -618,6 +703,12 @@
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
       const socialMediaName = form.querySelector('input[name="socialMediaName"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
+      const addressLine1 = form.querySelector('input[name="addressLine1"]').value.trim();
+      const addressLine2 = form.querySelector('input[name="addressLine2"]').value.trim();
+      const suburb = form.querySelector('input[name="suburb"]').value.trim();
+      const state = form.querySelector('input[name="state"]').value.trim();
+      const postcode = form.querySelector('input[name="postcode"]').value.trim();
+      const country = form.querySelector('input[name="country"]').value.trim();
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
@@ -629,6 +720,7 @@
 
       const customer = {
         firstName, lastName, contactNumber, socialMediaName, referralNotes,
+        addressLine1, addressLine2, suburb, state, postcode, country,
         notesImageData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -636,12 +728,28 @@
 
       const newId = await ChikasDB.createCustomer(customer);
 
-      // Transfer any temporary notes from 'temp-new-customer' to the real customer ID
+      // Transfer any temporary notes from 'temp-new-customer' to the real customer (database or localStorage)
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
       const tempNotes = existingNotes['temp-new-customer'] || [];
+      delete existingNotes['temp-new-customer'];
       if (tempNotes.length > 0) {
-        existingNotes[newId] = tempNotes;
-        delete existingNotes['temp-new-customer'];
+        try {
+          for (let i = 0; i < tempNotes.length; i++) {
+            const note = tempNotes[i];
+            await ChikasDB.createNote({
+              customerId: newId,
+              svg: note.svg,
+              date: note.date || formatDateYYYYMMDD(new Date()),
+              noteNumber: (i + 1),
+              createdAt: note.createdAt || formatDateYYYYMMDD(new Date()),
+              editedDate: note.editedDate,
+              source: 'indexeddb-fallback'
+            });
+          }
+        } catch (e) {
+          console.warn('Could not push temp notes to database, keeping in localStorage:', e.message);
+          existingNotes[newId] = tempNotes;
+        }
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
       }
 
@@ -988,11 +1096,12 @@
           <div class="detail-item"><span class="detail-icon">📞</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || '—')}</span></div>
           <div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>
           <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
+          <div class="detail-item"><span class="detail-icon">🏠</span><span class="detail-label">${t('address')}</span><span class="detail-value">${escapeHtml(formatCustomerAddress(customer))}</span></div>
         </div>
 
         <div class="notes-view">
           <h3 style="margin:0 0 6px 0;">Notes</h3>
-          <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+          <button type="button" class="add-note-btn" style="background: var(--brand); color: black; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
           <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
         </div>
 
@@ -1340,7 +1449,7 @@
           <div>
             <label>Contact Number</label>
             <div class="input-with-button">
-              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
+              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" pattern="[\d+() ]*" maxlength="20" />
               <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
             </div>
           </div>
@@ -1359,8 +1468,59 @@
             </div>
           </div>
           <div>
+            <label>${t('address')}</label>
+            <input type="text" name="addressLookup" placeholder="${t('addressLookupPlaceholder')}" inputmode="text" autocomplete="off" />
+            <div class="address-lookup-results" data-address-lookup-results></div>
+          </div>
+          <div>
+            <label>${t('addressLine1')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" />
+              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Handwrite">✏️</button>
+            </div>
+          </div>
+          <div>
+            <label>${t('addressLine2')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" />
+              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Handwrite">✏️</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('suburb')}</label>
+              <div class="input-with-button">
+                <input type="text" name="suburb" placeholder="${t('suburb')}" />
+                <button type="button" class="input-icon-btn" data-field="suburb" title="Handwrite">✏️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('state')}</label>
+              <div class="input-with-button">
+                <input type="text" name="state" placeholder="${t('state')}" />
+                <button type="button" class="input-icon-btn" data-field="state" title="Handwrite">✏️</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('postcode')}</label>
+              <div class="input-with-button">
+                <input type="text" name="postcode" placeholder="${t('postcode')}" />
+                <button type="button" class="input-icon-btn" data-field="postcode" title="Handwrite">✏️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('country')}</label>
+              <div class="input-with-button">
+                <input type="text" name="country" placeholder="${t('country')}" />
+                <button type="button" class="input-icon-btn" data-field="country" title="Handwrite">✏️</button>
+              </div>
+            </div>
+          </div>
+          <div>
             <label>Notes</label>
-            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+            <button type="button" class="add-note-btn" style="background: var(--brand); color: black; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
             <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
           
@@ -1388,6 +1548,12 @@
     setInputValue(form, 'contactNumber', customer.contactNumber || '');
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
+    setInputValue(form, 'addressLine1', customer.addressLine1 || '');
+    setInputValue(form, 'addressLine2', customer.addressLine2 || '');
+    setInputValue(form, 'suburb', customer.suburb || '');
+    setInputValue(form, 'state', customer.state || '');
+    setInputValue(form, 'postcode', customer.postcode || '');
+    setInputValue(form, 'country', customer.country || '');
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
@@ -1415,6 +1581,8 @@
         });
       });
     });
+
+    initializeAddressLookup(form);
 
     // Load and display existing images
     const existingImagesGrid = document.getElementById('existing-images-grid');
@@ -1561,6 +1729,12 @@
         contactNumber: getInputValue(form, 'contactNumber').trim(),
         socialMediaName: getInputValue(form, 'socialMediaName').trim(),
         referralNotes: getInputValue(form, 'referralNotes').trim(),
+        addressLine1: getInputValue(form, 'addressLine1').trim(),
+        addressLine2: getInputValue(form, 'addressLine2').trim(),
+        suburb: getInputValue(form, 'suburb').trim(),
+        state: getInputValue(form, 'state').trim(),
+        postcode: getInputValue(form, 'postcode').trim(),
+        country: getInputValue(form, 'country').trim(),
         notesImageData: hasNotes ? notesImageData : '',
         updatedAt: new Date().toISOString(),
       };
@@ -3367,11 +3541,46 @@
   }
 
   // Helpers
+  function initializeAddressLookup(formEl) {
+    if (!formEl) return;
+    if (typeof window.attachAddressLookup !== 'function') return;
+
+    const searchInput = formEl.querySelector('input[name="addressLookup"]');
+    if (!searchInput) return;
+
+    window.attachAddressLookup({
+      form: formEl,
+      searchInput: searchInput,
+      resultsContainer: formEl.querySelector('[data-address-lookup-results]'),
+      fields: {
+        addressLine1: formEl.querySelector('input[name="addressLine1"]'),
+        suburb: formEl.querySelector('input[name="suburb"]'),
+        state: formEl.querySelector('input[name="state"]'),
+        postcode: formEl.querySelector('input[name="postcode"]'),
+        country: formEl.querySelector('input[name="country"]')
+      }
+    });
+  }
+
   function setFormReadOnly(formEl, readOnly) {
     formEl.dataset.readOnly = readOnly ? 'true' : 'false';
     const inputs = formEl.querySelectorAll('input, select, textarea');
     inputs.forEach((el) => {
-      if (el.name === 'firstName' || el.name === 'lastName' || el.name === 'contactNumber' || el.name === 'referralType' || el.name === 'referralNotes') {
+      if (
+        el.name === 'firstName' ||
+        el.name === 'lastName' ||
+        el.name === 'contactNumber' ||
+        el.name === 'socialMediaName' ||
+        el.name === 'referralType' ||
+        el.name === 'referralNotes' ||
+        el.name === 'addressLookup' ||
+        el.name === 'addressLine1' ||
+        el.name === 'addressLine2' ||
+        el.name === 'suburb' ||
+        el.name === 'state' ||
+        el.name === 'postcode' ||
+        el.name === 'country'
+      ) {
         el.disabled = readOnly;
       }
     });
@@ -5715,7 +5924,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
     }
 
-    // Hybrid storage manager - tries localStorage first, falls back to IndexedDB
+    // Hybrid storage manager - uses database (Supabase/IndexedDB) when customer ID is real, localStorage only for temp-new-customer
     async saveNoteHybrid(noteData, customerId) {
       console.log('Attempting hybrid save for customer:', customerId);
       
@@ -5727,74 +5936,50 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         createdAt: noteData.createdAt ? formatDateYYYYMMDD(noteData.createdAt) : undefined
       };
       
+      const numId = typeof customerId === 'number' ? customerId : parseInt(customerId, 10);
+      const isRealCustomer = customerId != null && customerId !== '' && customerId !== 'temp-new-customer' && !Number.isNaN(numId);
+      
+      // For real customers, try database (Supabase or IndexedDB) first
+      if (isRealCustomer) {
+        try {
+          const dbStatus = await this.checkIndexedDBReady();
+          if (dbStatus.ready) {
+            const noteForDB = {
+              customerId: numId,
+              svg: normalizedNoteData.svg,
+              date: normalizedNoteData.date,
+              noteNumber: normalizedNoteData.noteNumber,
+              createdAt: normalizedNoteData.createdAt || formatDateYYYYMMDD(new Date()),
+              editedDate: normalizedNoteData.editedDate,
+              source: 'indexeddb-fallback',
+              originalId: normalizedNoteData.id
+            };
+            const savedId = await ChikasDB.createNote(noteForDB);
+            console.log('✅ Note saved to database successfully, ID:', savedId);
+            normalizedNoteData.id = savedId;
+            normalizedNoteData.source = 'indexeddb-fallback';
+            normalizedNoteData.originalId = noteForDB.originalId;
+            Object.assign(noteData, normalizedNoteData);
+            return { method: 'indexeddb', success: true, id: savedId };
+          }
+        } catch (dbError) {
+          console.warn('Database save failed, falling back to localStorage:', dbError.message);
+        }
+      }
+      
+      // Temp-new-customer or database failed: use localStorage
       try {
-        // First, try localStorage (existing method)
         const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
         if (!existingNotes[customerId]) {
           existingNotes[customerId] = [];
         }
         existingNotes[customerId].push(normalizedNoteData);
-        
-        const dataToSave = JSON.stringify(existingNotes);
-        localStorage.setItem('customerNotes', dataToSave);
-        
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
         console.log('✅ Note saved to localStorage successfully');
         return { method: 'localStorage', success: true };
-        
       } catch (localStorageError) {
-        console.log('❌ localStorage failed:', localStorageError.message);
-        console.log('🔄 Attempting IndexedDB fallback...');
-        
-        try {
-          // Fallback to IndexedDB
-          console.log('🔄 Initializing IndexedDB for notes fallback...');
-          
-          // Check if IndexedDB is ready
-          const dbStatus = await this.checkIndexedDBReady();
-          if (!dbStatus.ready) {
-            throw new Error(`IndexedDB not ready: ${dbStatus.error}`);
-          }
-          
-          const noteForDB = {
-            customerId: parseInt(customerId),
-            svg: normalizedNoteData.svg,
-            date: normalizedNoteData.date,
-            noteNumber: normalizedNoteData.noteNumber,
-            createdAt: formatDateYYYYMMDD(new Date()),
-            editedDate: normalizedNoteData.editedDate,
-            source: 'indexeddb-fallback', // Mark as fallback save
-            originalId: normalizedNoteData.id // Store the original ID for reference
-          };
-          
-          console.log('Attempting to save note to IndexedDB...', noteForDB);
-          const savedId = await ChikasDB.createNote(noteForDB);
-          console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
-          
-          // Update the noteData with the database ID for UI consistency
-          normalizedNoteData.id = savedId;
-          normalizedNoteData.source = 'indexeddb-fallback';
-          normalizedNoteData.originalId = noteForDB.originalId;
-          
-          // Also update original noteData for return consistency
-          Object.assign(noteData, normalizedNoteData);
-          
-          return { method: 'indexeddb', success: true, id: savedId };
-          
-        } catch (indexedDBError) {
-          console.error('❌ IndexedDB fallback also failed:', indexedDBError);
-          
-          // Provide specific guidance based on the error
-          let errorDetails = `Both storage methods failed:\nLocalStorage: ${localStorageError.message}\nIndexedDB: ${indexedDBError.message}`;
-          
-          if (indexedDBError.message.includes('object stores was not found') || 
-              indexedDBError.message.includes('IndexedDB not ready')) {
-            errorDetails += '\n\n🔧 Fix: Please refresh the page to update the database schema.';
-          } else if (indexedDBError.message.includes('ChikasDB not available')) {
-            errorDetails += '\n\n🔧 Fix: Please refresh the page to initialize the database.';
-          }
-          
-          throw new Error(errorDetails);
-        }
+        console.error('❌ localStorage failed:', localStorageError.message);
+        throw new Error('Failed to save note: ' + localStorageError.message);
       }
     }
 
@@ -7392,5 +7577,3 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
 
 })();
-
-

@@ -1,7 +1,7 @@
 /* IndexedDB wrapper for Chikas DB */
 (function () {
   const DB_NAME = 'chikas-db';
-  const DB_VERSION = 6; // Increment version to force noteVersions store creation
+  const DB_VERSION = 7; // 7: ensure noteVersions store exists for DBs that had 6 with only 4 stores
 
   /** @type {IDBDatabase | null} */
   let database = null;
@@ -141,8 +141,8 @@
           }
         }
         
-        // Handle upgrade from version 4 to 5 or 5 to 6 (add noteVersions store for version history)
-        if (oldVersion < 5 || (!db.objectStoreNames.contains('noteVersions') && oldVersion < 6)) {
+        // Handle upgrade from version 4 to 5, 5 to 6, or 6 to 7 (add noteVersions store if missing)
+        if (oldVersion < 5 || !db.objectStoreNames.contains('noteVersions')) {
           if (!db.objectStoreNames.contains('noteVersions')) {
             console.log('Creating noteVersions store...');
             try {
@@ -170,6 +170,12 @@
           if (db.objectStoreNames.contains('images')) {
             db.deleteObjectStore('images');
           }
+          if (db.objectStoreNames.contains('notes')) {
+            db.deleteObjectStore('notes');
+          }
+          if (db.objectStoreNames.contains('noteVersions')) {
+            db.deleteObjectStore('noteVersions');
+          }
           
           // Create customers store with all indexes
           const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
@@ -192,6 +198,10 @@
           const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
           notesStore.createIndex('customerId', 'customerId', { unique: false });
           notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+          // Create noteVersions store so we always have 5 stores after full recreation
+          const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
+          noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
+          noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
         }
       };
 
@@ -343,32 +353,34 @@
     ));
   }
 
-  // Images - Optimized approach with compression for iPad
-  function addImages(customerId, fileEntries) {
+  // Images - Compress outside transaction, then add in one transaction (avoids TransactionInactiveError)
+  async function addImages(customerId, fileEntries) {
+    const toStoreList = await Promise.all(fileEntries.map(async (entry) => {
+      const compressedBlob = await compressImage(entry.blob, entry.type);
+      const dataUrl = await blobToDataURL(compressedBlob);
+      return {
+        customerId,
+        name: entry.name,
+        type: entry.type,
+        dataUrl: dataUrl,
+        createdAt: new Date().toISOString(),
+      };
+    }));
     return runTransaction(['images'], 'readwrite', (images) => (
-      Promise.all(fileEntries.map((entry) => new Promise(async (resolve, reject) => {
-        try {
-          // Compress image before storing
-          const compressedBlob = await compressImage(entry.blob, entry.type);
-          const dataUrl = await blobToDataURL(compressedBlob);
-          
-          const toStore = {
-            customerId,
-            name: entry.name,
-            type: entry.type,
-            dataUrl: dataUrl,
-            createdAt: new Date().toISOString(),
-          };
-          
+      new Promise((resolve, reject) => {
+        const ids = [];
+        let done = 0;
+        if (toStoreList.length === 0) return resolve(ids);
+        toStoreList.forEach((toStore) => {
           const req = images.add(toStore);
           req.onsuccess = () => {
-            resolve(req.result);
+            ids.push(req.result);
+            done++;
+            if (done === toStoreList.length) resolve(ids);
           };
           req.onerror = () => reject(req.error);
-        } catch (error) {
-          reject(error);
-        }
-      })))
+        });
+      })
     ));
   }
 
@@ -838,11 +850,15 @@
   }
 
   function getNotesByCustomerId(customerId) {
+    const numId = typeof customerId === 'number' ? customerId : parseInt(customerId, 10);
+    if (customerId == null || customerId === '' || customerId === 'temp-new-customer' || (typeof numId === 'number' && isNaN(numId))) {
+      return Promise.resolve([]);
+    }
     return runTransaction(['notes'], 'readonly', (notes) => (
       new Promise((resolve, reject) => {
         const results = [];
         const index = notes.index('customerId');
-        const range = IDBKeyRange.only(parseInt(customerId));
+        const range = IDBKeyRange.only(numId);
         const req = index.openCursor(range);
         req.onsuccess = (e) => {
           const cursor = e.target.result;

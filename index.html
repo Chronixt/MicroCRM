@@ -39,7 +39,15 @@
     <!-- Simple modal container for generic prompts -->
     <div id="modal-root" class="modal-root" aria-hidden="true"></div>
 
+    <script src="js/config.local.js"></script>
+    <script src="js/config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="js/db.js?v=1.0.3"></script>
+    <script src="js/db-supabase.js?v=1"></script>
+    <script src="js/address-lookup.js?v=1"></script>
+    <script>
+      if (window.USE_SUPABASE && window.ChikasDBSupabase) { window.ChikasDB = window.ChikasDBSupabase; }
+    </script>
     <script src="js/app.js?v=1.0.3"></script>
   </body>
   </html>

@@ -1,3 +1,6 @@
 /Scans/*
 *.pdf
 *.json
+
+# Local Supabase credentials (copy from js/config.local.example.js)
+js/config.local.js
