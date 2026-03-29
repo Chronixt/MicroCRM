@@ -363,7 +363,18 @@
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
           if (cursor) {
             const value = cursor.value;
-            const hay = [value.firstName, value.lastName, value.contactNumber, value.socialMediaName].filter(Boolean).join(' ').toLowerCase();
+            const hay = [
+              value.firstName,
+              value.lastName,
+              value.contactNumber,
+              value.socialMediaName,
+              value.addressLine1,
+              value.suburb,
+              value.state,
+              value.postcode,
+              value.email,
+              value.preferredContactMethod
+            ].filter(Boolean).join(' ').toLowerCase();
             if (hay.includes(q)) results.push(value);
             cursor.continue();
           } else {
@@ -2415,6 +2426,39 @@
     }
   }
 
+  // Images-only backup function for separate attachment export
+  async function exportImagesOnly(progressCallback = null) {
+    try {
+      if (progressCallback) progressCallback('Starting images-only export...', 0);
+
+      const images = await getAllImages();
+      if (progressCallback) progressCallback(`Loaded ${images.length} images`, 35);
+
+      const result = {
+        __meta: {
+          app: APP_SLUG,
+          version: 3,
+          exportedAt: new Date().toISOString(),
+          backupType: 'images-only'
+        },
+        images
+      };
+
+      if (progressCallback) progressCallback('Creating images export file...', 85);
+      const jsonString = JSON.stringify(result, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      if (progressCallback) progressCallback('Images-only export complete!', 100);
+
+      return {
+        blob,
+        imageCount: images.length
+      };
+    } catch (error) {
+      if (progressCallback) progressCallback(`Images-only export failed: ${error.message}`, 0);
+      throw error;
+    }
+  }
+
   // Ultra-safe backup function with streaming JSON creation
   async function safeExportAllData(progressCallback = null) {
     try {
@@ -2675,6 +2719,7 @@
     exportAllData,
     safeExportAllData,
     exportDataWithoutImages,
+    exportImagesOnly,
     importAllData,
     clearAllStores,
     getStorageStats,

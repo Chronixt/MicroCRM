@@ -225,6 +225,14 @@
         statusColor = '#f97316'; // orange
         statusText = 'High usage - consider cleaning up';
       }
+
+      const needsAttention = stats.isWarning || stats.isCritical;
+      const attentionTitle = stats.isCritical ? 'Storage Critical' : 'Storage Warning';
+      const attentionBg = stats.isCritical ? 'rgba(239,68,68,0.12)' : 'rgba(249,115,22,0.12)';
+      const attentionBorder = stats.isCritical ? 'rgba(239,68,68,0.35)' : 'rgba(249,115,22,0.35)';
+      const attentionText = stats.isCritical
+        ? 'You are close to the limit. Export and remove old photos to avoid failures.'
+        : 'Usage is getting high. Consider a data-only backup and cleaning up older photos.';
       
       container.innerHTML = `
         <div style="margin-bottom: 12px;">
@@ -239,7 +247,37 @@
             ${statusText} (${stats.usagePercent}% of ~50MB limit)
           </div>
         </div>
+        ${needsAttention ? `
+        <div style="background: ${attentionBg}; border: 1px solid ${attentionBorder}; border-radius: 8px; padding: 10px; margin-top: 8px;">
+          <div style="font-size: 13px; font-weight: 700; color: ${statusColor}; margin-bottom: 6px;">${attentionTitle}</div>
+          <div style="font-size: 12px; color: var(--text); margin-bottom: 10px;">${attentionText}</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="storage-export-lite-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Export Data Only</button>
+            <button id="storage-cleanup-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Review Customer Photos</button>
+          </div>
+        </div>
+        ` : ''}
       `;
+
+      const storageExportLiteBtn = document.getElementById('storage-export-lite-btn');
+      if (storageExportLiteBtn) {
+        storageExportLiteBtn.addEventListener('click', () => {
+          const exportLiteBtn = document.getElementById('export-lite-btn');
+          if (exportLiteBtn) {
+            exportLiteBtn.click();
+          } else {
+            alert('Data-only export is only available on the Options page.');
+          }
+        });
+      }
+
+      const storageCleanupBtn = document.getElementById('storage-cleanup-btn');
+      if (storageCleanupBtn) {
+        storageCleanupBtn.addEventListener('click', () => {
+          navigate('/find');
+          alert('Open a customer and remove older photos you no longer need.');
+        });
+      }
     } catch (error) {
       console.error('Error loading storage stats:', error);
       container.innerHTML = '<div class="muted" style="font-size: 12px;">Could not calculate storage</div>';
@@ -520,7 +558,12 @@
     
     appRoot.innerHTML = '';
     await view({ query });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const contentEl = appRoot.querySelector('.content');
+    if (contentEl) {
+      contentEl.scrollTo({ top: 0, behavior: 'auto' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
     adjustSidebarOffset();
     attachLangToggleHandler();
     attachVerticalBackupHandler();
@@ -916,6 +959,8 @@
       }
 
       if (imageFiles && imageFiles.length > 0) {
+        const canUpload = await confirmImageStorageCapacity(imageFiles, 'customer photos');
+        if (!canUpload) return;
         const entries = await ChikasDB.fileListToEntries(imageFiles);
         await ChikasDB.addImages(newId, entries);
       }
@@ -4188,13 +4233,26 @@
       </div>
       ` : ''}
       
-      <div class="card">
+      <div class="card" style="margin-bottom: 16px;">
         <div class="form">
+          <h3 style="margin-top: 0; margin-bottom: 10px;">Export</h3>
+          <div class="muted" style="font-size: 12px; margin-bottom: 10px;">
+            Create a backup file first, then download it.
+          </div>
           <div class="row">
-            <button id="export-btn" class="button">${t('export')}</button>
+            <button id="export-btn" class="button">Export with Images</button>
+            <button id="export-lite-btn" class="button secondary">Export Data Only</button>
+            <button id="export-images-only-btn" class="button secondary">Export Images Only</button>
             <button id="download-btn" class="button secondary" disabled>${t('download')}</button>
           </div>
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%;" />
+          <div class="muted" id="backup-status" style="margin-top: 8px;"></div>
+          
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
+          <h3 style="margin-top: 0; margin-bottom: 10px;">Import</h3>
+          <div class="muted" style="font-size: 12px; margin-bottom: 10px;">
+            Load a backup file, preview what will import, then run selected import.
+          </div>
           <div class="row">
             <input id="import-file" type="file" accept="application/json" />
             <button id="load-backup" class="button secondary">${t('load')}</button>
@@ -4219,6 +4277,11 @@
               <button id="import-selected" class="button">${t('importSelected')}</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form">
           <div class="row">
             <button id="wipe-btn" class="button danger">${t('wipeAllData')}</button>
           </div>
@@ -4314,8 +4377,6 @@
           <div class="muted" style="font-size: 12px; margin-top: 8px;">
             Use this if notes don't appear after migration, especially when using the app from home screen.
           </div>
-          
-          <div class="muted" id="backup-status"></div>
         </div>
       </div>
     `);
@@ -4326,6 +4387,8 @@
     }
 
     const exportBtn = document.getElementById('export-btn');
+    const exportLiteBtn = document.getElementById('export-lite-btn');
+    const exportImagesOnlyBtn = document.getElementById('export-images-only-btn');
     const downloadBtn = document.getElementById('download-btn');
     const loadBtn = document.getElementById('load-backup');
     const importFile = document.getElementById('import-file');
@@ -4343,11 +4406,18 @@
     let lastExportBlobUrl = null;
     let lastExportFileName = null;
     let loadedBackup = null;
+    const isImagesOnlyBackup = (backup) => {
+      if (!backup || typeof backup !== 'object') return false;
+      const type = String(backup.__meta?.backupType || '').toLowerCase();
+      return type === 'images-only' || ((backup.customers || []).length === 0 && (backup.images || []).length > 0);
+    };
 
     exportBtn.addEventListener('click', async () => {
       try {
-        statusEl.textContent = 'Starting export...';
+        statusEl.textContent = 'Starting full export...';
         exportBtn.disabled = true;
+        if (exportLiteBtn) exportLiteBtn.disabled = true;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = true;
         exportBtn.textContent = 'Exporting...';
         
         const result = await ChikasDB.safeExportAllData((message, progress) => {
@@ -4356,19 +4426,84 @@
         
         statusEl.textContent = 'Creating backup file...';
         
-        // Use the pre-created blob
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
         lastExportBlobUrl = URL.createObjectURL(result.blob);
         lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
         downloadBtn.disabled = false;
-        statusEl.textContent = `✅ Backup ready: ${lastExportFileName}`;
+        statusEl.textContent = `Full backup ready: ${lastExportFileName}`;
         
         exportBtn.disabled = false;
-        exportBtn.textContent = t('export');
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportBtn.textContent = 'Export with Images';
       } catch (error) {
-        statusEl.textContent = `❌ Export failed: ${error.message}`;
+        statusEl.textContent = `Full export failed: ${error.message}`;
         exportBtn.disabled = false;
-        exportBtn.textContent = t('export');
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportBtn.textContent = 'Export with Images';
+      }
+    });
+
+    exportLiteBtn?.addEventListener('click', async () => {
+      try {
+        statusEl.textContent = 'Starting data-only export...';
+        exportBtn.disabled = true;
+        exportLiteBtn.disabled = true;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = true;
+        exportLiteBtn.textContent = 'Exporting...';
+
+        const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+          statusEl.textContent = `${message} (${Math.round(progress)}%)`;
+        });
+
+        if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
+        lastExportBlobUrl = URL.createObjectURL(result.blob);
+        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-data-only-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        downloadBtn.disabled = false;
+        statusEl.textContent = `Data-only backup ready: ${lastExportFileName}`;
+
+        exportBtn.disabled = false;
+        exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportLiteBtn.textContent = 'Export Data Only';
+      } catch (error) {
+        statusEl.textContent = `Data-only export failed: ${error.message}`;
+        exportBtn.disabled = false;
+        exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportLiteBtn.textContent = 'Export Data Only';
+      }
+    });
+
+    exportImagesOnlyBtn?.addEventListener('click', async () => {
+      try {
+        statusEl.textContent = 'Starting images-only export...';
+        exportBtn.disabled = true;
+        if (exportLiteBtn) exportLiteBtn.disabled = true;
+        exportImagesOnlyBtn.disabled = true;
+        exportImagesOnlyBtn.textContent = 'Exporting...';
+
+        const result = await ChikasDB.exportImagesOnly((message, progress) => {
+          statusEl.textContent = `${message} (${Math.round(progress)}%)`;
+        });
+
+        if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
+        lastExportBlobUrl = URL.createObjectURL(result.blob);
+        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-images-only-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        downloadBtn.disabled = false;
+        statusEl.textContent = `Images-only backup ready: ${lastExportFileName}`;
+
+        exportBtn.disabled = false;
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        exportImagesOnlyBtn.disabled = false;
+        exportImagesOnlyBtn.textContent = 'Export Images Only';
+      } catch (error) {
+        statusEl.textContent = `Images-only export failed: ${error.message}`;
+        exportBtn.disabled = false;
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        exportImagesOnlyBtn.disabled = false;
+        exportImagesOnlyBtn.textContent = 'Export Images Only';
       }
     });
 
@@ -4391,16 +4526,29 @@
         const customers = loadedBackup.customers || [];
         const appointments = loadedBackup.appointments || [];
         const images = loadedBackup.images || [];
-        summary.textContent = `Customers: ${customers.length}, Appointments: ${appointments.length}, Images: ${images.length}`;
-        customerList.innerHTML = customers.map((c) => `
-          <label class="list-item">
-            <span>
-              <strong>${escapeHtml(c.lastName || '')} ${escapeHtml(c.firstName || '')}</strong>
-              <span class="muted"> (ID ${c.id || '?'}, ${escapeHtml(c.contactNumber || '')})</span>
-            </span>
-            <input type="checkbox" class="select-customer" data-id="${c.id}" checked />
-          </label>
-        `).join('');
+        if (isImagesOnlyBackup(loadedBackup)) {
+          summary.textContent = `Images-only backup detected: ${images.length} images`;
+          customerList.innerHTML = `<div class="muted">This file contains images only. Import will merge images into existing data.</div>`;
+          importSelectedBtn.textContent = 'Import Images Only';
+          includeApptsEl.checked = false;
+          includeApptsEl.disabled = true;
+          includeImagesEl.checked = true;
+          includeImagesEl.disabled = true;
+        } else {
+          summary.textContent = `Customers: ${customers.length}, Appointments: ${appointments.length}, Images: ${images.length}`;
+          customerList.innerHTML = customers.map((c) => `
+            <label class="list-item">
+              <span>
+                <strong>${escapeHtml(c.lastName || '')} ${escapeHtml(c.firstName || '')}</strong>
+                <span class="muted"> (ID ${c.id || '?'}, ${escapeHtml(c.contactNumber || '')})</span>
+              </span>
+              <input type="checkbox" class="select-customer" data-id="${c.id}" checked />
+            </label>
+          `).join('');
+          importSelectedBtn.textContent = t('importSelected');
+          includeApptsEl.disabled = false;
+          includeImagesEl.disabled = false;
+        }
         preview.classList.remove('hidden');
       } catch (e) {
         alert('Could not read backup file: ' + e.message);
@@ -4417,6 +4565,28 @@
 
     importSelectedBtn.addEventListener('click', async () => {
       if (!loadedBackup) { alert('Load a backup first'); return; }
+
+      if (isImagesOnlyBackup(loadedBackup)) {
+        const images = loadedBackup.images || [];
+        if (images.length === 0) { alert('No images found in this backup'); return; }
+        try {
+          statusEl.textContent = 'Importing images...';
+          await ChikasDB.importAllData({
+            __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 },
+            customers: [],
+            appointments: [],
+            images,
+            customerNotes: {}
+          }, { mode: 'merge' });
+          statusEl.textContent = `Images import complete (${images.length} images)`;
+          alert(`Imported ${images.length} images`);
+        } catch (e) {
+          statusEl.textContent = 'Images import failed';
+          alert('Images import failed: ' + e.message);
+        }
+        return;
+      }
+
       const selectedIds = Array.from(customerList.querySelectorAll('.select-customer'))
         .filter((cb) => cb.checked)
         .map((cb) => Number(cb.getAttribute('data-id')))
