@@ -2154,6 +2154,7 @@
             const imageData = { 
               id: img.id, 
               customerId: img.customerId, 
+              appointmentId: img.appointmentId || null,
               name: img.name, 
               type: img.type, 
               dataUrl: img.dataUrl, 
@@ -2588,6 +2589,7 @@
             const imageData = {
               id: img.id,
               customerId: img.customerId,
+              appointmentId: img.appointmentId || null,
               name: img.name,
               type: img.type,
               createdAt: img.createdAt,
