@@ -3233,6 +3233,11 @@
               if (globalCalendar) {
                 globalCalendar.refetchEvents();
               }
+              // If pipeline is visible, refresh it immediately so moved status cards
+              // jump columns without requiring navigation/reload.
+              if (pipelineContainer && !pipelineContainer.classList.contains('hidden')) {
+                await renderPipelineView();
+              }
             } catch (error) {
               alert('Error updating appointment: ' + error.message);
             }
@@ -3250,6 +3255,9 @@
                 hideModal();
                 if (globalCalendar) {
                   globalCalendar.refetchEvents();
+                }
+                if (pipelineContainer && !pipelineContainer.classList.contains('hidden')) {
+                  await renderPipelineView();
                 }
               } catch (error) {
                 alert('Error deleting appointment');
