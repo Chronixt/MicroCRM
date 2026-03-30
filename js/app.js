@@ -3235,7 +3235,8 @@
               }
               // If pipeline is visible, refresh it immediately so moved status cards
               // jump columns without requiring navigation/reload.
-              if (pipelineContainer && !pipelineContainer.classList.contains('hidden')) {
+              const pipelineContainerEl = document.getElementById('pipeline-container');
+              if (pipelineContainerEl && !pipelineContainerEl.classList.contains('hidden')) {
                 await renderPipelineView();
               }
             } catch (error) {
@@ -3256,7 +3257,8 @@
                 if (globalCalendar) {
                   globalCalendar.refetchEvents();
                 }
-                if (pipelineContainer && !pipelineContainer.classList.contains('hidden')) {
+                const pipelineContainerEl = document.getElementById('pipeline-container');
+                if (pipelineContainerEl && !pipelineContainerEl.classList.contains('hidden')) {
                   await renderPipelineView();
                 }
               } catch (error) {
