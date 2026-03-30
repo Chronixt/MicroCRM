@@ -34,6 +34,22 @@
     }
     return window.ChikasDB || window.CrmDB || null;
   }
+
+  function requireDataApi() {
+    const api = getDataApi();
+    if (!api) throw new Error('Data API unavailable');
+    return api;
+  }
+
+  // Compatibility proxy: existing ChikasDB calls now resolve through the active
+  // storage driver first (IndexedDB/Supabase today, SQLite later).
+  const ChikasDB = new Proxy({}, {
+    get(_target, prop) {
+      const api = requireDataApi();
+      const value = api[prop];
+      return typeof value === 'function' ? value.bind(api) : value;
+    }
+  });
   
   // Check for force update parameter
   const urlParams = new URLSearchParams(window.location.search);
