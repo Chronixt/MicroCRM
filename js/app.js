@@ -2288,6 +2288,20 @@
       const pipelineViewBtn = document.getElementById('pipeline-view-btn');
       const calendarContainer = document.getElementById('calendar-container');
       const pipelineContainer = document.getElementById('pipeline-container');
+
+      function adjustPipelineHeight() {
+        if (!pipelineContainer || pipelineContainer.classList.contains('hidden')) return;
+        const rect = pipelineContainer.getBoundingClientRect();
+        const available = window.innerHeight - rect.top - 16; // keep small bottom breathing room
+        pipelineContainer.style.height = `${Math.max(320, Math.floor(available))}px`;
+      }
+
+      // Keep pipeline height responsive without stacking duplicate listeners
+      if (window.__pipelineResizeHandler) {
+        window.removeEventListener('resize', window.__pipelineResizeHandler);
+      }
+      window.__pipelineResizeHandler = adjustPipelineHeight;
+      window.addEventListener('resize', window.__pipelineResizeHandler);
       
       // Payment filter buttons
       const filterAllBtn = document.getElementById('filter-all-btn');
@@ -2330,6 +2344,7 @@
           calendarViewBtn.classList.add('secondary');
           pipelineContainer.classList.remove('hidden');
           calendarContainer.classList.add('hidden');
+          adjustPipelineHeight();
           // Render pipeline view
           await renderPipelineView();
         });
@@ -2395,11 +2410,13 @@
         
         // Build pipeline HTML
         let pipelineHtml = '';
+        let totalVisibleJobs = 0;
         
         for (const status of statuses) {
           const allJobs = grouped[status.id] || [];
           const jobs = allJobs.filter(filterJob);
           const count = jobs.length;
+          totalVisibleJobs += count;
           
           pipelineHtml += `
             <div class="pipeline-column">
@@ -2461,7 +2478,18 @@
           `;
         }
         
+        if (totalVisibleJobs === 0) {
+          pipelineEl.innerHTML = `
+            <div class="pipeline-empty-state">
+              No jobs found. Tap the New Job button to add a job.
+            </div>
+          `;
+          adjustPipelineHeight();
+          return;
+        }
+
         pipelineEl.innerHTML = pipelineHtml;
+        adjustPipelineHeight();
         
         // Add click handlers for job cards
         pipelineEl.querySelectorAll('.pipeline-job-card').forEach(card => {
