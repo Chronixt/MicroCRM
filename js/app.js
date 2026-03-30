@@ -23,6 +23,17 @@
       console.warn('[Storage] Driver initialization skipped:', error.message || error);
     }
   }
+
+  function getDataApi() {
+    try {
+      const driver = window.StorageDriverFactory?.getDriver?.();
+      const api = driver?.getDatabase?.();
+      if (api) return api;
+    } catch (error) {
+      // Fall through to legacy globals
+    }
+    return window.ChikasDB || window.CrmDB || null;
+  }
   
   // Check for force update parameter
   const urlParams = new URLSearchParams(window.location.search);
@@ -232,7 +243,12 @@
     if (!container) return;
     
     try {
-      const stats = await ChikasDB.getStorageStats();
+      const db = getDataApi();
+      if (!db || typeof db.getStorageStats !== 'function') {
+        container.innerHTML = '<div class="muted" style="font-size: 12px;">Storage info unavailable</div>';
+        return;
+      }
+      const stats = await db.getStorageStats();
       
       let statusColor = '#22c55e'; // green
       let statusText = 'Healthy';
@@ -304,6 +320,11 @@
 
   async function performDailyBackup() {
     try {
+      const db = getDataApi();
+      if (!db || typeof db.exportDataWithoutImages !== 'function') {
+        alert('Backup is unavailable in the current storage mode.');
+        return;
+      }
       // Show loading state
       const backupBtn = document.getElementById('backup-now-btn');
       if (backupBtn) {
@@ -312,7 +333,7 @@
       }
 
       // Perform lightweight backup
-      const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+      const result = await db.exportDataWithoutImages((message, progress) => {
       });
 
       // Create and download backup
@@ -4237,6 +4258,7 @@
   }
 
   async function renderBackup() {
+    const db = getDataApi();
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
         <h2>Options</h2>
@@ -4442,6 +4464,14 @@
       return type === 'images-only' || ((backup.customers || []).length === 0 && (backup.images || []).length > 0);
     };
 
+    if (!db) {
+      statusEl.textContent = 'Storage backend unavailable on this screen.';
+      [exportBtn, exportLiteBtn, exportImagesOnlyBtn, downloadBtn, loadBtn, importSelectedBtn, wipeBtn].forEach((el) => {
+        if (el) el.disabled = true;
+      });
+      return;
+    }
+
     exportBtn.addEventListener('click', async () => {
       try {
         statusEl.textContent = 'Starting full export...';
@@ -4450,7 +4480,7 @@
         if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = true;
         exportBtn.textContent = 'Exporting...';
         
-        const result = await ChikasDB.safeExportAllData((message, progress) => {
+        const result = await db.safeExportAllData((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         
@@ -4483,7 +4513,7 @@
         if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = true;
         exportLiteBtn.textContent = 'Exporting...';
 
-        const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+        const result = await db.exportDataWithoutImages((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
 
@@ -4514,7 +4544,7 @@
         exportImagesOnlyBtn.disabled = true;
         exportImagesOnlyBtn.textContent = 'Exporting...';
 
-        const result = await ChikasDB.exportImagesOnly((message, progress) => {
+        const result = await db.exportImagesOnly((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
 
@@ -4601,7 +4631,7 @@
         if (images.length === 0) { alert('No images found in this backup'); return; }
         try {
           statusEl.textContent = 'Importing images...';
-          await ChikasDB.importAllData({
+          await db.importAllData({
             __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 },
             customers: [],
             appointments: [],
@@ -4656,7 +4686,7 @@
               customerNotes: loadedBackup.customerNotes || {} // Include customer notes
             };
             
-            await ChikasDB.importAllData(payload, { mode });
+            await db.importAllData(payload, { mode });
             
             const processed = Math.min(i + CHUNK_SIZE, totalCustomers);
             statusEl.textContent = `Importing in chunks... (${processed}/${totalCustomers})`;
@@ -4684,7 +4714,7 @@
         };
         try {
           statusEl.textContent = 'Importing...';
-          await ChikasDB.importAllData(payload, { mode });
+          await db.importAllData(payload, { mode });
           statusEl.textContent = 'Import complete';
           alert('Import complete');
         } catch (e) {
@@ -4696,7 +4726,7 @@
 
     wipeBtn.addEventListener('click', async () => {
       if (!confirm('This will permanently delete all local data. Continue?')) return;
-      await ChikasDB.clearAllStores();
+      await db.clearAllStores();
       alert('All local data deleted');
     });
 
