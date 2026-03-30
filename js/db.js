@@ -2647,7 +2647,7 @@
     }
   }
 
-  // Expose API - use generic name CrmDB, also expose as ChikasDB for backward compatibility
+  // Expose API - use generic name CrmDB, also expose as CrmDB for backward compatibility
   const dbAPI = {
     // Config info
     dbName: DB_NAME,
@@ -2739,8 +2739,6 @@
   // Expose under generic name
   window.CrmDB = dbAPI;
   
-  // Also expose as ChikasDB for backward compatibility with existing code
-  window.ChikasDB = dbAPI;
 })();
 
 

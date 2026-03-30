@@ -220,7 +220,7 @@
     backend: 'unknown',
 
     async init(config = {}) {
-      this.dbApi = config.dbApi || window.CrmDB || window.ChikasDB || null;
+      this.dbApi = config.dbApi || window.CrmDB || null;
       this.backend = config.backend || 'unknown';
       if (!this.dbApi) {
         throw new Error('DB API adapter could not find an initialized database API');
@@ -228,7 +228,7 @@
     },
 
     isAvailable() {
-      return !!(window.CrmDB || window.ChikasDB);
+      return !!window.CrmDB;
     },
 
     getDatabase() {

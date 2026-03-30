@@ -1,6 +1,6 @@
 /**
  * Supabase-backed database layer for TradieCRM
- * Same API as db.js (ChikasDB / CrmDB). Maps snake_case (Supabase) <-> camelCase (app).
+ * Same API as db.js (CrmDB). Maps snake_case (Supabase) <-> camelCase (app).
  * Requires: window.SupabaseClient, window.ProductConfig
  */
 (function () {
@@ -13,7 +13,7 @@
 
   if (!supabase) {
     console.error('[dbSupabase] SupabaseClient not found. Load supabaseClient.js first.');
-    window.ChikasDB = window.CrmDB = {};
+    window.CrmDB = {};
     return;
   }
 
@@ -654,5 +654,4 @@
   };
 
   window.CrmDB = dbAPI;
-  window.ChikasDB = dbAPI;
 })();

@@ -123,7 +123,7 @@
                 progressContainer.style.display = 'block';
                 
                 // Use the lightweight backup function (no images) with progress
-                const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+                const result = await CrmDB.exportDataWithoutImages((message, progress) => {
                     statusEl.innerHTML = `<p>${message}</p>`;
                     progressBar.style.width = `${progress}%`;
                 });

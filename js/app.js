@@ -10,7 +10,7 @@
     if (!window.StorageDriverFactory || typeof window.StorageDriverFactory.initializeFromDbApi !== 'function') {
       return;
     }
-    const dbApi = window.ChikasDB || window.CrmDB;
+    const dbApi = window.CrmDB;
     if (!dbApi) return;
     try {
       const backend = productConfig.useSupabase ? 'supabase' : 'indexeddb';
@@ -32,7 +32,7 @@
     } catch (error) {
       // Fall through to legacy globals
     }
-    return window.ChikasDB || window.CrmDB || null;
+    return window.CrmDB || null;
   }
 
   function requireDataApi() {
@@ -41,9 +41,9 @@
     return api;
   }
 
-  // Compatibility proxy: existing ChikasDB calls now resolve through the active
+  // Compatibility proxy: existing CrmDB calls now resolve through the active
   // storage driver first (IndexedDB/Supabase today, SQLite later).
-  const ChikasDB = new Proxy({}, {
+  const CrmDB = new Proxy({}, {
     get(_target, prop) {
       const api = requireDataApi();
       const value = api[prop];
@@ -716,7 +716,7 @@
       const today = new Date();
       
       // Use the new optimized function instead of loading all appointments
-      const todaysAppointments = await ChikasDB.getAppointmentsForDate(today);
+      const todaysAppointments = await CrmDB.getAppointmentsForDate(today);
       
       // Sort by time
       const sortedAppointments = todaysAppointments.sort((a, b) => {
@@ -733,7 +733,7 @@
           const appointmentsWithCustomers = await Promise.all(
             sortedAppointments.map(async (apt) => {
               try {
-                const customer = await ChikasDB.getCustomerById(apt.customerId);
+                const customer = await CrmDB.getCustomerById(apt.customerId);
                 return {
                   ...apt,
                   customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : 'Unknown Customer'
@@ -991,7 +991,7 @@
         customer.postcode = postcode;
       }
 
-      const newId = await ChikasDB.createCustomer(customer);
+      const newId = await CrmDB.createCustomer(customer);
 
       // Persist any temporary notes from 'temp-new-customer' into the DB, then clear localStorage
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
@@ -999,7 +999,7 @@
       if (tempNotes.length > 0) {
         for (let i = 0; i < tempNotes.length; i++) {
           const note = tempNotes[i];
-          await ChikasDB.createNote({
+          await CrmDB.createNote({
             customerId: newId,
             text: note.text || note.content,
             svg: note.svg || null,
@@ -1016,8 +1016,8 @@
       if (imageFiles && imageFiles.length > 0) {
         const canUpload = await confirmImageStorageCapacity(imageFiles, 'customer photos');
         if (!canUpload) return;
-        const entries = await ChikasDB.fileListToEntries(imageFiles);
-        await ChikasDB.addImages(newId, entries);
+        const entries = await CrmDB.fileListToEntries(imageFiles);
+        await CrmDB.addImages(newId, entries);
       }
 
       navigate(`/customer?id=${encodeURIComponent(newId)}`);
@@ -1095,13 +1095,13 @@
         suggestedSection.classList.add('hidden');
         return;
       }
-      const customers = await ChikasDB.searchCustomers(query);
+      const customers = await CrmDB.searchCustomers(query);
       if (customers.length === 0) {
         resultsEl.innerHTML = `<div class="muted">${t('noMatchesFound')}</div>`;
       } else {
         // Use optimized query to get only future appointments
         const now = new Date().toISOString();
-        const futureAppts = await ChikasDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
+        const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
         const nextByCustomer = new Map();
         futureAppts.forEach((a) => {
           const start = new Date(a.start);
@@ -1142,11 +1142,11 @@
 
     async function refreshRecents() {
       // Use the new optimized function for recent customers
-      const customers = await ChikasDB.getRecentCustomers(10);
+      const customers = await CrmDB.getRecentCustomers(10);
       
       // Use optimized query to get only future appointments
       const now = new Date().toISOString();
-      const futureAppts = await ChikasDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
+      const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
       const nextByCustomer = new Map();
       futureAppts.forEach((a) => {
         const start = new Date(a.start);
@@ -1201,7 +1201,7 @@
     // Function to load and display all customers
     async function loadAllCustomers() {
       try {
-        let allCustomers = await ChikasDB.getAllCustomers();
+        let allCustomers = await CrmDB.getAllCustomers();
         
 
         
@@ -1213,7 +1213,7 @@
         
         {
           const now = new Date();
-          const allAppts = await ChikasDB.getAllAppointments();
+          const allAppts = await CrmDB.getAllAppointments();
           const nextByCustomer = new Map();
           allAppts.forEach((a) => {
             const start = new Date(a.start);
@@ -1284,7 +1284,7 @@
   async function renderCustomer({ query }) {
     const id = Number(query.get('id'));
     if (!id) return renderNotFound();
-    const customer = await ChikasDB.getCustomerById(id);
+    const customer = await CrmDB.getCustomerById(id);
     if (!customer) return renderNotFound();
     
     // Store customer ID globally for notes system
@@ -1457,7 +1457,7 @@
     }
     
     async function refreshImages() {
-      const imgs = await ChikasDB.getImagesByCustomerId(id);
+      const imgs = await CrmDB.getImagesByCustomerId(id);
       const noImagesMessage = document.getElementById('no-images-message');
       
       if (imgs.length === 0) {
@@ -1560,7 +1560,7 @@
     async function loadNextAppointment() {
       try {
         // Use the new optimized function instead of loading all appointments
-        const futureAppointments = await ChikasDB.getFutureAppointmentsForCustomer(id);
+        const futureAppointments = await CrmDB.getFutureAppointmentsForCustomer(id);
         
         const nextAppointmentContent = document.getElementById('next-appointment-content');
         
@@ -1626,7 +1626,7 @@
       // Get default status (first status in pipeline, or 'scheduled' for hairdresser, 'lead' for tradie)
       const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
       const appt = { customerId: id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() };
-      const appointmentId = await ChikasDB.createAppointment(appt);
+      const appointmentId = await CrmDB.createAppointment(appt);
       alert(t('appointmentBooked'));
       
       // Refresh the Next Appointment block to show the newly created appointment
@@ -1750,7 +1750,7 @@
       }
       
       try {
-        await ChikasDB.deleteCustomer(id);
+        await CrmDB.deleteCustomer(id);
         alert('Customer deleted successfully');
         navigate('/find');
       } catch (error) {
@@ -1762,7 +1762,7 @@
   async function renderCustomerEdit({ query }) {
     const id = Number(query.get('id'));
     if (!id) return renderNotFound();
-    const customer = await ChikasDB.getCustomerById(id);
+    const customer = await CrmDB.getCustomerById(id);
     if (!customer) return renderNotFound();
     
     // Store customer ID globally for notes system
@@ -1968,7 +1968,7 @@
     
     async function loadExistingImages() {
       try {
-        const imgs = await ChikasDB.getImagesByCustomerId(id);
+        const imgs = await CrmDB.getImagesByCustomerId(id);
         if (imgs.length === 0) {
           existingImagesGrid.innerHTML = '<div class="muted">No images uploaded yet</div>';
           return;
@@ -2090,15 +2090,15 @@
       }
       
       try {
-        await ChikasDB.updateCustomer(updated);
+        await CrmDB.updateCustomer(updated);
         
         // Handle new image uploads
         const imageFiles = form.querySelector('input[name="images"]').files;
         if (imageFiles && imageFiles.length > 0) {
-          const entries = await ChikasDB.fileListToEntries(imageFiles);
+          const entries = await CrmDB.fileListToEntries(imageFiles);
           // Process images one by one to avoid transaction timeout
           for (const entry of entries) {
-            await ChikasDB.addImage(id, entry);
+            await CrmDB.addImage(id, entry);
           }
         }
         
@@ -2187,8 +2187,8 @@
       },
       events: async (info, successCallback, failureCallback) => {
         try {
-          const events = await ChikasDB.getAppointmentsBetween(info.start.toISOString(), info.end.toISOString());
-          const customers = await ChikasDB.getAllCustomers();
+          const events = await CrmDB.getAppointmentsBetween(info.start.toISOString(), info.end.toISOString());
+          const customers = await CrmDB.getAllCustomers();
           const idToCustomer = new Map(customers.map(c => [c.id, c]));
           const mapped = events.map((e) => {
             const customer = idToCustomer.get(e.customerId);
@@ -2341,7 +2341,7 @@
       // Wait for calendar to fully load events and then open the appointment
       const openAppointment = async () => {
         try {
-          const appointment = await ChikasDB.getAppointmentById(appointmentId);
+          const appointment = await CrmDB.getAppointmentById(appointmentId);
           if (appointment) {
             // Navigate to the date of the appointment
             calendar.gotoDate(appointment.start);
@@ -2371,8 +2371,8 @@
       
       try {
         const statuses = productConfig.statuses || [];
-        const grouped = await ChikasDB.getAppointmentsGroupedByStatus();
-        const customers = await ChikasDB.getAllCustomers();
+        const grouped = await CrmDB.getAppointmentsGroupedByStatus();
+        const customers = await CrmDB.getAllCustomers();
         const idToCustomer = new Map(customers.map(c => [c.id, c]));
         
         // Apply payment filter
@@ -2469,7 +2469,7 @@
             const jobId = card.dataset.jobId;
             if (jobId) {
               // Fetch the job and open the modal
-              const job = await ChikasDB.getAppointmentById(jobId);
+              const job = await CrmDB.getAppointmentById(jobId);
               if (job) {
                 const customer = idToCustomer.get(job.customerId);
                 // Create a mock event object for the modal
@@ -2579,7 +2579,7 @@
       async function doSearch() {
         const query = (searchEl.value || '').trim();
         if (query.length < 1) { resultsEl.innerHTML = ''; return; }
-        const people = await ChikasDB.searchCustomers(query);
+        const people = await CrmDB.searchCustomers(query);
         resultsEl.innerHTML = people.slice(0, 8).map((c) => `
           <button type="button" class="list-item" data-id="${c.id}">
             <div>
@@ -2663,7 +2663,7 @@
         
         // Get default status (first status in pipeline)
         const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
-        const appointmentId = await ChikasDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() });
+        const appointmentId = await CrmDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() });
         
         hideModal();
         
@@ -2713,7 +2713,7 @@
       return;
     }
     
-    ChikasDB.getCustomerById(event.extendedProps.customerId).then(customer => {
+    CrmDB.getCustomerById(event.extendedProps.customerId).then(customer => {
       if (!customer) {
         alert('Customer not found');
         return;
@@ -2897,7 +2897,7 @@
           if (!timelineEl) return;
           
           try {
-            const events = await ChikasDB.getEventsForAppointment(event.id);
+            const events = await CrmDB.getEventsForAppointment(event.id);
             
             if (events.length === 0) {
               timelineEl.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center;">No activity logged yet</div>';
@@ -2945,7 +2945,7 @@
             
             // Log the event
             try {
-              await ChikasDB.createJobEvent({
+              await CrmDB.createJobEvent({
                 appointmentId: event.id,
                 customerId: customer.id,
                 type: type
@@ -2976,7 +2976,7 @@
           if (!photosGrid) return;
           
           try {
-            const photos = await ChikasDB.getImagesByAppointmentId(event.id);
+            const photos = await CrmDB.getImagesByAppointmentId(event.id);
             
             if (photos.length === 0) {
               photosGrid.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">No photos attached to this job</div>';
@@ -3017,9 +3017,9 @@
             if (!files || files.length === 0) return;
             
             try {
-              const entries = await ChikasDB.fileListToEntries(files);
+              const entries = await CrmDB.fileListToEntries(files);
               for (const entry of entries) {
-                await ChikasDB.addImage(customer.id, entry, event.id);
+                await CrmDB.addImage(customer.id, entry, event.id);
               }
               await loadJobPhotos();
               e.target.value = ''; // Reset input
@@ -3228,7 +3228,7 @@
             }
             
             try {
-              await ChikasDB.updateAppointment(updatedAppointment);
+              await CrmDB.updateAppointment(updatedAppointment);
               hideModal();
               if (globalCalendar) {
                 globalCalendar.refetchEvents();
@@ -3246,7 +3246,7 @@
           deleteBtn.addEventListener('click', async () => {
             if (confirm(t('confirmDelete'))) {
               try {
-                await ChikasDB.deleteAppointment(event.id);
+                await CrmDB.deleteAppointment(event.id);
                 hideModal();
                 if (globalCalendar) {
                   globalCalendar.refetchEvents();
@@ -3326,10 +3326,10 @@
 
     try {
       const [overdue, today, upcoming, allPending] = await Promise.all([
-        ChikasDB.getOverdueReminders(),
-        ChikasDB.getTodayReminders(),
-        ChikasDB.getUpcomingReminders(7),
-        ChikasDB.getPendingReminders()
+        CrmDB.getOverdueReminders(),
+        CrmDB.getTodayReminders(),
+        CrmDB.getUpcomingReminders(7),
+        CrmDB.getPendingReminders()
       ]);
 
       // Get later reminders (beyond 7 days)
@@ -3338,8 +3338,8 @@
       const later = allPending.filter(r => new Date(r.dueAt) >= sevenDaysFromNow);
 
       // Get all customers and appointments for linking
-      const customers = await ChikasDB.getAllCustomers();
-      const appointments = await ChikasDB.getAllAppointments();
+      const customers = await CrmDB.getAllCustomers();
+      const appointments = await CrmDB.getAllAppointments();
       const customerMap = new Map(customers.map(c => [c.id, c]));
       const appointmentMap = new Map(appointments.map(a => [a.id, a]));
 
@@ -3516,8 +3516,8 @@
     if (!container) return;
     
     try {
-      const events = await ChikasDB.getRecentEventsForCustomer(customerId, 5);
-      const lastContact = await ChikasDB.getLastContactTime(customerId);
+      const events = await CrmDB.getRecentEventsForCustomer(customerId, 5);
+      const lastContact = await CrmDB.getLastContactTime(customerId);
       
       const eventIcons = {
         call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
@@ -3568,10 +3568,10 @@
         e.stopPropagation();
         const id = btn.dataset.id;
         try {
-          const reminder = await ChikasDB.getReminderById(id);
+          const reminder = await CrmDB.getReminderById(id);
           if (reminder) {
             reminder.status = 'done';
-            await ChikasDB.updateReminder(reminder);
+            await CrmDB.updateReminder(reminder);
             await loadFollowUpsView();
           }
         } catch (error) {
@@ -3597,7 +3597,7 @@
         const id = btn.dataset.id;
         if (confirm('Delete this reminder?')) {
           try {
-            await ChikasDB.deleteReminder(id);
+            await CrmDB.deleteReminder(id);
             await loadFollowUpsView();
           } catch (error) {
             console.error('Error deleting reminder:', error);
@@ -3611,7 +3611,7 @@
     document.querySelectorAll('.reminder-card').forEach(card => {
       card.addEventListener('click', async () => {
         const id = card.dataset.reminderId;
-        const reminder = await ChikasDB.getReminderById(id);
+        const reminder = await CrmDB.getReminderById(id);
         if (reminder) {
           if (reminder.appointmentId) {
             navigate(`/calendar?appointment=${reminder.appointmentId}`);
@@ -3686,11 +3686,11 @@
 
   async function snoozeReminder(reminderId, newDueAt) {
     try {
-      const reminder = await ChikasDB.getReminderById(reminderId);
+      const reminder = await CrmDB.getReminderById(reminderId);
       if (reminder) {
         reminder.dueAt = newDueAt.toISOString();
         reminder.snoozedUntil = newDueAt.toISOString();
-        await ChikasDB.updateReminder(reminder);
+        await CrmDB.updateReminder(reminder);
         hideModal();
         await loadFollowUpsView();
       }
@@ -3751,7 +3751,7 @@
       }
 
       try {
-        await ChikasDB.createReminder({
+        await CrmDB.createReminder({
           customerId: prefilledCustomerId,
           appointmentId: prefilledAppointmentId,
           message: message || 'Follow-up reminder',
@@ -3821,9 +3821,9 @@
     try {
       // Search in parallel
       const [customers, appointments, notes] = await Promise.all([
-        ChikasDB.getAllCustomers(),
-        ChikasDB.getAllAppointments(),
-        ChikasDB.getAllNotes()
+        CrmDB.getAllCustomers(),
+        CrmDB.getAllAppointments(),
+        CrmDB.getAllNotes()
       ]);
       
       // Filter customers
@@ -3981,7 +3981,7 @@
 
   async function openQuickAddJobModal(prefilledCustomerId = null) {
     // Load customers for the dropdown
-    const customers = await ChikasDB.getAllCustomers();
+    const customers = await CrmDB.getAllCustomers();
     customers.sort((a, b) => {
       const nameA = (a.firstName + ' ' + a.lastName).trim().toLowerCase();
       const nameB = (b.firstName + ' ' + b.lastName).trim().toLowerCase();
@@ -4123,7 +4123,7 @@
         return;
       }
       try {
-        const customer = await ChikasDB.getCustomerById(parseInt(customerId, 10));
+        const customer = await CrmDB.getCustomerById(parseInt(customerId, 10));
         setQuickAddAddressFromCustomer(customer || {});
       } catch (e) {
         clearQuickAddAddressFields();
@@ -4200,7 +4200,7 @@
         const lastName = nameParts.slice(1).join(' ') || '';
         
         try {
-          customerId = await ChikasDB.createCustomer({
+          customerId = await CrmDB.createCustomer({
             firstName,
             lastName,
             contactNumber: newPhone,
@@ -4227,7 +4227,7 @@
       try {
         // Create the job (appointment) with status "lead"
         const now = new Date();
-        const appointmentId = await ChikasDB.createAppointment({
+        const appointmentId = await CrmDB.createAppointment({
           customerId: parseInt(customerId),
           title: title,
           start: now.toISOString(),
@@ -4245,7 +4245,7 @@
           dueAt.setDate(dueAt.getDate() + reminderDays);
           dueAt.setHours(9, 0, 0, 0); // 9am
           
-          await ChikasDB.createReminder({
+          await CrmDB.createReminder({
             customerId: parseInt(customerId),
             appointmentId: appointmentId,
             message: 'Follow up on: ' + title,
@@ -4852,11 +4852,11 @@
         recoveryStatus.textContent = '🔍 Scanning notes... This may take a moment.';
         recoveryStatus.style.color = '';
 
-        const results = await ChikasDB.scanForCorruptedNotes();
+        const results = await CrmDB.scanForCorruptedNotes();
         scanResultData = results;
 
         // Get customer names for display
-        const allCustomers = await ChikasDB.getAllCustomers();
+        const allCustomers = await CrmDB.getAllCustomers();
         const customerMap = new Map();
         allCustomers.forEach(customer => {
           customerMap.set(customer.id, customer);
@@ -5420,7 +5420,7 @@
         recoveryStatus.textContent = `🔄 Recovering ${recoverable.length} note(s)...`;
         recoveryStatus.style.color = '';
 
-        const result = await ChikasDB.recoverCorruptedNotes(false); // dryRun = false
+        const result = await CrmDB.recoverCorruptedNotes(false); // dryRun = false
 
         if (result.recovered > 0) {
           recoveryStatus.innerHTML = `
@@ -5475,7 +5475,7 @@
 
         restoreNotesStatus.textContent = '🔄 Restoring notes from backup...';
         
-        const result = await ChikasDB.restoreNotesFromBackup(backupData, {
+        const result = await CrmDB.restoreNotesFromBackup(backupData, {
           mode: 'merge' // Smart mode - only replaces corrupted notes
         });
 
@@ -5554,7 +5554,7 @@
         exportBtn.disabled = true;
         exportBtn.textContent = 'Backing up...';
         
-        const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+        const result = await CrmDB.exportDataWithoutImages((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         
@@ -5771,7 +5771,7 @@
       if (!confirm('Delete this image?')) return;
       
       try {
-        await ChikasDB.deleteImage(imageId);
+        await CrmDB.deleteImage(imageId);
         // Remove from local array
         images.splice(currentIdx, 1);
         
@@ -7333,7 +7333,7 @@
           if (this.editingNote.source === 'indexeddb-fallback' || this.editingNote.source === 'indexeddb') {
             // Update in IndexedDB
             try {
-              await ChikasDB.updateNote(updatedNote);
+              await CrmDB.updateNote(updatedNote);
               console.log('Note updated successfully in IndexedDB');
             } catch (error) {
               throw new Error(`Failed to update note in IndexedDB: ${error.message}`);
@@ -7352,7 +7352,7 @@
             const existingNote = customerNotes[noteIndex];
             try {
               // Try to save version history in IndexedDB (lightweight, doesn't affect localStorage quota)
-              await ChikasDB.getNotePreviousVersion(existingNote.id).catch(() => null); // Check if noteVersions store exists
+              await CrmDB.getNotePreviousVersion(existingNote.id).catch(() => null); // Check if noteVersions store exists
               // Only save if this note might be migrated to IndexedDB later
               // For now, we'll skip version history for pure localStorage notes to save space
             } catch (versionError) {
@@ -7398,7 +7398,7 @@
                     originalId: this.editingNote.id
                   };
                   
-                  const savedId = await ChikasDB.createNote(noteForDB);
+                  const savedId = await CrmDB.createNote(noteForDB);
                   console.log('✅ Note migrated to IndexedDB successfully, new ID:', savedId);
                   
                   // Update the editing note reference for future operations
@@ -7996,12 +7996,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     // Check if IndexedDB is ready for notes storage
     async checkIndexedDBReady() {
       try {
-        if (!window.ChikasDB) {
-          return { ready: false, error: 'ChikasDB not available' };
+        if (!window.CrmDB) {
+          return { ready: false, error: 'CrmDB not available' };
         }
         
         // Try to access the notes store by attempting a simple operation
-        const testNotes = await ChikasDB.getNotesByCustomerId(999999); // Non-existent customer
+        const testNotes = await CrmDB.getNotesByCustomerId(999999); // Non-existent customer
         return { ready: true, error: null };
         
       } catch (error) {
@@ -8061,7 +8061,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           };
           
           console.log('Attempting to save note to IndexedDB...', noteForDB);
-          const savedId = await ChikasDB.createNote(noteForDB);
+          const savedId = await CrmDB.createNote(noteForDB);
           console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
           
           // Update the noteData with the database ID for UI consistency
@@ -8083,7 +8083,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           if (indexedDBError.message.includes('object stores was not found') || 
               indexedDBError.message.includes('IndexedDB not ready')) {
             errorDetails += '\n\n🔧 Fix: Please refresh the page to update the database schema.';
-          } else if (indexedDBError.message.includes('ChikasDB not available')) {
+          } else if (indexedDBError.message.includes('CrmDB not available')) {
             errorDetails += '\n\n🔧 Fix: Please refresh the page to initialize the database.';
           }
           
@@ -8115,7 +8115,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       try {
         // Load from IndexedDB
-        const indexedDBNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        const indexedDBNotes = await CrmDB.getNotesByCustomerId(customerId);
         
         // Mark IndexedDB notes
         indexedDBNotes.forEach(note => {
@@ -8751,13 +8751,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         }
         
         // Check if previous version exists
-        const previousVersion = await ChikasDB.getNotePreviousVersion(noteId);
+        const previousVersion = await CrmDB.getNotePreviousVersion(noteId);
         if (!previousVersion) {
           throw new Error('No previous version found for this note. The note may not have been edited yet, or try refreshing the page.');
         }
         
         // Restore the note
-        await ChikasDB.restoreNoteToPreviousVersion(noteId);
+        await CrmDB.restoreNoteToPreviousVersion(noteId);
         
         // Refresh the notes display
         const customerId = this.getCurrentCustomerId();
@@ -8786,7 +8786,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Determine which storage method to use based on the note's source
         if (noteData.source === 'indexeddb-fallback' || noteData.source === 'indexeddb') {
           // Delete from IndexedDB
-          await ChikasDB.deleteNote(noteData.id);
+          await CrmDB.deleteNote(noteData.id);
           console.log('Note deleted successfully from IndexedDB');
         } else {
           // Delete from localStorage
@@ -9195,7 +9195,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         return tempId;
       }
       
-      const savedId = await ChikasDB.createNote(noteData);
+      const savedId = await CrmDB.createNote(noteData);
       return savedId;
     }
 
@@ -9223,9 +9223,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
       
       if (this.editingNote.id && (this.editingNote.source === 'indexeddb' || this.editingNote.source === 'indexeddb-fallback')) {
-        await ChikasDB.updateNote(updatedNote);
+        await CrmDB.updateNote(updatedNote);
       } else {
-        await ChikasDB.createNote({ ...updatedNote, customerId: this.customerId });
+        await CrmDB.createNote({ ...updatedNote, customerId: this.customerId });
       }
     }
 
@@ -9236,7 +9236,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         return existingNotes['temp-new-customer'] || [];
       }
       try {
-        const dbNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        const dbNotes = await CrmDB.getNotesByCustomerId(customerId);
         return dbNotes || [];
       } catch (error) {
         console.error('Error getting notes:', error);
@@ -9507,12 +9507,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         console.log(`Error: ${dbStatus.error}`);
       }
       
-      // Also check if ChikasDB is available
-      console.log(`ChikasDB Available: ${window.ChikasDB ? '✅ YES' : '❌ NO'}`);
+      // Also check if CrmDB is available
+      console.log(`CrmDB Available: ${window.CrmDB ? '✅ YES' : '❌ NO'}`);
       
-      if (window.ChikasDB) {
+      if (window.CrmDB) {
         // List available functions
-        const functions = Object.keys(window.ChikasDB);
+        const functions = Object.keys(window.CrmDB);
         console.log(`Available functions: ${functions.join(', ')}`);
       }
       
@@ -9587,7 +9587,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         });
         
         // Check IndexedDB notes
-        const indexedDBNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        const indexedDBNotes = await CrmDB.getNotesByCustomerId(customerId);
         
         console.log(`🗄️ IndexedDB notes (${indexedDBNotes.length}):`);
         indexedDBNotes.forEach((note, index) => {
@@ -9669,7 +9669,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     try {
       
       // Get all customers from the database
-      const customers = await ChikasDB.getAllCustomers();
+      const customers = await CrmDB.getAllCustomers();
       let migratedCount = 0;
       
       for (const customer of customers) {
@@ -9702,7 +9702,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Remove the old notesHtml from the customer record
           const updatedCustomer = { ...customer };
           delete updatedCustomer.notesHtml;
-          await ChikasDB.updateCustomer(updatedCustomer);
+          await CrmDB.updateCustomer(updatedCustomer);
           
           migratedCount++;
         }
