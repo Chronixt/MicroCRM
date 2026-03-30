@@ -3237,7 +3237,7 @@
               // jump columns without requiring navigation/reload.
               const pipelineContainerEl = document.getElementById('pipeline-container');
               if (pipelineContainerEl && !pipelineContainerEl.classList.contains('hidden')) {
-                await renderPipelineView();
+                document.getElementById('pipeline-view-btn')?.click();
               }
             } catch (error) {
               alert('Error updating appointment: ' + error.message);
@@ -3259,7 +3259,7 @@
                 }
                 const pipelineContainerEl = document.getElementById('pipeline-container');
                 if (pipelineContainerEl && !pipelineContainerEl.classList.contains('hidden')) {
-                  await renderPipelineView();
+                  document.getElementById('pipeline-view-btn')?.click();
                 }
               } catch (error) {
                 alert('Error deleting appointment');
