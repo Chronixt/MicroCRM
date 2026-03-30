@@ -5,6 +5,24 @@
   const APP_NAME = productConfig.appName || 'CRM';
   
   console.log(`[App] Starting ${APP_NAME}`);
+
+  async function initializeStorageDriverLayer() {
+    if (!window.StorageDriverFactory || typeof window.StorageDriverFactory.initializeFromDbApi !== 'function') {
+      return;
+    }
+    const dbApi = window.ChikasDB || window.CrmDB;
+    if (!dbApi) return;
+    try {
+      const backend = productConfig.useSupabase ? 'supabase' : 'indexeddb';
+      await window.StorageDriverFactory.initializeFromDbApi(dbApi, { backend });
+      const status = window.StorageDriverFactory.getStatus?.();
+      if (status?.initialized) {
+        console.log(`[Storage] Driver active: ${status.driver} (${status.backend})`);
+      }
+    } catch (error) {
+      console.warn('[Storage] Driver initialization skipped:', error.message || error);
+    }
+  }
   
   // Check for force update parameter
   const urlParams = new URLSearchParams(window.location.search);
@@ -4227,6 +4245,9 @@
       ${isTradie() ? `
       <div class="card" style="margin-bottom: 16px;">
         <h3 style="margin-top: 0;">📊 Storage Usage</h3>
+        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+          Driver: <span id="storage-driver-name">Detecting...</span>
+        </div>
         <div id="storage-meter-container">
           <div class="muted" style="font-size: 12px;">Calculating...</div>
         </div>
@@ -4384,6 +4405,15 @@
     // Load storage stats for tradie edition
     if (isTradie()) {
       loadStorageStats();
+      const driverNameEl = document.getElementById('storage-driver-name');
+      if (driverNameEl) {
+        const status = window.StorageDriverFactory?.getStatus?.();
+        if (status?.initialized) {
+          driverNameEl.textContent = `${status.driver} (${status.backend})`;
+        } else {
+          driverNameEl.textContent = productConfig.useSupabase ? 'Supabase API' : 'IndexedDB';
+        }
+      }
     }
 
     const exportBtn = document.getElementById('export-btn');
@@ -6090,6 +6120,8 @@
 
   window.addEventListener('hashchange', render);
   window.addEventListener('load', async () => {
+    await initializeStorageDriverLayer();
+
     // Check for app lock (tradie edition)
     if (isTradie()) {
       const hashedPin = localStorage.getItem(`${STORAGE_PREFIX}app_lock_pin`);

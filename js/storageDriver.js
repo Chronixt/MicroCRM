@@ -211,13 +211,46 @@
   };
 
   // ============================================================================
+  // DB API ADAPTER DRIVER (safe bridge for existing runtime APIs)
+  // ============================================================================
+
+  const DbApiAdapterDriver = {
+    name: 'DB API Adapter',
+    dbApi: null,
+    backend: 'unknown',
+
+    async init(config = {}) {
+      this.dbApi = config.dbApi || window.CrmDB || window.ChikasDB || null;
+      this.backend = config.backend || 'unknown';
+      if (!this.dbApi) {
+        throw new Error('DB API adapter could not find an initialized database API');
+      }
+    },
+
+    isAvailable() {
+      return !!(window.CrmDB || window.ChikasDB);
+    },
+
+    getDatabase() {
+      return this.dbApi;
+    }
+  };
+
+  // ============================================================================
   // DRIVER FACTORY
   // ============================================================================
 
   const StorageDriverFactory = {
     currentDriver: null,
     
-    async initialize(config) {
+    async initialize(config = {}) {
+      // Prefer adapter mode when an existing DB API is supplied
+      if (config.dbApi) {
+        await DbApiAdapterDriver.init(config);
+        this.currentDriver = DbApiAdapterDriver;
+        return this.currentDriver;
+      }
+
       // Determine which driver to use based on environment
       let driver;
       
@@ -237,6 +270,10 @@
       
       return driver;
     },
+
+    async initializeFromDbApi(dbApi, config = {}) {
+      return this.initialize({ ...config, dbApi });
+    },
     
     getDriver() {
       if (!this.currentDriver) {
@@ -247,6 +284,17 @@
     
     getDriverName() {
       return this.currentDriver ? this.currentDriver.name : 'Not initialized';
+    },
+
+    getStatus() {
+      if (!this.currentDriver) {
+        return { initialized: false, driver: 'Not initialized', backend: 'unknown' };
+      }
+      return {
+        initialized: true,
+        driver: this.currentDriver.name,
+        backend: this.currentDriver.backend || 'unknown'
+      };
     }
   };
 
@@ -291,6 +339,7 @@
   window.StorageDriverFactory = StorageDriverFactory;
   window.IndexedDbDriver = IndexedDbDriver;
   window.SQLiteDriver = SQLiteDriver;
+  window.DbApiAdapterDriver = DbApiAdapterDriver;
   window.FileSystemDriver = FileSystemDriver;
 
 })();
