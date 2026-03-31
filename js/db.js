@@ -453,6 +453,42 @@
     ));
   }
 
+  async function persistImagePayload(blob, filename) {
+    const fs = window.FileSystemDriver;
+    if (!fs || typeof fs.saveImage !== 'function') {
+      const dataUrl = await blobToDataURL(blob);
+      return { dataUrl, filePath: null, storageType: 'inline' };
+    }
+
+    const saved = await fs.saveImage(blob, filename);
+    if (typeof saved === 'string' && saved.startsWith('data:')) {
+      return { dataUrl: saved, filePath: null, storageType: 'inline' };
+    }
+    return { dataUrl: null, filePath: saved || null, storageType: saved ? 'filesystem' : 'inline' };
+  }
+
+  async function hydrateImageRecord(imageData) {
+    if (!imageData) return null;
+    let dataUrl = imageData.dataUrl || null;
+
+    if (!dataUrl && imageData.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+      try {
+        dataUrl = await window.FileSystemDriver.loadImage(imageData.filePath);
+      } catch (error) {
+        dataUrl = null;
+      }
+    }
+
+    if (!dataUrl) return null;
+    const blob = dataURLToBlob(dataUrl, imageData.type);
+    if (!blob || blob.size === 0) return null;
+    return {
+      ...imageData,
+      dataUrl,
+      blob
+    };
+  }
+
   // Images - Optimized approach with compression for iPad
   function addImages(customerId, fileEntries) {
     return runTransaction(['images'], 'readwrite', (images) => (
@@ -460,13 +496,15 @@
         try {
           // Compress image before storing
           const compressedBlob = await compressImage(entry.blob, entry.type);
-          const dataUrl = await blobToDataURL(compressedBlob);
+          const payload = await persistImagePayload(compressedBlob, entry.name);
           
           const toStore = {
             customerId,
             name: entry.name,
             type: entry.type,
-            dataUrl: dataUrl,
+            dataUrl: payload.dataUrl,
+            filePath: payload.filePath,
+            storageType: payload.storageType,
             createdAt: new Date().toISOString(),
           };
           
@@ -488,14 +526,16 @@
     try {
       // Process image outside of transaction
       const compressedBlob = await compressImage(entry.blob, entry.type);
-      const dataUrl = await blobToDataURL(compressedBlob);
+      const payload = await persistImagePayload(compressedBlob, entry.name);
       
       const toStore = {
         customerId,
         appointmentId: appointmentId ? parseInt(appointmentId) : null,
         name: entry.name,
         type: entry.type,
-        dataUrl: dataUrl,
+        dataUrl: payload.dataUrl,
+        filePath: payload.filePath,
+        storageType: payload.storageType,
         createdAt: new Date().toISOString(),
       };
       
@@ -513,8 +553,8 @@
   }
 
   // Get images for a specific job
-  function getImagesByAppointmentId(appointmentId) {
-    return runTransaction(['images'], 'readonly', (images) => (
+  async function getImagesByAppointmentId(appointmentId) {
+    const raw = await runTransaction(['images'], 'readonly', (images) => (
       new Promise((resolve, reject) => {
         const results = [];
         const index = images.index('appointmentId');
@@ -527,6 +567,8 @@
         req.onerror = () => reject(req.error);
       })
     ));
+    const hydrated = await Promise.all(raw.map((img) => hydrateImageRecord(img)));
+    return hydrated.filter(Boolean);
   }
   
   // Image compression function for iPad memory optimization
@@ -583,8 +625,8 @@
     });
   }
 
-  function getImagesByCustomerId(customerId) {
-    return runTransaction(['images'], 'readonly', (images) => (
+  async function getImagesByCustomerId(customerId) {
+    const raw = await runTransaction(['images'], 'readonly', (images) => (
       new Promise((resolve, reject) => {
         const results = [];
         const index = images.index('customerId');
@@ -592,25 +634,9 @@
         const req = index.openCursor(range);
         req.onsuccess = (e) => {
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
-          if (cursor) { 
-            const imageData = cursor.value;
-            // Convert dataURL back to blob for display
-            if (imageData.dataUrl) {
-              try {
-                const blob = dataURLToBlob(imageData.dataUrl, imageData.type);
-                if (blob && blob.size > 0) {
-                  results.push({
-                    ...imageData,
-                    blob: blob,
-                    dataUrl: imageData.dataUrl // Keep dataUrl for iPad Safari fallback
-                  });
-                } else {
-                }
-              } catch (error) {
-              }
-            } else {
-            }
-            cursor.continue(); 
+          if (cursor) {
+            results.push(cursor.value);
+            cursor.continue();
           } else {
             resolve(results);
           }
@@ -618,6 +644,8 @@
         req.onerror = () => reject(req.error);
       })
     ));
+    const hydrated = await Promise.all(raw.map((img) => hydrateImageRecord(img)));
+    return hydrated.filter(Boolean);
   }
 
   // Appointments
@@ -836,10 +864,19 @@
     ));
   }
 
-  function deleteImage(imageId) {
-    return runTransaction(['images'], 'readwrite', (images) => (
+  async function deleteImage(imageId) {
+    const id = parseInt(imageId);
+    const imageRecord = await runTransaction(['images'], 'readonly', (images) => (
       new Promise((resolve, reject) => {
-        const req = images.delete(parseInt(imageId));
+        const req = images.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+
+    const result = await runTransaction(['images'], 'readwrite', (images) => (
+      new Promise((resolve, reject) => {
+        const req = images.delete(id);
         req.onsuccess = () => {
           // Also remove from localStorage
           clearImageFromLocalStorage(imageId);
@@ -848,6 +885,16 @@
         req.onerror = () => reject(req.error);
       })
     ));
+
+    if (imageRecord && imageRecord.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.deleteImage === 'function') {
+      try {
+        await window.FileSystemDriver.deleteImage(imageRecord.filePath);
+      } catch (error) {
+        // Ignore filesystem cleanup issues after DB record is deleted.
+      }
+    }
+
+    return result;
   }
 
   function deleteCustomer(id) {
@@ -2157,7 +2204,9 @@
               appointmentId: img.appointmentId || null,
               name: img.name, 
               type: img.type, 
-              dataUrl: img.dataUrl, 
+              dataUrl: img.dataUrl || null,
+              filePath: img.filePath || null,
+              storageType: img.storageType || (img.filePath ? 'filesystem' : 'inline'),
               createdAt: img.createdAt 
             };
             imagesStore.put(imageData);
@@ -2435,6 +2484,22 @@
       const images = await getAllImages();
       if (progressCallback) progressCallback(`Loaded ${images.length} images`, 35);
 
+      const exportableImages = [];
+      for (const img of images) {
+        let dataUrl = img.dataUrl || null;
+        if (!dataUrl && img.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+          try {
+            dataUrl = await window.FileSystemDriver.loadImage(img.filePath);
+          } catch (error) {
+            dataUrl = null;
+          }
+        }
+        exportableImages.push({
+          ...img,
+          dataUrl: dataUrl || null
+        });
+      }
+
       const result = {
         __meta: {
           app: APP_SLUG,
@@ -2442,7 +2507,7 @@
           exportedAt: new Date().toISOString(),
           backupType: 'images-only'
         },
-        images
+        images: exportableImages
       };
 
       if (progressCallback) progressCallback('Creating images export file...', 85);
@@ -2452,7 +2517,7 @@
 
       return {
         blob,
-        imageCount: images.length
+        imageCount: exportableImages.length
       };
     } catch (error) {
       if (progressCallback) progressCallback(`Images-only export failed: ${error.message}`, 0);
@@ -2593,8 +2658,18 @@
               name: img.name,
               type: img.type,
               createdAt: img.createdAt,
+              filePath: img.filePath || null,
+              storageType: img.storageType || (img.filePath ? 'filesystem' : 'inline'),
               dataUrl: img.dataUrl,
             };
+
+            if (!imageData.dataUrl && imageData.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+              try {
+                imageData.dataUrl = await window.FileSystemDriver.loadImage(imageData.filePath);
+              } catch (error) {
+                imageData.dataUrl = null;
+              }
+            }
             
             jsonParts.push('    ');
             jsonParts.push(JSON.stringify(imageData, null, 4));

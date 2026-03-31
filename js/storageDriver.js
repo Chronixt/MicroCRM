@@ -303,27 +303,116 @@
   // ============================================================================
 
   const FileSystemDriver = {
-    // For web: Use data URLs (current approach)
-    // For native: Will use Capacitor Filesystem plugin
+    initialized: false,
+    isNativeMode: false,
+    filesystem: null,
+    directory: null,
+
+    async init() {
+      try {
+        this.isNativeMode = this.isNative();
+        if (!this.isNativeMode) {
+          this.initialized = true;
+          return;
+        }
+
+        const plugins = window.Capacitor?.Plugins || {};
+        this.filesystem = plugins.Filesystem || null;
+        this.directory = this.filesystem?.Directory || { Data: 'DATA' };
+        this.initialized = !!this.filesystem;
+      } catch (error) {
+        this.initialized = false;
+      }
+    },
+
+    ensureInitialized() {
+      if (!this.initialized) {
+        // Lazy-init so existing flows do not need explicit boot ordering.
+        return this.init();
+      }
+      return Promise.resolve();
+    },
+
+    sanitizeFilename(filename) {
+      return String(filename || 'image.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    },
+
+    guessMimeFromPath(path) {
+      const lower = String(path || '').toLowerCase();
+      if (lower.endsWith('.png')) return 'image/png';
+      if (lower.endsWith('.webp')) return 'image/webp';
+      if (lower.endsWith('.gif')) return 'image/gif';
+      return 'image/jpeg';
+    },
     
     async saveImage(blob, filename) {
-      // Web implementation: Convert to data URL
-      return new Promise((resolve, reject) => {
+      await this.ensureInitialized();
+
+      // Web/PWA fallback: inline data URL (current behavior).
+      if (!this.isNativeMode || !this.filesystem) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
+        reader.onload = () => resolve(String(reader.result || ''));
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(blob);
       });
-    },
-    
-    async loadImage(path) {
-      // For web, path IS the data URL
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+
+      const stamp = Date.now();
+      const safeName = this.sanitizeFilename(filename);
+      const path = `images/${stamp}-${safeName}`;
+
+      await this.filesystem.writeFile({
+        path,
+        data: base64,
+        directory: this.directory.Data || 'DATA',
+        recursive: true
+      });
+
       return path;
     },
     
+    async loadImage(path) {
+      await this.ensureInitialized();
+
+      if (!path) return null;
+
+      // Existing inline storage.
+      if (String(path).startsWith('data:')) return path;
+
+      // Web fallback when given a non-data path.
+      if (!this.isNativeMode || !this.filesystem) return null;
+
+      const result = await this.filesystem.readFile({
+        path,
+        directory: this.directory.Data || 'DATA'
+      });
+      const base64 = typeof result?.data === 'string' ? result.data : '';
+      if (!base64) return null;
+      const mime = this.guessMimeFromPath(path);
+      return `data:${mime};base64,${base64}`;
+    },
+    
     async deleteImage(path) {
-      // For web, images are stored inline with records
-      // No separate file deletion needed
+      await this.ensureInitialized();
+      if (!path || String(path).startsWith('data:')) return true;
+      if (!this.isNativeMode || !this.filesystem) return true;
+      try {
+        await this.filesystem.deleteFile({
+          path,
+          directory: this.directory.Data || 'DATA'
+        });
+      } catch (error) {
+        // Ignore missing file errors; DB delete should still succeed.
+      }
       return true;
     },
     

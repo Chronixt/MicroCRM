@@ -7,6 +7,14 @@
   console.log(`[App] Starting ${APP_NAME}`);
 
   async function initializeStorageDriverLayer() {
+    if (window.FileSystemDriver && typeof window.FileSystemDriver.init === 'function') {
+      try {
+        await window.FileSystemDriver.init();
+      } catch (error) {
+        console.warn('[Storage] FileSystemDriver init skipped:', error.message || error);
+      }
+    }
+
     if (!window.StorageDriverFactory || typeof window.StorageDriverFactory.initializeFromDbApi !== 'function') {
       return;
     }
