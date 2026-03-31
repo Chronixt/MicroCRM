@@ -342,6 +342,47 @@
     }
   }
 
+  async function confirmImageStorageCapacity(fileList, label = 'photos') {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return true;
+
+    try {
+      const db = getDataApi();
+      if (!db || typeof db.getStorageStats !== 'function') return true;
+
+      const stats = await db.getStorageStats();
+      const storageLimitBytes = 50 * 1024 * 1024;
+      // Rough estimate: compressed image footprint + storage overhead.
+      const estimatedIncomingBytes = files.reduce((sum, file) => sum + (file.size || 0), 0) * 0.55;
+      const projectedBytes = Number(stats.totalBytes || 0) + estimatedIncomingBytes;
+      const projectedPercent = (projectedBytes / storageLimitBytes) * 100;
+      const projectedMb = (projectedBytes / (1024 * 1024)).toFixed(1);
+
+      if (projectedPercent >= 100) {
+        alert(
+          `Storage limit risk detected.\n\n` +
+          `Current usage: ${stats.totalMB} MB\n` +
+          `Projected usage after adding ${files.length} ${label}: ~${projectedMb} MB\n\n` +
+          `Please backup and delete old photos before adding more.`
+        );
+        return false;
+      }
+
+      if (projectedPercent >= 85 || stats.isWarning || stats.isCritical) {
+        return confirm(
+          `Storage warning:\n\n` +
+          `Current usage: ${stats.totalMB} MB (${stats.usagePercent}%)\n` +
+          `Projected after this upload: ~${projectedMb} MB (${projectedPercent.toFixed(1)}%)\n\n` +
+          `Continue adding ${files.length} ${label}?`
+        );
+      }
+    } catch (error) {
+      console.warn('Could not check storage capacity before upload:', error);
+    }
+
+    return true;
+  }
+
   async function performDailyBackup() {
     try {
       const db = getDataApi();
