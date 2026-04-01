@@ -788,7 +788,7 @@
     // Show FAB on main pages (tradie edition only)
     if (isTradie()) {
       const fabPages = ['/', '/find', '/calendar', '/follow-ups', '/customer'];
-      renderFAB(fabPages.includes(base));
+      renderFAB(fabPages.includes(base), base);
       
       // Attach global search handler
       attachGlobalSearchHandler();
@@ -807,7 +807,10 @@
     appRoot.innerHTML = `
       <div class="menu-container">
         <div class="menu-toolbar">
-          <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+          <div class="lang-toolbar-group">
+              <img src="/assets/CRMicro_logo.png" alt="CRMicro logo" class="toolbar-logo" />
+              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
+            </div>
         </div>
         <div class="menu-content">
           <nav class="menu-tiles" aria-label="Main menu">
@@ -991,7 +994,10 @@
               <div id="global-search-results" class="search-results-dropdown" style="display: none;"></div>
             </div>
             ` : ''}
-            <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+            <div class="lang-toolbar-group">
+              <img src="/assets/CRMicro_logo.png" alt="CRMicro logo" class="toolbar-logo" />
+              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
+            </div>
           </div>
           ${contentHtml}
         </section>
@@ -4147,7 +4153,7 @@
   // FLOATING ACTION BUTTON (FAB) & QUICK ADD JOB
   // ============================================================================
 
-  function renderFAB(show) {
+  function renderFAB(show, currentRoute) {
     // Remove existing FAB
     const existingFab = document.getElementById('quick-add-fab');
     if (existingFab) existingFab.remove();
@@ -4159,9 +4165,12 @@
     fab.innerHTML = '+';
     fab.title = 'Quick Add Job';
     fab.setAttribute('aria-label', 'Quick Add Job');
+    const isCustomerScreen = currentRoute === '/customer' || currentRoute === '/customer-edit';
+    const fabBottom = isCustomerScreen ? 'calc(96px + env(safe-area-inset-bottom, 0px))' : '24px';
+
     fab.style.cssText = `
       position: fixed;
-      bottom: 24px;
+      bottom: ${fabBottom};
       right: 24px;
       width: 56px;
       height: 56px;
@@ -10237,5 +10246,4 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
 
 })();
-
 

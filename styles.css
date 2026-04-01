@@ -151,6 +151,9 @@ body::after {
 .content { min-height: 0; min-width: 0; height: 100%; overflow-y: auto; overflow-x: hidden; }
 .content-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
 .content-toolbar .lang-btn { margin-left: auto; }
+.lang-toolbar-group { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.lang-toolbar-group .lang-btn { margin-left: 0; }
+.toolbar-logo { height: 28px; width: auto; max-width: 140px; object-fit: contain; display: block; }
 
 .menu-container { position: relative; min-height: 100vh; }
 .menu-toolbar { 
