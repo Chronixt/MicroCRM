@@ -383,6 +383,119 @@
     return true;
   }
 
+  let googlePlacesLoadPromise = null;
+  async function loadGooglePlacesApi() {
+    if (window.google?.maps?.places?.Autocomplete) return true;
+    if (googlePlacesLoadPromise) return googlePlacesLoadPromise;
+
+    const apiKey = window.GOOGLE_PLACES_API_KEY;
+    if (!apiKey) return false;
+
+    googlePlacesLoadPromise = new Promise((resolve) => {
+      const existing = document.querySelector('script[data-google-places="true"]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(!!window.google?.maps?.places?.Autocomplete), { once: true });
+        existing.addEventListener('error', () => resolve(false), { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.dataset.googlePlaces = 'true';
+      script.onload = () => resolve(!!window.google?.maps?.places?.Autocomplete);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+
+    return googlePlacesLoadPromise;
+  }
+
+  function getAddressComponent(components, type, key = 'long_name') {
+    const comp = (components || []).find(c => Array.isArray(c.types) && c.types.includes(type));
+    return comp ? (comp[key] || '') : '';
+  }
+
+  async function attachAddressAutocomplete(form) {
+    if (!isTradie()) return;
+    if (window.ADDRESS_LOOKUP_ENABLED === false) return;
+    if ((window.ADDRESS_LOOKUP_PROVIDER || 'google') !== 'google') return;
+
+    const line1Input = form?.querySelector('input[name="addressLine1"]');
+    const suburbInput = form?.querySelector('input[name="suburb"]');
+    const stateInput = form?.querySelector('select[name="state"]');
+    const postcodeInput = form?.querySelector('input[name="postcode"]');
+    if (!line1Input || line1Input.dataset.autocompleteBound === 'true') return;
+
+    const loaded = await loadGooglePlacesApi();
+    if (!loaded || !window.google?.maps?.places?.Autocomplete) return;
+
+    const countryCodes = String(window.ADDRESS_LOOKUP_COUNTRY_CODES || 'au')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    const options = {
+      fields: ['address_components', 'formatted_address', 'name'],
+    };
+    if (countryCodes.length > 0) {
+      options.componentRestrictions = { country: countryCodes };
+    }
+
+    const autocomplete = new window.google.maps.places.Autocomplete(line1Input, options);
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      const components = place?.address_components || [];
+      if (!components.length) return;
+
+      const subpremise = getAddressComponent(components, 'subpremise');
+      const premise = getAddressComponent(components, 'premise');
+      const streetNumber = getAddressComponent(components, 'street_number');
+      const route = getAddressComponent(components, 'route');
+
+      let streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim();
+      if (subpremise) {
+        streetAddress = streetAddress ? `${subpremise}/${streetAddress}` : subpremise;
+      } else if (!streetAddress && premise) {
+        streetAddress = premise;
+      }
+
+      if (!streetAddress) {
+        const formatted = (place?.formatted_address || '').split(',')[0].trim();
+        streetAddress = formatted || (place?.name || '').trim();
+      }
+
+      if (streetAddress) {
+        line1Input.value = streetAddress;
+      }
+
+      const suburb =
+        getAddressComponent(components, 'locality') ||
+        getAddressComponent(components, 'postal_town') ||
+        getAddressComponent(components, 'sublocality_level_1') ||
+        getAddressComponent(components, 'administrative_area_level_2');
+      if (suburbInput && suburb) {
+        suburbInput.value = suburb;
+      }
+
+      const state = getAddressComponent(components, 'administrative_area_level_1', 'short_name');
+      if (stateInput && state) {
+        const upper = state.toUpperCase();
+        if (Array.from(stateInput.options).some(opt => opt.value === upper)) {
+          stateInput.value = upper;
+        }
+      }
+
+      const postcode = getAddressComponent(components, 'postal_code');
+      if (postcodeInput && postcode) {
+        postcodeInput.value = postcode;
+      }
+    });
+
+    line1Input.dataset.autocompleteBound = 'true';
+  }
+
   async function performDailyBackup() {
     try {
       const db = getDataApi();
@@ -986,6 +1099,8 @@
       </div>
     `);
 
+    await attachAddressAutocomplete(document.getElementById('new-form'));
+
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
       textNotesOverlay.show('temp-new-customer');
@@ -1458,14 +1573,20 @@
     
     // Cleanup function to prevent memory leaks
     function cleanupImageCache() {
-      window.currentImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentImageCache.forEach(url => {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
       window.currentImageCache.clear();
     }
     
     async function renderImageThumbHtml(img) {
       try {
         
-        if (!img.blob || img.blob.size === 0) {
+        const hasBlob = !!(img.blob && img.blob.size > 0);
+        const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
         
@@ -1476,17 +1597,19 @@
             // Check if we're on iPad Safari and use dataURL directly as fallback
             const isIpadSafari = /iPad/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
             
-            if (isIpadSafari && img.dataUrl) {
+            if (isIpadSafari && hasDataUrl) {
               // Use dataURL directly for iPad Safari (more reliable)
               url = img.dataUrl;
-            } else {
+            } else if (hasBlob) {
               // Use object URL for other browsers
               url = URL.createObjectURL(img.blob);
+            } else {
+              url = img.dataUrl;
             }
             window.currentImageCache.set(img.id, url);
           } catch (urlError) {
             // Fallback to dataURL if available
-            if (img.dataUrl) {
+            if (hasDataUrl) {
               url = img.dataUrl;
             } else {
               return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Failed to create image URL</div>`;
@@ -1936,6 +2059,7 @@
     `);
 
     const form = document.getElementById('customer-form');
+    await attachAddressAutocomplete(form);
     setInputValue(form, 'firstName', customer.firstName || '');
     setInputValue(form, 'lastName', customer.lastName || '');
     setInputValue(form, 'contactNumber', customer.contactNumber || '');
@@ -1988,20 +2112,26 @@
     
     // Cleanup function for edit view
     function cleanupEditImageCache() {
-      window.currentEditImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentEditImageCache.forEach(url => {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
       window.currentEditImageCache.clear();
     }
     
     async function renderImageThumbHtml(img) {
       try {
-        if (!img.blob || img.blob.size === 0) {
+        const hasBlob = !!(img.blob && img.blob.size > 0);
+        const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
         
         // Use cached URL if available
         let url = window.currentEditImageCache.get(img.id);
         if (!url) {
-          url = URL.createObjectURL(img.blob);
+          url = hasBlob ? URL.createObjectURL(img.blob) : img.dataUrl;
           window.currentEditImageCache.set(img.id, url);
         }
         

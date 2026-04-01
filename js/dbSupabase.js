@@ -61,6 +61,44 @@
       reader.readAsDataURL(blob);
     });
   }
+  function dataURLToBlob(dataUrl, fallbackType) {
+    try {
+      var parts = String(dataUrl || '').split(',');
+      var meta = parts[0] || '';
+      var base64 = parts[1] || '';
+      if (!base64) return new Blob([], { type: fallbackType || 'application/octet-stream' });
+      var mimeMatch = /data:([^;]+);base64/.exec(meta);
+      var mime = mimeMatch ? mimeMatch[1] : (fallbackType || 'application/octet-stream');
+      var binary = atob(base64);
+      var len = binary.length;
+      var bytes = new Uint8Array(len);
+      for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
+    } catch (e) {
+      return new Blob([], { type: fallbackType || 'application/octet-stream' });
+    }
+  }
+
+  async function hydrateImageRow(row) {
+    var img = toCamel(row);
+    var dataUrl = img.dataUrl || null;
+
+    if (!dataUrl && img.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+      try {
+        dataUrl = await window.FileSystemDriver.loadImage(img.filePath);
+      } catch (e) {
+        dataUrl = null;
+      }
+    }
+
+    if (!dataUrl) return null;
+    var blob = dataURLToBlob(dataUrl, img.type);
+    if (!blob || blob.size === 0) return null;
+
+    img.dataUrl = dataUrl;
+    img.blob = blob;
+    return img;
+  }
   function fileToEntry(file) {
     return new Promise(function (resolve, reject) {
       var reader = new FileReader();
@@ -233,11 +271,15 @@
   }
   async function getImagesByCustomerId(customerId) {
     var res = check(await supabase.from('images').select('*').eq('customer_id', parseInt(customerId)).order('created_at'));
-    return (res.data || []).map(toCamel);
+    var rows = res.data || [];
+    var hydrated = await Promise.all(rows.map(hydrateImageRow));
+    return hydrated.filter(Boolean);
   }
   async function getImagesByAppointmentId(appointmentId) {
     var res = check(await supabase.from('images').select('*').eq('appointment_id', parseInt(appointmentId)).order('created_at'));
-    return (res.data || []).map(toCamel);
+    var rows = res.data || [];
+    var hydrated = await Promise.all(rows.map(hydrateImageRow));
+    return hydrated.filter(Boolean);
   }
   function deleteImage(imageId) {
     return supabase.from('images').delete().eq('id', parseInt(imageId)).then(check);
