@@ -150,6 +150,58 @@
     return res;
   }
 
+  async function getSession() {
+    const supabase = getClient();
+    const res = await supabase.auth.getSession();
+    throwIfError(res);
+    return res.data && res.data.session ? res.data.session : null;
+  }
+
+  async function signInWithPassword(email, password) {
+    const supabase = getClient();
+    const res = await supabase.auth.signInWithPassword({ email, password });
+    throwIfError(res);
+    return res.data && res.data.session ? res.data.session : null;
+  }
+
+  async function signOut() {
+    const supabase = getClient();
+    const res = await supabase.auth.signOut();
+    throwIfError(res);
+  }
+
+  function onAuthStateChange(callback) {
+    const supabase = getClient();
+    const res = supabase.auth.onAuthStateChange((event, session) => {
+      if (typeof callback === 'function') callback(event, session);
+    });
+    return res && res.data ? res.data.subscription : null;
+  }
+
+  async function claimUnownedData() {
+    const supabase = getClient();
+    const res = await supabase.rpc('claim_unowned_data');
+    throwIfError(res);
+    return res.data;
+  }
+
+  function extractAppointmentCustomerId(appointment) {
+    if (!appointment || typeof appointment !== 'object') return null;
+    return appointment.customerId ?? (appointment.extendedProps && appointment.extendedProps.customerId) ?? null;
+  }
+
+  function buildAppointmentRow(appointment, customerIdOverride) {
+    const rawCustomerId = customerIdOverride != null ? customerIdOverride : extractAppointmentCustomerId(appointment);
+    const customerId = rawCustomerId == null ? null : parseInt(rawCustomerId, 10);
+    return {
+      customer_id: Number.isNaN(customerId) ? null : customerId,
+      start: appointment.start || null,
+      end: appointment.end || null,
+      title: appointment.title || null,
+      created_at: appointment.createdAt || new Date().toISOString()
+    };
+  }
+
   // --- Customers ---
   async function createCustomer(customer) {
     const supabase = getClient();
@@ -237,8 +289,9 @@
   // --- Appointments ---
   async function createAppointment(appointment) {
     const supabase = getClient();
-    const row = toSnake({ ...appointment, created_at: appointment.createdAt || new Date().toISOString() });
-    delete row.id;
+    const row = buildAppointmentRow(appointment);
+    if (row.customer_id == null) throw new Error('Appointment is missing customerId');
+    if (!row.start) throw new Error('Appointment is missing start');
     const res = throwIfError(await supabase.from('appointments').insert(row).select('id').single());
     return res.data.id;
   }
@@ -292,7 +345,9 @@
 
   function updateAppointment(updated) {
     const supabase = getClient();
-    const row = toSnake(updated);
+    const row = buildAppointmentRow(updated);
+    if (row.customer_id == null) throw new Error('Appointment is missing customerId');
+    if (!row.start) throw new Error('Appointment is missing start');
     return throwIfError(supabase.from('appointments').update(row).eq('id', parseInt(updated.id))).then(() => {});
   }
 
@@ -593,11 +648,37 @@
 
   async function clearAllStores() {
     const supabase = getClient();
-    await throwIfError(supabase.from('note_versions').delete().neq('id', 0));
-    await throwIfError(supabase.from('notes').delete().neq('id', 0));
-    await throwIfError(supabase.from('images').delete().neq('id', 0));
-    await throwIfError(supabase.from('appointments').delete().neq('id', 0));
-    await throwIfError(supabase.from('customers').delete().neq('id', 0));
+    // Preferred path: fast server-side TRUNCATE function (if migration is applied).
+    const truncateResult = await supabase.rpc('truncate_all_data');
+    if (!truncateResult.error) return;
+
+    const BATCH_SIZE = 100;
+
+    async function deleteByIdBatches(table, idColumn = 'id') {
+      let loops = 0;
+      while (true) {
+        loops += 1;
+        if (loops > 10000) throw new Error(`Wipe failed: too many delete loops for ${table}`);
+
+        const fetchRes = throwIfError(
+          await supabase.from(table).select(idColumn).order(idColumn, { ascending: true }).limit(BATCH_SIZE)
+        );
+        const ids = (fetchRes.data || []).map((r) => r[idColumn]).filter((v) => v != null);
+        if (ids.length === 0) break;
+
+        throwIfError(await supabase.from(table).delete().in(idColumn, ids));
+      }
+    }
+
+    // Fallback path when truncate_all_data() is unavailable.
+    // Delete customers in batches and rely on FK cascades for dependent rows.
+    await deleteByIdBatches('customers', 'id');
+
+    // Defensive cleanup if any rows remain (should usually be no-ops).
+    await deleteByIdBatches('appointments', 'id');
+    await deleteByIdBatches('images', 'id');
+    await deleteByIdBatches('notes', 'id');
+    await deleteByIdBatches('note_versions', 'id');
   }
 
   async function importAllData(payload, options = {}) {
@@ -606,29 +687,86 @@
     if (mode === 'replace') await clearAllStores();
     const supabase = getClient();
     const customerIdMap = {};
+    const importedCustomerIds = new Set();
     for (const c of customers) {
-      const row = toSnake(c);
-      const oldId = row.id;
-      delete row.id;
+      const oldId = c.id;
+      // Explicit whitelist to avoid inserting fields not present in hairdresser.customers
+      const row = {
+        first_name: c.firstName ?? null,
+        last_name: c.lastName ?? null,
+        contact_number: c.contactNumber ?? null,
+        social_media_name: c.socialMediaName ?? null,
+        referral_notes: c.referralNotes ?? null,
+        referral_type: c.referralType ?? null,
+        address_line1: c.addressLine1 ?? null,
+        address_line2: c.addressLine2 ?? null,
+        suburb: c.suburb ?? null,
+        state: c.state ?? null,
+        postcode: c.postcode ?? null,
+        country: c.country ?? null,
+        updated_at: c.updatedAt || new Date().toISOString()
+      };
       const res = throwIfError(await supabase.from('customers').insert(row).select('id').single());
-      if (oldId != null) customerIdMap[oldId] = res.data.id;
+      importedCustomerIds.add(res.data.id);
+      if (oldId != null) {
+        const oldIdNum = parseInt(oldId, 10);
+        customerIdMap[oldId] = res.data.id;
+        customerIdMap[String(oldId)] = res.data.id;
+        if (!Number.isNaN(oldIdNum)) customerIdMap[String(oldIdNum)] = res.data.id;
+      }
     }
+
+    function resolveImportedCustomerId(rawCustomerId) {
+      if (rawCustomerId == null || rawCustomerId === '') return null;
+      const parsed = parseInt(rawCustomerId, 10);
+      const candidates = [rawCustomerId, String(rawCustomerId)];
+      if (!Number.isNaN(parsed)) {
+        candidates.push(parsed);
+        candidates.push(String(parsed));
+      }
+      for (const key of candidates) {
+        if (customerIdMap[key] != null) return customerIdMap[key];
+      }
+      if (!Number.isNaN(parsed) && importedCustomerIds.has(parsed)) return parsed;
+      return null;
+    }
+
     for (const a of appointments) {
-      const row = toSnake(a);
-      const newCustomerId = customerIdMap[a.customerId] != null ? customerIdMap[a.customerId] : a.customerId;
-      delete row.id;
-      row.customer_id = newCustomerId;
+      const rawCustomerId = extractAppointmentCustomerId(a);
+      const newCustomerId = resolveImportedCustomerId(rawCustomerId);
+      if (newCustomerId == null) {
+        throw new Error(`Import failed: appointment references missing customerId (${rawCustomerId})`);
+      }
+      const row = buildAppointmentRow(a, newCustomerId);
+      if (!row.start) {
+        throw new Error('Import failed: appointment is missing start date/time');
+      }
       throwIfError(await supabase.from('appointments').insert(row));
     }
+
+    const orphanNotes = [];
     for (const cid in customerNotes || {}) {
-      const newCid = customerIdMap[cid] != null ? customerIdMap[cid] : parseInt(cid);
       for (const note of customerNotes[cid] || []) {
+        const rawCustomerId = note && note.customerId != null ? note.customerId : cid;
+        const newCid = resolveImportedCustomerId(rawCustomerId);
+        if (newCid == null) {
+          orphanNotes.push(rawCustomerId);
+          continue;
+        }
         const n = { ...note, customerId: newCid };
         await createNote(n);
       }
     }
+    if (orphanNotes.length > 0) {
+      const unique = Array.from(new Set(orphanNotes.map((v) => String(v))));
+      throw new Error(`Import failed: ${orphanNotes.length} note(s) reference missing customerId(s): ${unique.slice(0, 20).join(', ')}${unique.length > 20 ? ' ...' : ''}`);
+    }
+
     for (const img of images || []) {
-      const newCustomerId = customerIdMap[img.customerId] != null ? customerIdMap[img.customerId] : img.customerId;
+      const newCustomerId = resolveImportedCustomerId(img.customerId);
+      if (newCustomerId == null) {
+        throw new Error(`Import failed: image references missing customerId (${img.customerId})`);
+      }
       throwIfError(await supabase.from('images').insert({
         customer_id: newCustomerId,
         name: img.name,
@@ -640,6 +778,11 @@
   }
 
   window.ChikasDBSupabase = {
+    getSession,
+    signInWithPassword,
+    signOut,
+    onAuthStateChange,
+    claimUnownedData,
     createCustomer,
     updateCustomer,
     getCustomerById,

@@ -1,11 +1,11 @@
 const CACHE_NAME = 'chikas-db-v1.0.2';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/js/app.js',
-  '/js/db.js',
-  '/assets/bg.jpg'
+  './',
+  './index.html',
+  './styles.css',
+  './js/app.js',
+  './js/db.js',
+  './assets/bg.jpg'
 ];
 
 // Install event - cache resources

@@ -8,6 +8,7 @@
   window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
   var hasCredentials = !!(window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
   window.USE_SUPABASE = window.USE_SUPABASE !== undefined ? window.USE_SUPABASE : hasCredentials;
+  window.REQUIRE_LOGIN = window.REQUIRE_LOGIN !== undefined ? window.REQUIRE_LOGIN : window.USE_SUPABASE;
   window.ADDRESS_LOOKUP_ENABLED = window.ADDRESS_LOOKUP_ENABLED !== undefined ? window.ADDRESS_LOOKUP_ENABLED : false;
   window.ADDRESS_LOOKUP_PROVIDER = window.ADDRESS_LOOKUP_PROVIDER || 'nominatim';
   window.ADDRESS_LOOKUP_MIN_CHARS = window.ADDRESS_LOOKUP_MIN_CHARS || 3;

@@ -172,7 +172,7 @@
   // Register Service Worker for PWA functionality
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js?v=1.0.2')
+      navigator.serviceWorker.register('sw.js?v=1.0.2')
         .then((registration) => {
           
           // Check for updates every time the app loads
@@ -199,6 +199,128 @@
 
   const appRoot = document.getElementById('app');
   const modalRoot = document.getElementById('modal-root');
+  let authSession = null;
+  let authSubscription = null;
+  const CLAIMED_USER_KEY = 'chikas_claimed_user_id';
+
+  function isSupabaseLoginRequired() {
+    return !!(window.USE_SUPABASE && window.REQUIRE_LOGIN && window.ChikasDB && typeof window.ChikasDB.getSession === 'function');
+  }
+
+  function authToolbarHtml() {
+    if (!isSupabaseLoginRequired() || !authSession) return '';
+    const userEmail = (authSession.user && authSession.user.email) ? authSession.user.email : 'Signed in';
+    return `
+      <button id="sign-out-btn" class="lang-btn" title="${escapeHtml(userEmail)}">Sign out</button>
+    `;
+  }
+
+  function renderLoginView(errorMessage = '') {
+    const errorHtml = errorMessage ? `<div class="muted" style="color:#ef4444; margin-bottom:10px;">${escapeHtml(errorMessage)}</div>` : '';
+    appRoot.innerHTML = `
+      <div class="layout">
+        <section class="content" style="max-width: 480px; margin: 40px auto;">
+          <div class="card">
+            <h2 style="margin-top:0;">Sign in</h2>
+            <div class="muted" style="margin-bottom: 10px;">Use your Supabase account to access your CRM data.</div>
+            ${errorHtml}
+            <form id="login-form" class="form">
+              <div>
+                <label>Email</label>
+                <input type="email" name="email" autocomplete="username" required />
+              </div>
+              <div>
+                <label>Password</label>
+                <input type="password" name="password" autocomplete="current-password" required />
+              </div>
+              <div class="row">
+                <button id="login-btn" class="button" type="submit">Sign In</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+    `;
+
+    const loginForm = document.getElementById('login-form');
+    const loginBtn = document.getElementById('login-btn');
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = new FormData(loginForm);
+      const email = String(form.get('email') || '').trim();
+      const password = String(form.get('password') || '');
+      if (!email || !password) return;
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Signing in...';
+      try {
+        await ChikasDB.signInWithPassword(email, password);
+        authSession = await ChikasDB.getSession();
+        if (authSession && authSession.user && authSession.user.id) {
+          localStorage.removeItem(CLAIMED_USER_KEY);
+        }
+        await render();
+      } catch (err) {
+        renderLoginView(err && err.message ? err.message : 'Sign in failed');
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Sign In';
+      }
+    });
+  }
+
+  async function ensureAuthenticated() {
+    if (!isSupabaseLoginRequired()) return true;
+
+    if (!authSubscription && typeof ChikasDB.onAuthStateChange === 'function') {
+      authSubscription = ChikasDB.onAuthStateChange((_event, session) => {
+        authSession = session || null;
+        if (!authSession) localStorage.removeItem(CLAIMED_USER_KEY);
+      });
+    }
+
+    try {
+      authSession = await ChikasDB.getSession();
+      if (!authSession) {
+        renderLoginView();
+        return false;
+      }
+
+      const userId = authSession.user && authSession.user.id;
+      const claimedUserId = localStorage.getItem(CLAIMED_USER_KEY);
+      if (userId && claimedUserId !== userId && typeof ChikasDB.claimUnownedData === 'function') {
+        try {
+          await ChikasDB.claimUnownedData();
+        } catch (err) {
+          const msg = err && err.message ? err.message : '';
+          // Allow login to continue if RPC is not deployed yet.
+          if (msg && msg.toLowerCase().includes('claim_unowned_data')) {
+          } else {
+            throw err;
+          }
+        }
+        localStorage.setItem(CLAIMED_USER_KEY, userId);
+      }
+      return true;
+    } catch (err) {
+      renderLoginView(err && err.message ? err.message : 'Authentication error');
+      return false;
+    }
+  }
+
+  function attachAuthHandler() {
+    const btn = document.getElementById('sign-out-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      try {
+        await ChikasDB.signOut();
+      } catch (err) {
+      } finally {
+        authSession = null;
+        localStorage.removeItem(CLAIMED_USER_KEY);
+        renderLoginView();
+      }
+    });
+  }
 
   // Restrict contact number inputs to digits, + ( ) and space
   appRoot.addEventListener('input', function (e) {
@@ -349,6 +471,9 @@
   }
 
   async function render() {
+    const authenticated = await ensureAuthenticated();
+    if (!authenticated) return;
+
     const path = currentPath();
     const [base, queryString] = path.split('?');
     const query = new URLSearchParams(queryString || '');
@@ -363,6 +488,7 @@
     adjustSidebarOffset();
     attachLangToggleHandler();
     attachVerticalBackupHandler();
+    attachAuthHandler();
     
     // Check if daily backup is needed (only on main pages)
     if (base === '/' || base === '/find' || base === '/calendar') {
@@ -378,6 +504,7 @@
       <div class="menu-container">
         <div class="menu-toolbar">
           <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+          ${authToolbarHtml()}
         </div>
         <div class="menu-content">
           <nav class="menu-tiles" aria-label="Main menu">
@@ -545,7 +672,10 @@
           </nav>
         </aside>
         <section class="content">
-          <div class="content-toolbar"><button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button></div>
+          <div class="content-toolbar">
+            <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+            ${authToolbarHtml()}
+          </div>
           ${contentHtml}
         </section>
       </div>
@@ -2670,6 +2800,14 @@
       const customers = (loadedBackup.customers || []).filter((c) => selectedIds.includes(c.id));
       const appointments = includeAppointments ? (loadedBackup.appointments || []).filter((a) => selectedIds.includes(a.customerId)) : [];
       const images = includeImages ? (loadedBackup.images || []).filter((img) => selectedIds.includes(img.customerId)) : [];
+      const allCustomerNotes = loadedBackup.customerNotes || {};
+      const selectedIdSet = new Set(selectedIds.map((id) => String(id)));
+      const filteredCustomerNotes = {};
+      Object.keys(allCustomerNotes).forEach((customerId) => {
+        if (selectedIdSet.has(String(customerId))) {
+          filteredCustomerNotes[customerId] = allCustomerNotes[customerId];
+        }
+      });
       
       // Chunked import for large datasets
       const CHUNK_SIZE = 5; // Process 5 customers at a time
@@ -2694,10 +2832,16 @@
               customers: chunk, 
               appointments: chunkAppointments, 
               images: chunkImages,
-              customerNotes: loadedBackup.customerNotes || {} // Include customer notes
+              customerNotes: Object.fromEntries(
+                chunkCustomerIds
+                  .map((id) => String(id))
+                  .filter((id) => filteredCustomerNotes[id] != null)
+                  .map((id) => [id, filteredCustomerNotes[id]])
+              )
             };
             
-            await ChikasDB.importAllData(payload, { mode });
+            const chunkMode = (mode === 'replace' && i > 0) ? 'merge' : mode;
+            await ChikasDB.importAllData(payload, { mode: chunkMode });
             
             const processed = Math.min(i + CHUNK_SIZE, totalCustomers);
             statusEl.textContent = `Importing in chunks... (${processed}/${totalCustomers})`;
@@ -2721,7 +2865,7 @@
           customers, 
           appointments, 
           images,
-          customerNotes: loadedBackup.customerNotes || {} // Include customer notes
+          customerNotes: filteredCustomerNotes
         };
         try {
           statusEl.textContent = 'Importing...';
@@ -2736,9 +2880,14 @@
     });
 
     wipeBtn.addEventListener('click', async () => {
-      if (!confirm('This will permanently delete all local data. Continue?')) return;
-      await ChikasDB.clearAllStores();
-      alert('All local data deleted');
+      const targetLabel = window.USE_SUPABASE ? 'Supabase data' : 'local data';
+      if (!confirm(`This will permanently delete all ${targetLabel}. Continue?`)) return;
+      try {
+        await ChikasDB.clearAllStores();
+        alert(`All ${targetLabel} deleted`);
+      } catch (e) {
+        alert('Wipe failed: ' + (e && e.message ? e.message : e));
+      }
     });
 
     // Add event listener for refresh app button
@@ -4103,7 +4252,9 @@
     render();
     
     // Run migration for old notes system
-    migrateOldNotes();
+    if (!isSupabaseLoginRequired()) {
+      migrateOldNotes();
+    }
   });
 
   // Handwriting digitization settings and functionality
