@@ -1,3 +1,9 @@
 /Scans/*
 *.pdf
 *.json
+www/
+
+# Keep core project JSON config tracked
+!/package.json
+!/package-lock.json
+!/manifest.json

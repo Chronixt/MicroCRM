@@ -3,8 +3,20 @@
   const productConfig = window.ProductConfig || {};
   const STORAGE_PREFIX = productConfig.storagePrefix || 'chikas_';
   const APP_NAME = productConfig.appName || 'CRM';
+  const NATIVE_DRIVER_MODE_KEY = `${STORAGE_PREFIX}native_driver_mode`;
   
   console.log(`[App] Starting ${APP_NAME}`);
+
+  function getNativeDriverMode() {
+    const mode = localStorage.getItem(NATIVE_DRIVER_MODE_KEY) || 'adapter';
+    return mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
+  }
+
+  function setNativeDriverMode(mode) {
+    const next = mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
+    localStorage.setItem(NATIVE_DRIVER_MODE_KEY, next);
+    return next;
+  }
 
   async function initializeStorageDriverLayer() {
     if (window.FileSystemDriver && typeof window.FileSystemDriver.init === 'function') {
@@ -21,7 +33,10 @@
     const dbApi = window.CrmDB;
     if (!dbApi) return;
     try {
-      const backend = productConfig.useSupabase ? 'supabase' : 'indexeddb';
+      const readiness = window.StorageDriverFactory.getNativeReadiness?.();
+      const backend = productConfig.useSupabase
+        ? (readiness?.isNative ? 'supabase-native' : 'supabase')
+        : (readiness?.isNative ? 'indexeddb-native' : 'indexeddb');
       await window.StorageDriverFactory.initializeFromDbApi(dbApi, { backend });
       const status = window.StorageDriverFactory.getStatus?.();
       if (status?.initialized) {
@@ -808,7 +823,7 @@
       <div class="menu-container">
         <div class="menu-toolbar">
           <div class="lang-toolbar-group">
-              <img src="/assets/CRMicro_logo.png" alt="CRMicro logo" class="toolbar-logo" />
+              <img src="/assets/CRMicro_logo_tradie_light.png" alt="CRMicro Tradie logo" class="toolbar-logo" />
               <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
             </div>
         </div>
@@ -995,7 +1010,7 @@
             </div>
             ` : ''}
             <div class="lang-toolbar-group">
-              <img src="/assets/CRMicro_logo.png" alt="CRMicro logo" class="toolbar-logo" />
+              <img src="/assets/CRMicro_logo_tradie_light.png" alt="CRMicro Tradie logo" class="toolbar-logo" />
               <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
             </div>
           </div>
@@ -1564,10 +1579,6 @@
           <div id="no-images-message" class="muted" style="margin-top:10px; display: none;">No images uploaded</div>
           <div id="image-grid" class="image-grid" style="margin-top:10px;"></div>
         </div>
-        
-        <div class="customer-view-actions-bottom">
-          <button id="delete-btn" class="icon-btn delete" title="Delete customer" aria-label="Delete customer" style="color: #dc3545;">🗑️</button>
-        </div>
       </div>
     `);
 
@@ -1919,23 +1930,7 @@
         });
       }
     }
-
-    // Delete customer functionality
-    document.getElementById('delete-btn').addEventListener('click', async () => {
-      const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'this customer';
-      if (!confirm(`Are you sure you want to delete ${customerName}? This will also delete all their appointments and images. This action cannot be undone.`)) {
-        return;
-      }
-      
-      try {
-        await CrmDB.deleteCustomer(id);
-        alert('Customer deleted successfully');
-        navigate('/find');
-      } catch (error) {
-        alert('Error deleting customer. Please try again.');
-      }
-    });
-  }
+}
 
   async function renderCustomerEdit({ query }) {
     const id = Number(query.get('id'));
@@ -2059,6 +2054,7 @@
           <div class="row" style="margin-top: 10px;">
             <button class="button" id="save-btn">${t('saveChanges')}</button>
             <a class="button secondary" href="#/customer?id=${encodeURIComponent(id)}">${t('cancel')}</a>
+            <button class="button secondary" id="delete-customer-btn" style="background: rgba(220,53,69,0.12); border-color: rgba(220,53,69,0.5); color: #ff7f8a;">Delete Customer</button>
           </div>
         </div>
       </div>
@@ -2291,6 +2287,21 @@
       } catch (error) {
         console.error('Error saving customer:', error);
         alert(`Error saving customer: ${error.message || 'Please try again.'}`);
+      }
+    });
+
+    document.getElementById('delete-customer-btn').addEventListener('click', async () => {
+      const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'this customer';
+      if (!confirm(`Are you sure you want to delete ${customerName}? This will also delete all their appointments and images. This action cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        await CrmDB.deleteCustomer(id);
+        alert('Customer deleted successfully');
+        navigate('/find');
+      } catch (error) {
+        alert('Error deleting customer. Please try again.');
       }
     });
   }
@@ -4512,9 +4523,34 @@
         <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
           Driver: <span id="storage-driver-name">Detecting...</span>
         </div>
+        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+          Runtime: <span id="native-runtime-status">Detecting...</span>
+        </div>
+        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+          Native Plugins: <span id="native-plugin-status">Detecting...</span>
+        </div>
+        <div class="row" style="align-items: flex-end; margin-bottom: 8px; gap: 8px;">
+          <label style="font-size: 12px;">
+            Native Driver Mode<br />
+            <select id="native-driver-mode" style="margin-top: 4px;">
+              <option value="adapter">Adapter (Default)</option>
+              <option value="sqlite_test">SQLite Test Mode</option>
+            </select>
+          </label>
+          <button id="save-native-driver-mode-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Save Mode</button>
+        </div>
+        <div id="native-driver-mode-status" class="muted" style="font-size: 12px; margin-bottom: 8px;"></div>
         <div id="storage-meter-container">
           <div class="muted" style="font-size: 12px;">Calculating...</div>
         </div>
+        <div class="row" style="margin-top: 10px;">
+          <button id="native-migrate-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Migrate Current Data to Native SQLite</button>
+        </div>
+        <div id="native-migrate-status" class="muted" style="font-size: 12px; margin-top: 6px;"></div>
+        <div class="row" style="margin-top: 10px;">
+          <button id="native-smoke-test-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Run Native Storage Smoke Test</button>
+        </div>
+        <div id="native-smoke-test-status" class="muted" style="font-size: 12px; margin-top: 6px;"></div>
       </div>
       ` : ''}
       
@@ -4670,6 +4706,15 @@
     if (isTradie()) {
       loadStorageStats();
       const driverNameEl = document.getElementById('storage-driver-name');
+      const runtimeEl = document.getElementById('native-runtime-status');
+      const pluginEl = document.getElementById('native-plugin-status');
+      const nativeDriverModeEl = document.getElementById('native-driver-mode');
+      const saveNativeDriverModeBtn = document.getElementById('save-native-driver-mode-btn');
+      const nativeDriverModeStatusEl = document.getElementById('native-driver-mode-status');
+      const nativeMigrateBtn = document.getElementById('native-migrate-btn');
+      const nativeMigrateStatusEl = document.getElementById('native-migrate-status');
+      const nativeSmokeBtn = document.getElementById('native-smoke-test-btn');
+      const nativeSmokeStatusEl = document.getElementById('native-smoke-test-status');
       if (driverNameEl) {
         const status = window.StorageDriverFactory?.getStatus?.();
         if (status?.initialized) {
@@ -4677,6 +4722,233 @@
         } else {
           driverNameEl.textContent = productConfig.useSupabase ? 'Supabase API' : 'IndexedDB';
         }
+      }
+      const readiness = window.StorageDriverFactory?.getNativeReadiness?.();
+      if (runtimeEl) {
+        if (readiness) {
+          runtimeEl.textContent = readiness.isNative ? `Native (${readiness.platform})` : `Web/PWA (${readiness.platform})`;
+        } else {
+          runtimeEl.textContent = 'Unknown';
+        }
+      }
+      if (pluginEl) {
+        if (readiness) {
+          const sqliteText = readiness.sqlite?.available ? `SQLite: ready (${readiness.sqlite.pluginName})` : 'SQLite: missing';
+          const fsText = readiness.filesystem?.available ? `Filesystem: ready (${readiness.filesystem.pluginName})` : 'Filesystem: missing';
+          pluginEl.textContent = `${sqliteText} | ${fsText}`;
+        } else {
+          pluginEl.textContent = 'Unavailable';
+        }
+      }
+
+      if (nativeDriverModeEl) {
+        nativeDriverModeEl.value = getNativeDriverMode();
+      }
+      if (nativeDriverModeStatusEl) {
+        nativeDriverModeStatusEl.textContent = `Current mode: ${getNativeDriverMode() === 'sqlite_test' ? 'SQLite Test Mode' : 'Adapter (Default)'}`;
+      }
+      if (saveNativeDriverModeBtn && nativeDriverModeEl) {
+        saveNativeDriverModeBtn.addEventListener('click', () => {
+          const saved = setNativeDriverMode(nativeDriverModeEl.value);
+          if (nativeDriverModeStatusEl) {
+            nativeDriverModeStatusEl.textContent = `Saved mode: ${saved === 'sqlite_test' ? 'SQLite Test Mode' : 'Adapter (Default)'}`;
+          }
+        });
+      }
+
+      if (nativeMigrateBtn && nativeMigrateStatusEl) {
+        nativeMigrateBtn.addEventListener('click', async () => {
+          const readinessCheck = window.StorageDriverFactory?.getNativeReadiness?.();
+          if (!readinessCheck?.isNative) {
+            nativeMigrateStatusEl.textContent = 'Native migration is only available in iOS/Android builds.';
+            return;
+          }
+          if (!readinessCheck?.sqlite?.available) {
+            nativeMigrateStatusEl.textContent = 'SQLite plugin is not available on this native runtime.';
+            return;
+          }
+
+          const proceed = confirm(
+            'This will copy current app data into a native SQLite database for migration testing. ' +
+            'Your existing data source will remain unchanged. Continue?'
+          );
+          if (!proceed) return;
+
+          nativeMigrateBtn.disabled = true;
+          nativeMigrateStatusEl.textContent = 'Preparing data...';
+          const backend = productConfig.useSupabase ? 'supabase-native' : 'indexeddb-native';
+          const sourceApi = window.CrmDB || null;
+
+          const sanitizeRecord = (record) => {
+            if (!record || typeof record !== 'object') return null;
+            const clone = { ...record };
+            if ('blob' in clone) delete clone.blob;
+            try {
+              return JSON.parse(JSON.stringify(clone));
+            } catch (error) {
+              return null;
+            }
+          };
+
+          try {
+            if (!sourceApi) {
+              throw new Error('Source data API unavailable');
+            }
+
+            const customers = typeof sourceApi.getAllCustomers === 'function' ? await sourceApi.getAllCustomers() : [];
+            nativeMigrateStatusEl.textContent = `Loaded customers (${customers.length})...`;
+            const appointments = typeof sourceApi.getAllAppointments === 'function' ? await sourceApi.getAllAppointments() : [];
+            nativeMigrateStatusEl.textContent = `Loaded jobs (${appointments.length})...`;
+            const notes = typeof sourceApi.getAllNotes === 'function' ? await sourceApi.getAllNotes() : [];
+            const reminders = typeof sourceApi.getAllReminders === 'function' ? await sourceApi.getAllReminders() : [];
+            const jobEvents = typeof sourceApi.getAllJobEvents === 'function' ? await sourceApi.getAllJobEvents() : [];
+
+            let images = [];
+            if (typeof sourceApi.getImagesByCustomerId === 'function') {
+              nativeMigrateStatusEl.textContent = `Collecting photos for ${customers.length} customers...`;
+              const imageMap = new Map();
+              for (let i = 0; i < customers.length; i++) {
+                const customer = customers[i];
+                const customerImages = await sourceApi.getImagesByCustomerId(customer.id);
+                customerImages.forEach((img) => {
+                  const safe = sanitizeRecord(img);
+                  if (!safe) return;
+                  const key = safe.id != null ? String(safe.id) : `${safe.customerId || customer.id}-${safe.name || 'img'}-${safe.createdAt || i}`;
+                  if (!imageMap.has(key)) imageMap.set(key, safe);
+                });
+              }
+              images = Array.from(imageMap.values());
+            }
+
+            const datasets = {
+              customers: (customers || []).map(sanitizeRecord).filter(Boolean),
+              appointments: (appointments || []).map(sanitizeRecord).filter(Boolean),
+              notes: (notes || []).map(sanitizeRecord).filter(Boolean),
+              reminders: (reminders || []).map(sanitizeRecord).filter(Boolean),
+              jobEvents: (jobEvents || []).map(sanitizeRecord).filter(Boolean),
+              images: (images || []).map(sanitizeRecord).filter(Boolean)
+            };
+
+            nativeMigrateStatusEl.textContent = 'Opening native SQLite database...';
+            await window.StorageDriverFactory.initialize({
+              forceDriver: 'sqlite',
+              dbName: `${productConfig.dbName || 'tradie-crm-db'}-native`,
+              dbVersion: Number(productConfig.dbVersion || 1)
+            });
+
+            const sqliteDriver = window.StorageDriverFactory.getDriver();
+            const stores = ['customers', 'appointments', 'notes', 'reminders', 'jobEvents', 'images'];
+            const migratedCounts = {};
+
+            for (let i = 0; i < stores.length; i++) {
+              const store = stores[i];
+              const rows = datasets[store] || [];
+              nativeMigrateStatusEl.textContent = `Migrating ${store} (${rows.length})...`;
+              await sqliteDriver.clear(store);
+              for (let j = 0; j < rows.length; j++) {
+                await sqliteDriver.create(store, rows[j]);
+              }
+              migratedCounts[store] = rows.length;
+            }
+
+            localStorage.setItem(`${STORAGE_PREFIX}last_native_migration`, JSON.stringify({
+              at: new Date().toISOString(),
+              database: `${productConfig.dbName || 'tradie-crm-db'}-native`,
+              counts: migratedCounts
+            }));
+
+            nativeMigrateStatusEl.textContent =
+              `Migration complete. customers:${migratedCounts.customers || 0}, jobs:${migratedCounts.appointments || 0}, notes:${migratedCounts.notes || 0}, reminders:${migratedCounts.reminders || 0}, events:${migratedCounts.jobEvents || 0}, images:${migratedCounts.images || 0}`;
+          } catch (error) {
+            nativeMigrateStatusEl.textContent = `Migration failed: ${error.message || error}`;
+          } finally {
+            try {
+              if (window.CrmDB && typeof window.StorageDriverFactory.initializeFromDbApi === 'function') {
+                await window.StorageDriverFactory.initializeFromDbApi(window.CrmDB, { backend });
+              }
+            } catch (restoreError) {
+              // Keep migration result visible; restore errors can be checked in console.
+            }
+            const status = window.StorageDriverFactory?.getStatus?.();
+            if (driverNameEl && status?.initialized) {
+              driverNameEl.textContent = `${status.driver} (${status.backend})`;
+            }
+            nativeMigrateBtn.disabled = false;
+          }
+        });
+      }
+
+      if (nativeSmokeBtn && nativeSmokeStatusEl) {
+        nativeSmokeBtn.addEventListener('click', async () => {
+          const readinessCheck = window.StorageDriverFactory?.getNativeReadiness?.();
+          if (!readinessCheck?.isNative) {
+            nativeSmokeStatusEl.textContent = 'Native smoke test is only available in iOS/Android builds.';
+            return;
+          }
+          const selectedMode = getNativeDriverMode();
+          if (selectedMode !== 'sqlite_test') {
+            nativeSmokeStatusEl.textContent = 'Driver mode is set to Adapter. Switch to SQLite Test Mode to run the SQLite smoke test.';
+            return;
+          }
+          if (!readinessCheck?.sqlite?.available) {
+            nativeSmokeStatusEl.textContent = 'SQLite plugin is not available on this native runtime.';
+            return;
+          }
+
+          nativeSmokeBtn.disabled = true;
+          nativeSmokeStatusEl.textContent = 'Running SQLite smoke test...';
+          const backend = productConfig.useSupabase ? 'supabase-native' : 'indexeddb-native';
+
+          try {
+            await window.StorageDriverFactory.initialize({
+              forceDriver: 'sqlite',
+              dbName: `${productConfig.dbName || 'tradie-crm-db'}-smoke`,
+              dbVersion: 1
+            });
+            const driver = window.StorageDriverFactory.getDriver();
+            const store = 'smoke_test';
+
+            await driver.clear(store);
+            const id = await driver.create(store, {
+              label: 'smoke',
+              probe: 'write',
+              createdAt: new Date().toISOString()
+            });
+            const fetched = await driver.getById(store, id);
+            if (!fetched || fetched.id !== id) {
+              throw new Error('create/getById check failed');
+            }
+
+            await driver.update(store, { ...fetched, label: 'updated' });
+            const indexed = await driver.getByIndex(store, 'label', 'updated');
+            if (!Array.isArray(indexed) || !indexed.some((row) => row && row.id === id)) {
+              throw new Error('update/getByIndex check failed');
+            }
+
+            await driver.delete(store, id);
+            const deleted = await driver.getById(store, id);
+            if (deleted) {
+              throw new Error('delete/getById check failed');
+            }
+
+            nativeSmokeStatusEl.textContent = 'SQLite smoke test passed (create/read/update/index/delete).';
+          } catch (error) {
+            nativeSmokeStatusEl.textContent = `SQLite smoke test failed: ${error.message || error}`;
+          } finally {
+            try {
+              if (window.CrmDB && typeof window.StorageDriverFactory.initializeFromDbApi === 'function') {
+                await window.StorageDriverFactory.initializeFromDbApi(window.CrmDB, { backend });
+              }
+            } catch (restoreError) {
+              // Keep smoke result visible; restore errors can be checked via console.
+            }
+            const status = window.StorageDriverFactory?.getStatus?.();
+            if (driverNameEl && status?.initialized) {
+              driverNameEl.textContent = `${status.driver} (${status.backend})`;
+            }
+            nativeSmokeBtn.disabled = false;
+          }
+        });
       }
     }
 
