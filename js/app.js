@@ -4545,6 +4545,8 @@
       this.eraserWidth = 10;
       this.pencilBtn = null;
       this.eraserBtn = null;
+      this.hasBackgroundLayer = false;
+      this.backgroundImageData = null;
     }
 
 
@@ -4959,6 +4961,8 @@
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.strokes = [];
       this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+      this.hasBackgroundLayer = false;
+      this.backgroundImageData = null;
     }
 
     undo() {
@@ -4969,33 +4973,50 @@
     }
 
     redrawStrokes() {
+      if (!this.ctx || !this.canvas) return;
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      
-      this.strokes.forEach(stroke => {
-        if (stroke.points && stroke.points.length > 1) {
-          // Set up context for eraser or normal drawing
-          if (stroke.color === 'eraser') {
-            this.ctx.globalCompositeOperation = 'destination-out';
-          } else {
-            this.ctx.globalCompositeOperation = 'source-over';
-            this.ctx.strokeStyle = stroke.color;
+
+      const drawStrokeLayer = () => {
+        this.strokes.forEach(stroke => {
+          if (stroke.points && stroke.points.length > 1) {
+            // Set up context for eraser or normal drawing
+            if (stroke.color === 'eraser') {
+              this.ctx.globalCompositeOperation = 'destination-out';
+            } else {
+              this.ctx.globalCompositeOperation = 'source-over';
+              this.ctx.strokeStyle = stroke.color;
+            }
+            
+            this.ctx.lineWidth = stroke.width;
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+            for (let i = 1; i < stroke.points.length; i++) {
+              this.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+            }
+            this.ctx.stroke();
           }
-          
-          this.ctx.lineWidth = stroke.width;
-          this.ctx.lineCap = 'round';
-          this.ctx.lineJoin = 'round';
-          
-          this.ctx.beginPath();
-          this.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-          for (let i = 1; i < stroke.points.length; i++) {
-            this.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-          }
-          this.ctx.stroke();
-        }
-      });
-      
-      // Reset to normal drawing mode
-      this.ctx.globalCompositeOperation = 'source-over';
+        });
+        
+        // Reset to normal drawing mode
+        this.ctx.globalCompositeOperation = 'source-over';
+      };
+
+      // If this note has a background layer (image/text-rendered SVG), draw it first.
+      if (this.hasBackgroundLayer && this.backgroundImageData) {
+        const bg = new Image();
+        bg.onload = () => {
+          this.ctx.globalCompositeOperation = 'source-over';
+          this.ctx.drawImage(bg, 0, 0, this.canvas.width, this.canvas.height);
+          drawStrokeLayer();
+        };
+        bg.onerror = () => drawStrokeLayer();
+        bg.src = this.backgroundImageData;
+      } else {
+        drawStrokeLayer();
+      }
     }
 
     setStrokeColor(color) {
@@ -5041,11 +5062,30 @@
     canvasToSVG() {
       // Check if there are any eraser strokes - if so, we need to use a different approach
       const hasEraserStrokes = this.strokes.some(stroke => stroke.color === 'eraser');
+
+      // If editing a note with background content, always serialize full canvas
+      // so new strokes don't replace existing content.
+      const hasBackgroundContent = this.hasBackgroundLayer && !!this.backgroundImageData;
       
-      // Check if we're editing an image-based note (no strokes but editing)
-      const isEditingImageNote = this.editingNote && this.strokes.length === 0;
+      if (hasBackgroundContent) {
+        const canvasData = this.canvas.toDataURL('image/png');
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', this.canvas.width);
+        svg.setAttribute('height', this.canvas.height);
+        svg.setAttribute('viewBox', `0 0 ${this.canvas.width} ${this.canvas.height}`);
+        
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        image.setAttribute('href', canvasData);
+        image.setAttribute('width', this.canvas.width);
+        image.setAttribute('height', this.canvas.height);
+        image.setAttribute('x', '0');
+        image.setAttribute('y', '0');
+        svg.appendChild(image);
+        
+        return new XMLSerializer().serializeToString(svg);
+      }
       
-      if (hasEraserStrokes || isEditingImageNote) {
+      if (hasEraserStrokes) {
         // When eraser strokes are present OR we're editing an image-based note,
         // capture the final canvas state as an image
         
@@ -5064,26 +5104,6 @@
             });
           }
         });
-        
-        // If we're editing an image-based note and have no new strokes,
-        // use the entire canvas since it already contains the full image
-        if (!hasStrokes && isEditingImageNote) {
-          const canvasData = this.canvas.toDataURL('image/png');
-          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          svg.setAttribute('width', this.canvas.width);
-          svg.setAttribute('height', this.canvas.height);
-          svg.setAttribute('viewBox', `0 0 ${this.canvas.width} ${this.canvas.height}`);
-          
-          const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-          image.setAttribute('href', canvasData);
-          image.setAttribute('width', this.canvas.width);
-          image.setAttribute('height', this.canvas.height);
-          image.setAttribute('x', '0');
-          image.setAttribute('y', '0');
-          svg.appendChild(image);
-          
-          return new XMLSerializer().serializeToString(svg);
-        }
         
         // If no strokes and not editing, return empty SVG
         if (!hasStrokes) {
@@ -6868,6 +6888,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     loadNoteFromSVG(svgString) {
       try {
+        // Reset note layers for fresh load
+        this.strokes = [];
+        this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+        this.hasBackgroundLayer = false;
+        this.backgroundImageData = null;
+
         // Parse the SVG string
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
@@ -6878,28 +6904,14 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Handle image-based SVG
           const imageData = image.getAttribute('href');
           if (imageData) {
-            // Clear existing strokes
-            this.strokes = [];
-            this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
-            
-            // Create a temporary image to load the data
-            const tempImg = new Image();
-            tempImg.onload = () => {
-              // Draw the image onto the canvas
-              this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-              this.ctx.drawImage(tempImg, 0, 0);
-            };
-            tempImg.src = imageData;
+            this.hasBackgroundLayer = true;
+            this.backgroundImageData = imageData;
           }
           return;
         }
         
         // Handle vector-based SVG
         const paths = svgDoc.querySelectorAll('path');
-        
-        // Clear existing strokes
-        this.strokes = [];
-        this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
         
         // Convert SVG paths back to stroke data
         paths.forEach(path => {
@@ -6919,9 +6931,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             }
           }
         });
-        
-        // Redraw the strokes
-        this.redrawStrokes();
+
+        // If no path strokes were found (e.g., text-based SVG), preserve the full SVG
+        // as a background image so edits append visually instead of replacing content.
+        if (this.strokes.length === 0 && svgString && svgString.trim().length > 0) {
+          this.hasBackgroundLayer = true;
+          this.backgroundImageData = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+        }
         
       } catch (error) {
         console.error('Error loading note from SVG:', error);

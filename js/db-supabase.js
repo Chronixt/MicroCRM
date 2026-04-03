@@ -224,7 +224,7 @@
     return res.data.id;
   }
 
-  function updateCustomer(updated) {
+  async function updateCustomer(updated) {
     const supabase = getClient();
     const id = parseInt(updated.id);
     const row = {
@@ -242,7 +242,7 @@
       country: updated.country ?? null,
       updated_at: new Date().toISOString()
     };
-    return throwIfError(supabase.from('customers').update(row).eq('id', id)).then(() => {});
+    throwIfError(await supabase.from('customers').update(row).eq('id', id));
   }
 
   async function getCustomerById(id) {
@@ -276,13 +276,13 @@
   async function deleteCustomer(id) {
     const supabase = getClient();
     const numId = parseInt(id);
-    await throwIfError(supabase.from('appointments').delete().eq('customer_id', numId));
-    await throwIfError(supabase.from('images').delete().eq('customer_id', numId));
+    throwIfError(await supabase.from('appointments').delete().eq('customer_id', numId));
+    throwIfError(await supabase.from('images').delete().eq('customer_id', numId));
     const noteRes = await supabase.from('notes').select('id').eq('customer_id', numId);
     throwIfError(noteRes);
     const noteIds = (noteRes.data || []).map((r) => r.id);
-    if (noteIds.length) await throwIfError(supabase.from('note_versions').delete().in('note_id', noteIds));
-    await throwIfError(supabase.from('notes').delete().eq('customer_id', numId));
+    if (noteIds.length) throwIfError(await supabase.from('note_versions').delete().in('note_id', noteIds));
+    throwIfError(await supabase.from('notes').delete().eq('customer_id', numId));
     throwIfError(await supabase.from('customers').delete().eq('id', numId));
   }
 
@@ -343,17 +343,17 @@
     return res.data ? toCamel(res.data) : null;
   }
 
-  function updateAppointment(updated) {
+  async function updateAppointment(updated) {
     const supabase = getClient();
     const row = buildAppointmentRow(updated);
     if (row.customer_id == null) throw new Error('Appointment is missing customerId');
     if (!row.start) throw new Error('Appointment is missing start');
-    return throwIfError(supabase.from('appointments').update(row).eq('id', parseInt(updated.id))).then(() => {});
+    throwIfError(await supabase.from('appointments').update(row).eq('id', parseInt(updated.id)));
   }
 
-  function deleteAppointment(id) {
+  async function deleteAppointment(id) {
     const supabase = getClient();
-    return throwIfError(supabase.from('appointments').delete().eq('id', parseInt(id))).then(() => {});
+    throwIfError(await supabase.from('appointments').delete().eq('id', parseInt(id)));
   }
 
   // --- Images ---
@@ -394,9 +394,9 @@
     }).filter((c) => c.blob || c.dataUrl);
   }
 
-  function deleteImage(imageId) {
+  async function deleteImage(imageId) {
     const supabase = getClient();
-    return throwIfError(supabase.from('images').delete().eq('id', parseInt(imageId))).then(() => {});
+    throwIfError(await supabase.from('images').delete().eq('id', parseInt(imageId)));
   }
 
   // --- Notes ---
@@ -436,12 +436,12 @@
     if (!existing) throw new Error('Note with id ' + noteId + ' not found');
     const existingCamel = toCamel(existing);
     if (existingCamel.svg && existingCamel.svg !== updatedNote.svg) {
-      await supabase.from('note_versions').insert({
+      throwIfError(await supabase.from('note_versions').insert({
         note_id: noteId,
         svg: existingCamel.svg,
         edited_date: existingCamel.editedDate || null,
         saved_at: new Date().toISOString()
-      });
+      }));
     }
     const merged = {
       ...existingCamel,
@@ -451,8 +451,15 @@
       editedDate: updatedNote.editedDate ? normalizeDateToYYYYMMDD(updatedNote.editedDate) : existingCamel.editedDate,
       createdAt: existingCamel.createdAt || normalizeDateToYYYYMMDD(updatedNote.createdAt) || new Date().toISOString().split('T')[0]
     };
-    const row = toSnake(merged);
-    delete row.id;
+    // Only send real DB columns; UI-only fields like `source` must never be written.
+    const row = {
+      customer_id: parseInt(merged.customerId),
+      date: merged.date || null,
+      created_at: merged.createdAt || null,
+      edited_date: merged.editedDate || null,
+      svg: merged.svg ?? null,
+      note_number: merged.noteNumber ?? null
+    };
     throwIfError(await supabase.from('notes').update(row).eq('id', noteId));
   }
 
@@ -474,16 +481,21 @@
       editedDate: previousVersion.editedDate || currentCamel.editedDate,
       restoredAt: new Date().toISOString()
     };
-    const row = toSnake(restored);
-    delete row.id;
+    const row = {
+      customer_id: parseInt(restored.customerId),
+      date: restored.date || null,
+      created_at: restored.createdAt || null,
+      edited_date: restored.editedDate || null,
+      svg: restored.svg ?? null,
+      note_number: restored.noteNumber ?? null
+    };
     throwIfError(await supabase.from('notes').update(row).eq('id', parseInt(noteId)));
   }
 
-  function deleteNote(noteId) {
+  async function deleteNote(noteId) {
     const supabase = getClient();
-    return throwIfError(supabase.from('note_versions').delete().eq('note_id', parseInt(noteId))).then(() =>
-      throwIfError(supabase.from('notes').delete().eq('id', parseInt(noteId)))
-    ).then(() => {});
+    throwIfError(await supabase.from('note_versions').delete().eq('note_id', parseInt(noteId)));
+    throwIfError(await supabase.from('notes').delete().eq('id', parseInt(noteId)));
   }
 
   async function getAllNotes() {
@@ -688,10 +700,17 @@
     const supabase = getClient();
     const customerIdMap = {};
     const importedCustomerIds = new Set();
-    for (const c of customers) {
-      const oldId = c.id;
-      // Explicit whitelist to avoid inserting fields not present in hairdresser.customers
-      const row = {
+
+    function normalizeText(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function normalizePhone(value) {
+      return String(value || '').replace(/[^\d+]/g, '');
+    }
+
+    function customerInsertRow(c) {
+      return {
         first_name: c.firstName ?? null,
         last_name: c.lastName ?? null,
         contact_number: c.contactNumber ?? null,
@@ -706,13 +725,103 @@
         country: c.country ?? null,
         updated_at: c.updatedAt || new Date().toISOString()
       };
-      const res = throwIfError(await supabase.from('customers').insert(row).select('id').single());
-      importedCustomerIds.add(res.data.id);
+    }
+
+    function customerUpdateRow(c) {
+      return {
+        first_name: c.firstName ?? null,
+        last_name: c.lastName ?? null,
+        contact_number: c.contactNumber ?? null,
+        social_media_name: c.socialMediaName ?? null,
+        referral_notes: c.referralNotes ?? null,
+        referral_type: c.referralType ?? null,
+        address_line1: c.addressLine1 ?? null,
+        address_line2: c.addressLine2 ?? null,
+        suburb: c.suburb ?? null,
+        state: c.state ?? null,
+        postcode: c.postcode ?? null,
+        country: c.country ?? null,
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    let mergeMatch = null;
+    if (mode === 'merge') {
+      const existingCustomers = await getAllCustomers();
+      const byId = new Map();
+      const byContact = new Map();
+      const bySocial = new Map();
+      const byNamePhone = new Map();
+
+      function addUnique(map, key, customer) {
+        if (!key) return;
+        const arr = map.get(key) || [];
+        arr.push(customer);
+        map.set(key, arr);
+      }
+
+      existingCustomers.forEach((ec) => {
+        byId.set(String(ec.id), ec);
+        addUnique(byContact, normalizePhone(ec.contactNumber), ec);
+        addUnique(bySocial, normalizeText(ec.socialMediaName), ec);
+        addUnique(byNamePhone, `${normalizeText(ec.firstName)}|${normalizeText(ec.lastName)}|${normalizePhone(ec.contactNumber)}`, ec);
+      });
+
+      function pickUnique(map, key) {
+        const arr = map.get(key) || [];
+        return arr.length === 1 ? arr[0] : null;
+      }
+
+      mergeMatch = function findExistingCustomer(c) {
+        const oldIdKey = c && c.id != null ? String(c.id) : '';
+        if (oldIdKey && byId.has(oldIdKey)) return byId.get(oldIdKey);
+
+        const phoneKey = normalizePhone(c.contactNumber);
+        const socialKey = normalizeText(c.socialMediaName);
+        const namePhoneKey = `${normalizeText(c.firstName)}|${normalizeText(c.lastName)}|${phoneKey}`;
+
+        // Prefer unique phone match, then unique social handle, then unique name+phone.
+        if (phoneKey) {
+          const hit = pickUnique(byContact, phoneKey);
+          if (hit) return hit;
+        }
+        if (socialKey) {
+          const hit = pickUnique(bySocial, socialKey);
+          if (hit) return hit;
+        }
+        if (phoneKey) {
+          const hit = pickUnique(byNamePhone, namePhoneKey);
+          if (hit) return hit;
+        }
+        return null;
+      };
+    }
+
+    for (const c of customers) {
+      const oldId = c.id;
+      let finalCustomerId = null;
+
+      if (mode === 'merge' && typeof mergeMatch === 'function') {
+        const existing = mergeMatch(c);
+        if (existing && existing.id != null) {
+          const updateRow = customerUpdateRow(c);
+          throwIfError(await supabase.from('customers').update(updateRow).eq('id', parseInt(existing.id, 10)));
+          finalCustomerId = parseInt(existing.id, 10);
+        }
+      }
+
+      if (finalCustomerId == null) {
+        const insertRow = customerInsertRow(c);
+        const res = throwIfError(await supabase.from('customers').insert(insertRow).select('id').single());
+        finalCustomerId = res.data.id;
+      }
+
+      importedCustomerIds.add(finalCustomerId);
       if (oldId != null) {
         const oldIdNum = parseInt(oldId, 10);
-        customerIdMap[oldId] = res.data.id;
-        customerIdMap[String(oldId)] = res.data.id;
-        if (!Number.isNaN(oldIdNum)) customerIdMap[String(oldIdNum)] = res.data.id;
+        customerIdMap[oldId] = finalCustomerId;
+        customerIdMap[String(oldId)] = finalCustomerId;
+        if (!Number.isNaN(oldIdNum)) customerIdMap[String(oldIdNum)] = finalCustomerId;
       }
     }
 
