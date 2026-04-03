@@ -1,7 +1,7 @@
 {
-  "name": "Chikas DB",
-  "short_name": "Chikas DB",
-  "description": "Customer and appointment management system for hair salon",
+  "name": "CRMicro Beautician",
+  "short_name": "CRMicro Beautician",
+  "description": "Customer and appointment management system for beauticians",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

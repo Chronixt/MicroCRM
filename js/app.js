@@ -503,8 +503,11 @@
     appRoot.innerHTML = `
       <div class="menu-container">
         <div class="menu-toolbar">
-          <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
-          ${authToolbarHtml()}
+          <div class="lang-toolbar-group">
+            <img src="assets/CRMicro_logo_beautician_light.png" alt="CRMicro Beautician logo" class="toolbar-logo" />
+            <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+            ${authToolbarHtml()}
+          </div>
         </div>
         <div class="menu-content">
           <nav class="menu-tiles" aria-label="Main menu">
@@ -673,8 +676,11 @@
         </aside>
         <section class="content">
           <div class="content-toolbar">
-            <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
-            ${authToolbarHtml()}
+            <div class="lang-toolbar-group">
+              <img src="assets/CRMicro_logo_beautician_light.png" alt="CRMicro Beautician logo" class="toolbar-logo" />
+              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
+              ${authToolbarHtml()}
+            </div>
           </div>
           ${contentHtml}
         </section>

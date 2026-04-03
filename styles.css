@@ -134,6 +134,9 @@ body::after {
 .content { min-height: 60dvh; }
 .content-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
 .content-toolbar .lang-btn { margin-left: auto; }
+.lang-toolbar-group { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.lang-toolbar-group .lang-btn { margin-left: 0; }
+.toolbar-logo { height: 56px; width: auto; max-width: 320px; object-fit: contain; display: block; }
 
 .menu-container { position: relative; min-height: 100vh; }
 .menu-toolbar { 
@@ -1580,6 +1583,7 @@ select option { color: black; }
 
 @media (max-width: 640px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .toolbar-logo { height: 40px; max-width: 220px; }
 }
 
 /* Customer view */

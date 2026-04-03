@@ -6,8 +6,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Chikas DB" />
-    <meta name="application-name" content="Chikas DB" />
+    <meta name="apple-mobile-web-app-title" content="CRMicro Beautician" />
+    <meta name="application-name" content="CRMicro Beautician" />
     <meta name="theme-color" content="#22d3ee" />
     <meta name="msapplication-TileColor" content="#22d3ee" />
     <meta name="msapplication-config" content="/browserconfig.xml" />
@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-192.png" />
     <link rel="apple-touch-icon" sizes="167x167" href="assets/icon-192.png" />
     
-    <title>Chikas DB</title>
+    <title>CRMicro Beautician</title>
 
     <!-- FullCalendar (v5 global build for simplicity) -->
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet" />
@@ -39,7 +39,17 @@
     <!-- Simple modal container for generic prompts -->
     <div id="modal-root" class="modal-root" aria-hidden="true"></div>
 
-    <script src="js/config.local.js"></script>
+    <script src="/.netlify/functions/runtime-config"></script>
+    <script>
+      (function () {
+        var host = window.location.hostname;
+        var isLocal = host === 'localhost' || host === '127.0.0.1';
+        if (!isLocal) return;
+        var localConfig = document.createElement('script');
+        localConfig.src = 'js/config.local.js';
+        document.head.appendChild(localConfig);
+      })();
+    </script>
     <script src="js/config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="js/db.js?v=1.0.3"></script>

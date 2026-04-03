@@ -24,6 +24,14 @@ self.addEventListener('install', (event) => {
 // Fetch event - serve from cache when offline, but always check network first for JS/CSS
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+
+  // Never intercept cross-origin requests (Supabase/API/CDN) or non-GET requests.
+  // Let the browser handle these directly to avoid CORS/network noise from SW.
+  if (!isSameOrigin || event.request.method !== 'GET') {
+    return;
+  }
+
   const isJS = url.pathname.endsWith('.js');
   const isCSS = url.pathname.endsWith('.css');
   const isHTML = url.pathname.endsWith('.html') || url.pathname === '/';
