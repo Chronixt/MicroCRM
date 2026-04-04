@@ -3,6 +3,9 @@
   const productConfig = window.ProductConfig || {};
   const STORAGE_PREFIX = productConfig.storagePrefix || 'chikas_';
   const APP_NAME = productConfig.appName || 'CRM';
+  const BRAND_LOGO_LIGHT = productConfig.logoLight || '/assets/icon-192.png';
+  const BRAND_LOGO_ALT = productConfig.logoAlt || `${APP_NAME} logo`;
+  const LOCK_TITLE = productConfig.lockTitle || `${APP_NAME} Locked`;
   const NATIVE_DRIVER_MODE_KEY = `${STORAGE_PREFIX}native_driver_mode`;
   
   console.log(`[App] Starting ${APP_NAME}`);
@@ -205,7 +208,7 @@
       overlay.innerHTML = `
         <div style="text-align: center; max-width: 300px;">
           <div style="font-size: 48px; margin-bottom: 20px;">🔒</div>
-          <h2 style="margin: 0 0 8px 0; color: white;">TradieCRM Locked</h2>
+          <h2 style="margin: 0 0 8px 0; color: white;">${LOCK_TITLE}</h2>
           <p style="margin: 0 0 24px 0; color: #94a3b8; font-size: 14px;">Enter your 4-digit PIN to unlock</p>
           <input type="password" id="unlock-pin-input" placeholder="• • • •" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 12px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;" />
           <button id="unlock-btn" style="width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; font-weight: 600; background: var(--brand, #f59e0b); color: white; border: none; border-radius: 12px; cursor: pointer;">Unlock</button>
@@ -823,7 +826,7 @@
       <div class="menu-container">
         <div class="menu-toolbar">
           <div class="lang-toolbar-group">
-              <img src="/assets/CRMicro_logo_tradie_light.png" alt="CRMicro Tradie logo" class="toolbar-logo" />
+              <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
               <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
             </div>
         </div>
@@ -1010,7 +1013,7 @@
             </div>
             ` : ''}
             <div class="lang-toolbar-group">
-              <img src="/assets/CRMicro_logo_tradie_light.png" alt="CRMicro Tradie logo" class="toolbar-logo" />
+              <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
               <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
             </div>
           </div>
