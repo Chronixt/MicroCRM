@@ -1,6 +1,7 @@
 /Scans/*
 *.pdf
 *.json
+node_modules/
 www/
 
 # Keep core project JSON config tracked
