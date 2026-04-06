@@ -15,6 +15,7 @@
       dbVersion: 6,
       storagePrefix: 'tradie_',
       useSupabase: true,
+      supabaseSchema: 'tradie',
       entities: {
         customer: { singular: 'Customer', plural: 'Customers' },
         appointment: { singular: 'Job', plural: 'Jobs' },

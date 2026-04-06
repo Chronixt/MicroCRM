@@ -89,6 +89,10 @@
   --status-invoiced: #f97316;
   --status-paid: #22c55e;
   --status-cancelled: #ef4444;
+  --app-bg-image: url('assets/tradie-bg.png');
+  --app-haze-1: rgba(255,255,255,0.06);
+  --app-haze-top: rgba(2,6,23,0.45);
+  --app-haze-bottom: rgba(2,6,23,0.85);
 }
 
 * { box-sizing: border-box; }
@@ -105,7 +109,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background-image: url('assets/tradie-bg.png');
+  background-image: var(--app-bg-image);
   background-size: cover;
   background-position: center;
   filter: blur(18px) brightness(0.6) saturate(1.2);
@@ -117,8 +121,8 @@ body::after {
   content: '';
   position: fixed;
   inset: 0;
-  background: radial-gradient(1200px 800px at 12% 10%, rgba(255,255,255,0.06), rgba(255,255,255,0) 45%),
-              linear-gradient(180deg, rgba(2,6,23,0.45), rgba(2,6,23,0.85));
+  background: radial-gradient(1200px 800px at 12% 10%, var(--app-haze-1), rgba(255,255,255,0) 45%),
+              linear-gradient(180deg, var(--app-haze-top), var(--app-haze-bottom));
   z-index: -1;
 }
 

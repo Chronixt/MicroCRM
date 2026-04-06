@@ -7,8 +7,48 @@
   const BRAND_LOGO_ALT = productConfig.logoAlt || `${APP_NAME} logo`;
   const LOCK_TITLE = productConfig.lockTitle || `${APP_NAME} Locked`;
   const NATIVE_DRIVER_MODE_KEY = `${STORAGE_PREFIX}native_driver_mode`;
+  const RUNTIME_INFO = {
+    email: null
+  };
   
   console.log(`[App] Starting ${APP_NAME}`);
+
+  function deriveBrandPair(hex) {
+    const fallback = { brand: '#f59e0b', brand2: '#fbbf24' };
+    if (!hex || typeof hex !== 'string') return fallback;
+    var m = hex.trim().match(/^#?([a-fA-F0-9]{6})$/);
+    if (!m) return { brand: hex, brand2: hex };
+    var raw = m[1];
+    var r = parseInt(raw.slice(0, 2), 16);
+    var g = parseInt(raw.slice(2, 4), 16);
+    var b = parseInt(raw.slice(4, 6), 16);
+    var lighten = function (v) { return Math.max(0, Math.min(255, v + 28)); };
+    var toHex = function (v) { return v.toString(16).padStart(2, '0'); };
+    return {
+      brand: '#' + raw,
+      brand2: '#' + toHex(lighten(r)) + toHex(lighten(g)) + toHex(lighten(b))
+    };
+  }
+
+  function applyProductTheme() {
+    var root = document.documentElement;
+    var body = document.body;
+    var pair = deriveBrandPair(productConfig.themeColor || '#f59e0b');
+    root.style.setProperty('--brand', pair.brand);
+    root.style.setProperty('--brand-2', pair.brand2);
+    if (productConfig.activeProduct === 'hairdresser') {
+      root.style.setProperty('--app-bg-image', 'url("assets/beautician-bg.png")');
+      root.style.setProperty('--app-haze-1', 'rgba(34, 211, 238, 0.10)');
+      root.style.setProperty('--app-haze-top', 'rgba(8, 47, 73, 0.50)');
+      root.style.setProperty('--app-haze-bottom', 'rgba(8, 47, 73, 0.88)');
+    } else {
+      root.style.setProperty('--app-bg-image', 'url("assets/tradie-bg.png")');
+      root.style.setProperty('--app-haze-1', 'rgba(255,255,255,0.06)');
+      root.style.setProperty('--app-haze-top', 'rgba(2,6,23,0.45)');
+      root.style.setProperty('--app-haze-bottom', 'rgba(2,6,23,0.85)');
+    }
+    if (body) body.setAttribute('data-product', productConfig.activeProduct || 'core');
+  }
 
   function getNativeDriverMode() {
     const mode = localStorage.getItem(NATIVE_DRIVER_MODE_KEY) || 'adapter';
@@ -65,6 +105,125 @@
     const api = getDataApi();
     if (!api) throw new Error('Data API unavailable');
     return api;
+  }
+
+  async function ensureSupabaseAuthSession() {
+    if (!productConfig.useSupabase || !window.REQUIRE_LOGIN) return true;
+
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return false;
+    }
+
+    if (typeof api.getSession !== 'function' || typeof api.signInWithPassword !== 'function') {
+      return true;
+    }
+
+    try {
+      const existing = await api.getSession();
+      if (existing) {
+        RUNTIME_INFO.email = existing?.user?.email || null;
+        if (typeof api.claimUnownedData === 'function') {
+          try { await api.claimUnownedData(); } catch (e) {}
+        }
+        return true;
+      }
+    } catch (e) {}
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const email = window.prompt('Sign in required for Supabase.\nEmail:');
+      if (!email) return false;
+      const password = window.prompt('Password:');
+      if (password === null) return false;
+      try {
+        const session = await api.signInWithPassword(email.trim(), password);
+        if (session) {
+          RUNTIME_INFO.email = session?.user?.email || email.trim();
+          if (typeof api.claimUnownedData === 'function') {
+            try { await api.claimUnownedData(); } catch (e) {}
+          }
+          return true;
+        }
+      } catch (e) {
+        alert(`Login failed: ${e.message || e}`);
+      }
+    }
+
+    alert('Unable to sign in. Please reload and try again.');
+    return false;
+  }
+
+  async function refreshRuntimeUserInfo() {
+    RUNTIME_INFO.email = null;
+    if (!productConfig.useSupabase) return;
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return;
+    }
+    if (typeof api.getSession !== 'function') return;
+    try {
+      const session = await api.getSession();
+      RUNTIME_INFO.email = session?.user?.email || null;
+    } catch (e) {
+      RUNTIME_INFO.email = null;
+    }
+  }
+
+  async function signOutCurrentUser() {
+    if (!productConfig.useSupabase) return;
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return;
+    }
+    if (typeof api.signOut !== 'function') {
+      alert('Sign out is not available for this backend.');
+      return;
+    }
+    try {
+      await api.signOut();
+      RUNTIME_INFO.email = null;
+      alert('Signed out.');
+      window.location.reload();
+    } catch (e) {
+      alert(`Sign out failed: ${e.message || e}`);
+    }
+  }
+
+  function attachRuntimeBannerHandlers() {
+    const btns = document.querySelectorAll('[data-action=\"runtime-signout\"]');
+    btns.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = confirm('Sign out of Supabase now?');
+        if (!ok) return;
+        await signOutCurrentUser();
+      });
+    });
+  }
+
+  function runtimeBannerHtml() {
+    if (window.SHOW_ENV_BANNER === false) return '';
+    const env = window.APP_ENV_LABEL || 'LOCAL DEV';
+    const backend = productConfig.useSupabase ? 'SUPABASE' : 'INDEXEDDB';
+    const schema = productConfig.supabaseSchema || 'public';
+    const user = RUNTIME_INFO.email || 'not signed in';
+    const isTestUser = /test/i.test(user);
+    const toneBg = isTestUser ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)';
+    const toneBorder = isTestUser ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)';
+    const toneText = isTestUser ? '#a7f3d0' : '#fde68a';
+    const signOutButton = productConfig.useSupabase && RUNTIME_INFO.email
+      ? '<button type=\"button\" data-action=\"runtime-signout\" style=\"margin-left:8px;padding:2px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.15);color:inherit;font-size:11px;cursor:pointer;\">Sign Out</button>'
+      : '';
+    return `
+      <div class="runtime-banner" style="margin: 0 0 10px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid ${toneBorder}; background: ${toneBg}; color: ${toneText}; font-size: 12px; line-height: 1.35;">
+        <strong>${env}</strong> | ${APP_NAME} | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
+      </div>
+    `;
   }
 
   // Compatibility proxy: existing CrmDB calls now resolve through the active
@@ -802,6 +961,7 @@
     adjustSidebarOffset();
     attachLangToggleHandler();
     attachVerticalBackupHandler();
+    attachRuntimeBannerHandlers();
     
     // Show FAB on main pages (tradie edition only)
     if (isTradie()) {
@@ -831,6 +991,7 @@
             </div>
         </div>
         <div class="menu-content">
+          ${runtimeBannerHtml()}
           <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
               <div class="tile-icon" aria-hidden="true">➕</div>
@@ -1004,6 +1165,7 @@
           </nav>
         </aside>
         <section class="content">
+          ${runtimeBannerHtml()}
           <div class="content-toolbar" style="display: flex; align-items: center; gap: 12px;">
             ${isTradie() ? `
             <div class="global-search-container" style="flex: 1; max-width: 300px; position: relative;">
@@ -4975,6 +5137,22 @@
     let lastExportBlobUrl = null;
     let lastExportFileName = null;
     let loadedBackup = null;
+    const filterCustomerNotesForIds = (notesInput, allowedIds) => {
+      const allowed = new Set((allowedIds || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id)));
+      if (Array.isArray(notesInput)) {
+        return notesInput.filter((n) => allowed.has(Number(n?.customerId)));
+      }
+      if (notesInput && typeof notesInput === 'object') {
+        const out = {};
+        Object.keys(notesInput).forEach((cid) => {
+          const numId = Number(cid);
+          if (!allowed.has(numId)) return;
+          out[cid] = (notesInput[cid] || []).filter((n) => allowed.has(Number(n?.customerId ?? cid)));
+        });
+        return out;
+      }
+      return [];
+    };
     const isImagesOnlyBackup = (backup) => {
       if (!backup || typeof backup !== 'object') return false;
       const type = String(backup.__meta?.backupType || '').toLowerCase();
@@ -5200,7 +5378,7 @@
               customers: chunk, 
               appointments: chunkAppointments, 
               images: chunkImages,
-              customerNotes: loadedBackup.customerNotes || {} // Include customer notes
+              customerNotes: filterCustomerNotesForIds(loadedBackup.customerNotes || loadedBackup.notes || [], chunkCustomerIds)
             };
             
             await db.importAllData(payload, { mode });
@@ -5227,7 +5405,7 @@
           customers, 
           appointments, 
           images,
-          customerNotes: loadedBackup.customerNotes || {} // Include customer notes
+          customerNotes: filterCustomerNotesForIds(loadedBackup.customerNotes || loadedBackup.notes || [], selectedIds)
         };
         try {
           statusEl.textContent = 'Importing...';
@@ -5242,9 +5420,10 @@
     });
 
     wipeBtn.addEventListener('click', async () => {
-      if (!confirm('This will permanently delete all local data. Continue?')) return;
+      const wipeScope = productConfig.useSupabase ? 'all cloud data in Supabase for this profile' : 'all local data on this device';
+      if (!confirm(`This will permanently delete ${wipeScope}. Continue?`)) return;
       await db.clearAllStores();
-      alert('All local data deleted');
+      alert(productConfig.useSupabase ? 'All Supabase data deleted' : 'All local data deleted');
     });
 
     // Add event listener for refresh app button
@@ -6667,7 +6846,14 @@
 
   window.addEventListener('hashchange', render);
   window.addEventListener('load', async () => {
+    applyProductTheme();
     await initializeStorageDriverLayer();
+    const authReady = await ensureSupabaseAuthSession();
+    if (!authReady) {
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#ef4444;font-size:18px;">Sign-in required. Reload to try again.</div>';
+      return;
+    }
+    await refreshRuntimeUserInfo();
 
     // Check for app lock (tradie edition)
     if (isTradie()) {

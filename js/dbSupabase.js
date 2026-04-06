@@ -6,10 +6,26 @@
 (function () {
   'use strict';
 
-  var supabase = window.SupabaseClient;
   var config = window.ProductConfig || {};
   var STORAGE_PREFIX = config.storagePrefix || 'tradie_';
   var APP_SLUG = config.appSlug || 'tradie-crm';
+  var SUPABASE_SCHEMA = config.supabaseSchema || 'public';
+  var supabase = null;
+
+  function initSupabaseClient() {
+    if (window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
+      try {
+        return window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+          db: { schema: SUPABASE_SCHEMA }
+        });
+      } catch (e) {
+        console.warn('[dbSupabase] Failed to create schema-aware client, falling back to default client:', e && e.message ? e.message : e);
+      }
+    }
+    return window.SupabaseClient || null;
+  }
+
+  supabase = initSupabaseClient();
 
   if (!supabase) {
     console.error('[dbSupabase] SupabaseClient not found. Load supabaseClient.js first.');
@@ -17,7 +33,7 @@
     return;
   }
 
-  console.log('[dbSupabase] Using Supabase backend');
+  console.log('[dbSupabase] Using Supabase backend (schema: ' + SUPABASE_SCHEMA + ')');
 
   // ---- Key mapping: snake_case <-> camelCase ----
   function toSnakeKey(str) {
@@ -50,6 +66,36 @@
   function check(res) {
     if (res.error) throw new Error(res.error.message || 'Supabase error');
     return res;
+  }
+
+  async function getSession() {
+    var res = await supabase.auth.getSession();
+    check(res);
+    return res.data && res.data.session ? res.data.session : null;
+  }
+
+  async function signInWithPassword(email, password) {
+    var res = await supabase.auth.signInWithPassword({ email: email, password: password });
+    check(res);
+    return res.data && res.data.session ? res.data.session : null;
+  }
+
+  async function signOut() {
+    var res = await supabase.auth.signOut();
+    check(res);
+  }
+
+  function onAuthStateChange(callback) {
+    var res = supabase.auth.onAuthStateChange(function (event, session) {
+      if (typeof callback === 'function') callback(event, session);
+    });
+    return res && res.data ? res.data.subscription : null;
+  }
+
+  async function claimUnownedData() {
+    var res = await supabase.rpc('claim_unowned_data');
+    check(res);
+    return res.data;
   }
 
   // ---- Helpers (same as db.js for addImage) ----
@@ -506,8 +552,31 @@
       jobEvents: jobEvents
     };
   }
-  async function safeExportAllData() {
-    return exportAllData();
+  async function safeExportAllData(progressCallback) {
+    if (progressCallback) progressCallback('Starting backup...', 0);
+    var customers = await getAllCustomers();
+    if (progressCallback) progressCallback('Exported ' + customers.length + ' customers', 15);
+    var appointments = await getAllAppointments();
+    if (progressCallback) progressCallback('Exported ' + appointments.length + ' appointments', 30);
+    var notes = await getAllNotes();
+    if (progressCallback) progressCallback('Exported ' + notes.length + ' notes', 45);
+    var imgRes = await supabase.from('images').select('*');
+    var images = (imgRes.data || []).map(toCamel);
+    if (progressCallback) progressCallback('Exported ' + images.length + ' images', 75);
+    var reminders = await getAllReminders();
+    var jobEvents = await getAllJobEvents();
+    var payload = {
+      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString() },
+      customers: customers,
+      appointments: appointments,
+      customerNotes: notes,
+      images: images,
+      reminders: reminders,
+      jobEvents: jobEvents
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    if (progressCallback) progressCallback('Backup complete!', 100);
+    return { blob: blob, customers: customers, appointments: appointments, imageCount: images.length };
   }
   async function exportDataWithoutImages(progressCallback) {
     if (progressCallback) progressCallback('Preparing...', 10);
@@ -526,6 +595,19 @@
     }, null, 2)], { type: 'application/json' });
     if (progressCallback) progressCallback('Backup complete!', 100);
     return { blob: blob, customers: customers, appointments: appointments, imageCount: 0 };
+  }
+  async function exportImagesOnly(progressCallback) {
+    if (progressCallback) progressCallback('Starting images-only export...', 0);
+    var imgRes = await supabase.from('images').select('*');
+    var images = (imgRes.data || []).map(toCamel);
+    if (progressCallback) progressCallback('Exported ' + images.length + ' images', 70);
+    var payload = {
+      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      images: images
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    if (progressCallback) progressCallback('Images-only export complete!', 100);
+    return { blob: blob, imageCount: images.length };
   }
   async function importAllData(data, options) {
     if (!data || !data.customers) throw new Error('Invalid backup data');
@@ -554,11 +636,37 @@
       }
     }
     if (data.customerNotes || data.notes) {
-      var noteList = data.customerNotes || data.notes || [];
+      var noteInput = data.customerNotes || data.notes || [];
+      var noteList = [];
+      if (Array.isArray(noteInput)) {
+        noteList = noteInput;
+      } else if (noteInput && typeof noteInput === 'object') {
+        Object.keys(noteInput).forEach(function (cid) {
+          var list = noteInput[cid] || [];
+          if (!Array.isArray(list)) return;
+          list.forEach(function (note) {
+            if (note && typeof note === 'object') {
+              if (note.customerId == null) note.customerId = parseInt(cid, 10);
+              noteList.push(note);
+            }
+          });
+        });
+      }
       for (var n = 0; n < noteList.length; n++) {
         var note = noteList[n];
-        note.customerId = idMap[note.customerId] != null ? idMap[note.customerId] : note.customerId;
-        await createNote(note);
+        var originalCustomerId = parseInt(note.customerId, 10);
+        var mappedCustomerId = idMap[originalCustomerId] != null ? idMap[originalCustomerId] : originalCustomerId;
+        if (Number.isNaN(mappedCustomerId)) continue;
+        note.customerId = mappedCustomerId;
+        try {
+          await createNote(note);
+        } catch (e) {
+          if (String((e && e.message) || '').toLowerCase().indexOf('notes_customer_id_fkey') !== -1) {
+            console.warn('[dbSupabase] Skipping note import due to missing customer mapping:', note.id || null, originalCustomerId);
+            continue;
+          }
+          throw e;
+        }
       }
     }
     if (data.reminders) {
@@ -628,6 +736,11 @@
 
   // ---- Expose API ----
   var dbAPI = {
+    getSession: getSession,
+    signInWithPassword: signInWithPassword,
+    signOut: signOut,
+    onAuthStateChange: onAuthStateChange,
+    claimUnownedData: claimUnownedData,
     dbName: config.dbName || 'tradie-crm-db',
     storagePrefix: STORAGE_PREFIX,
     createCustomer: createCustomer,
@@ -685,6 +798,7 @@
     exportAllData: exportAllData,
     safeExportAllData: safeExportAllData,
     exportDataWithoutImages: exportDataWithoutImages,
+    exportImagesOnly: exportImagesOnly,
     importAllData: importAllData,
     clearAllStores: clearAllStores,
     getStorageStats: getStorageStats,

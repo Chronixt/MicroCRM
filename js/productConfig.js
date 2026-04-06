@@ -46,6 +46,12 @@
 
   var profile = profiles[selectedKey] || {};
   var config = mergeDeep(core.defaultConfig || {}, profile.config || {});
+  if (window.USE_SUPABASE !== undefined) {
+    config.useSupabase = !!window.USE_SUPABASE;
+  }
+  if (window.SUPABASE_SCHEMA) {
+    config.supabaseSchema = window.SUPABASE_SCHEMA;
+  }
   var productTranslations = {
     en: mergeDeep((core.defaultTranslations || {}).en || {}, (profile.translations || {}).en || {}),
     ja: mergeDeep((core.defaultTranslations || {}).ja || {}, (profile.translations || {}).ja || {})
@@ -113,7 +119,8 @@
     dbName: config.dbName,
     dbVersion: config.dbVersion,
     storagePrefix: config.storagePrefix,
-    useSupabase: config.useSupabase || false,
+    useSupabase: !!config.useSupabase,
+    supabaseSchema: config.supabaseSchema || 'public',
 
     serviceTypes: config.serviceTypes || [],
     referralTypes: config.referralTypes || [],

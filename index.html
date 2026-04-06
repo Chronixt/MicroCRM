@@ -50,7 +50,11 @@
     (function(){
       var cfg = window.ProductConfig || {};
       var useSupabase = !!cfg.useSupabase && !!window.SupabaseClient;
-      document.write('<script src="js/' + (useSupabase ? 'dbSupabase' : 'db') + '.js?v=1.0.6"><\/script>');
+      var moduleName = 'db';
+      if (useSupabase) {
+        moduleName = cfg.activeProduct === 'hairdresser' ? 'db-supabase' : 'dbSupabase';
+      }
+      document.write('<script src="js/' + moduleName + '.js?v=1.0.6"><\/script>');
     })();
     </script>
     <script src="js/storageDriver.js?v=1.0.0"></script>

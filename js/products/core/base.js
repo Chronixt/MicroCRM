@@ -16,6 +16,7 @@
       dbVersion: 1,
       storagePrefix: 'crm_',
       useSupabase: false,
+      supabaseSchema: 'public',
       entities: {
         customer: { singular: 'Customer', plural: 'Customers' },
         appointment: { singular: 'Appointment', plural: 'Appointments' },
