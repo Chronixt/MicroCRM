@@ -1,8 +1,10 @@
-const CACHE_NAME = 'chikas-db-v1.0.2';
+// TradieCRM Service Worker
+const CACHE_NAME = 'tradie-crm-v1.0.0';
 const urlsToCache = [
   '/',
   '/index.html',
   '/styles.css',
+  '/js/productConfig.js',
   '/js/app.js',
   '/js/db.js',
   '/assets/bg.jpg'
