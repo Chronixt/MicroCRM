@@ -106,8 +106,8 @@
                 
                 try {
                     // Try to access the main app's database
-                    if (window.parent && window.parent.ChikasDB) {
-                        const data = await window.parent.ChikasDB.exportAllData();
+                    if (window.parent && window.parent.CrmDB) {
+                        const data = await window.parent.CrmDB.exportAllData();
                         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');

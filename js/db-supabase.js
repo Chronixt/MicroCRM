@@ -658,6 +658,26 @@
     return { blob, customers, appointments, imageCount: 0 };
   }
 
+  async function exportImagesOnly(progressCallback = null) {
+    if (progressCallback) progressCallback('Starting images-only export...', 0);
+    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
+    const imagesSerialized = images.map((row) => ({
+      id: row.id,
+      customerId: row.customer_id,
+      name: row.name,
+      type: row.type,
+      createdAt: row.created_at,
+      dataUrl: row.data_url
+    }));
+    if (progressCallback) progressCallback('Creating images export file...', 85);
+    const blob = new Blob([JSON.stringify({
+      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      images: imagesSerialized
+    }, null, 2)], { type: 'application/json' });
+    if (progressCallback) progressCallback('Images-only export complete!', 100);
+    return { blob, imageCount: imagesSerialized.length };
+  }
+
   async function clearAllStores() {
     const supabase = getClient();
     // Preferred path: fast server-side TRUNCATE function (if migration is applied).
@@ -886,7 +906,7 @@
     }
   }
 
-  window.ChikasDBSupabase = {
+  const dbAPI = {
     getSession,
     signInWithPassword,
     signOut,
@@ -916,6 +936,7 @@
     exportAllData,
     safeExportAllData,
     exportDataWithoutImages,
+    exportImagesOnly,
     importAllData,
     clearAllStores,
     createNote,
@@ -929,4 +950,6 @@
     getNotePreviousVersion,
     restoreNoteToPreviousVersion
   };
+  window.ChikasDBSupabase = dbAPI;
+  window.CrmDB = dbAPI;
 })();

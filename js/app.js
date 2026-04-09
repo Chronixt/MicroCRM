@@ -1,4 +1,241 @@
 (function () {
+  // Get product configuration
+  const productConfig = window.ProductConfig || {};
+  const STORAGE_PREFIX = productConfig.storagePrefix || 'chikas_';
+  const APP_NAME = productConfig.appName || 'CRM';
+  const BRAND_LOGO_LIGHT = productConfig.logoLight || '/assets/icon-192.png';
+  const BRAND_LOGO_ALT = productConfig.logoAlt || `${APP_NAME} logo`;
+  const LOCK_TITLE = productConfig.lockTitle || `${APP_NAME} Locked`;
+  const NATIVE_DRIVER_MODE_KEY = `${STORAGE_PREFIX}native_driver_mode`;
+  const RUNTIME_INFO = {
+    email: null
+  };
+  
+  console.log(`[App] Starting ${APP_NAME}`);
+
+  function deriveBrandPair(hex) {
+    const fallback = { brand: '#f59e0b', brand2: '#fbbf24' };
+    if (!hex || typeof hex !== 'string') return fallback;
+    var m = hex.trim().match(/^#?([a-fA-F0-9]{6})$/);
+    if (!m) return { brand: hex, brand2: hex };
+    var raw = m[1];
+    var r = parseInt(raw.slice(0, 2), 16);
+    var g = parseInt(raw.slice(2, 4), 16);
+    var b = parseInt(raw.slice(4, 6), 16);
+    var lighten = function (v) { return Math.max(0, Math.min(255, v + 28)); };
+    var toHex = function (v) { return v.toString(16).padStart(2, '0'); };
+    return {
+      brand: '#' + raw,
+      brand2: '#' + toHex(lighten(r)) + toHex(lighten(g)) + toHex(lighten(b))
+    };
+  }
+
+  function applyProductTheme() {
+    var root = document.documentElement;
+    var body = document.body;
+    var pair = deriveBrandPair(productConfig.themeColor || '#f59e0b');
+    root.style.setProperty('--brand', pair.brand);
+    root.style.setProperty('--brand-2', pair.brand2);
+    if (productConfig.activeProduct === 'hairdresser') {
+      root.style.setProperty('--app-bg-image', 'url("assets/beautician-bg.png")');
+      root.style.setProperty('--app-haze-1', 'rgba(34, 211, 238, 0.10)');
+      root.style.setProperty('--app-haze-top', 'rgba(8, 47, 73, 0.50)');
+      root.style.setProperty('--app-haze-bottom', 'rgba(8, 47, 73, 0.88)');
+    } else {
+      root.style.setProperty('--app-bg-image', 'url("assets/tradie-bg.png")');
+      root.style.setProperty('--app-haze-1', 'rgba(255,255,255,0.06)');
+      root.style.setProperty('--app-haze-top', 'rgba(2,6,23,0.45)');
+      root.style.setProperty('--app-haze-bottom', 'rgba(2,6,23,0.85)');
+    }
+    if (body) body.setAttribute('data-product', productConfig.activeProduct || 'core');
+  }
+
+  function getNativeDriverMode() {
+    const mode = localStorage.getItem(NATIVE_DRIVER_MODE_KEY) || 'adapter';
+    return mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
+  }
+
+  function setNativeDriverMode(mode) {
+    const next = mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
+    localStorage.setItem(NATIVE_DRIVER_MODE_KEY, next);
+    return next;
+  }
+
+  async function initializeStorageDriverLayer() {
+    if (window.FileSystemDriver && typeof window.FileSystemDriver.init === 'function') {
+      try {
+        await window.FileSystemDriver.init();
+      } catch (error) {
+        console.warn('[Storage] FileSystemDriver init skipped:', error.message || error);
+      }
+    }
+
+    if (!window.StorageDriverFactory || typeof window.StorageDriverFactory.initializeFromDbApi !== 'function') {
+      return;
+    }
+    const dbApi = window.CrmDB;
+    if (!dbApi) return;
+    try {
+      const readiness = window.StorageDriverFactory.getNativeReadiness?.();
+      const backend = productConfig.useSupabase
+        ? (readiness?.isNative ? 'supabase-native' : 'supabase')
+        : (readiness?.isNative ? 'indexeddb-native' : 'indexeddb');
+      await window.StorageDriverFactory.initializeFromDbApi(dbApi, { backend });
+      const status = window.StorageDriverFactory.getStatus?.();
+      if (status?.initialized) {
+        console.log(`[Storage] Driver active: ${status.driver} (${status.backend})`);
+      }
+    } catch (error) {
+      console.warn('[Storage] Driver initialization skipped:', error.message || error);
+    }
+  }
+
+  function getDataApi() {
+    try {
+      const driver = window.StorageDriverFactory?.getDriver?.();
+      const api = driver?.getDatabase?.();
+      if (api) return api;
+    } catch (error) {
+      // Fall through to legacy globals
+    }
+    return window.CrmDB || null;
+  }
+
+  function requireDataApi() {
+    const api = getDataApi();
+    if (!api) throw new Error('Data API unavailable');
+    return api;
+  }
+
+  async function ensureSupabaseAuthSession() {
+    if (!productConfig.useSupabase || !window.REQUIRE_LOGIN) return true;
+
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return false;
+    }
+
+    if (typeof api.getSession !== 'function' || typeof api.signInWithPassword !== 'function') {
+      return true;
+    }
+
+    try {
+      const existing = await api.getSession();
+      if (existing) {
+        RUNTIME_INFO.email = existing?.user?.email || null;
+        if (typeof api.claimUnownedData === 'function') {
+          try { await api.claimUnownedData(); } catch (e) {}
+        }
+        return true;
+      }
+    } catch (e) {}
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const email = window.prompt('Sign in required for Supabase.\nEmail:');
+      if (!email) return false;
+      const password = window.prompt('Password:');
+      if (password === null) return false;
+      try {
+        const session = await api.signInWithPassword(email.trim(), password);
+        if (session) {
+          RUNTIME_INFO.email = session?.user?.email || email.trim();
+          if (typeof api.claimUnownedData === 'function') {
+            try { await api.claimUnownedData(); } catch (e) {}
+          }
+          return true;
+        }
+      } catch (e) {
+        alert(`Login failed: ${e.message || e}`);
+      }
+    }
+
+    alert('Unable to sign in. Please reload and try again.');
+    return false;
+  }
+
+  async function refreshRuntimeUserInfo() {
+    RUNTIME_INFO.email = null;
+    if (!productConfig.useSupabase) return;
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return;
+    }
+    if (typeof api.getSession !== 'function') return;
+    try {
+      const session = await api.getSession();
+      RUNTIME_INFO.email = session?.user?.email || null;
+    } catch (e) {
+      RUNTIME_INFO.email = null;
+    }
+  }
+
+  async function signOutCurrentUser() {
+    if (!productConfig.useSupabase) return;
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return;
+    }
+    if (typeof api.signOut !== 'function') {
+      alert('Sign out is not available for this backend.');
+      return;
+    }
+    try {
+      await api.signOut();
+      RUNTIME_INFO.email = null;
+      alert('Signed out.');
+      window.location.reload();
+    } catch (e) {
+      alert(`Sign out failed: ${e.message || e}`);
+    }
+  }
+
+  function attachRuntimeBannerHandlers() {
+    const btns = document.querySelectorAll('[data-action=\"runtime-signout\"]');
+    btns.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = confirm('Sign out of Supabase now?');
+        if (!ok) return;
+        await signOutCurrentUser();
+      });
+    });
+  }
+
+  function runtimeBannerHtml() {
+    if (window.SHOW_ENV_BANNER === false) return '';
+    const env = window.APP_ENV_LABEL || 'LOCAL DEV';
+    const backend = productConfig.useSupabase ? 'SUPABASE' : 'INDEXEDDB';
+    const schema = productConfig.supabaseSchema || 'public';
+    const user = RUNTIME_INFO.email || 'not signed in';
+    const isTestUser = /test/i.test(user);
+    const toneBg = isTestUser ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)';
+    const toneBorder = isTestUser ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)';
+    const toneText = isTestUser ? '#a7f3d0' : '#fde68a';
+    const signOutButton = productConfig.useSupabase && RUNTIME_INFO.email
+      ? '<button type=\"button\" data-action=\"runtime-signout\" style=\"margin-left:8px;padding:2px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.15);color:inherit;font-size:11px;cursor:pointer;\">Sign Out</button>'
+      : '';
+    return `
+      <div class="runtime-banner" style="margin: 0 0 10px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid ${toneBorder}; background: ${toneBg}; color: ${toneText}; font-size: 12px; line-height: 1.35;">
+        <strong>${env}</strong> | ${APP_NAME} | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
+      </div>
+    `;
+  }
+
+  // Compatibility proxy: existing CrmDB calls now resolve through the active
+  // storage driver first (IndexedDB/Supabase today, SQLite later).
+  const CrmDB = new Proxy({}, {
+    get(_target, prop) {
+      const api = requireDataApi();
+      const value = api[prop];
+      return typeof value === 'function' ? value.bind(api) : value;
+    }
+  });
+  
   // Check for force update parameter
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('force') === 'true' || urlParams.get('v')) {
@@ -18,7 +255,7 @@
 
   // Smart Backup System - Check if daily backup is needed
   function checkDailyBackup() {
-    const lastBackup = localStorage.getItem('chikas_last_backup');
+    const lastBackup = localStorage.getItem(`${STORAGE_PREFIX}last_backup`);
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
@@ -30,7 +267,7 @@
 
   function showBackupReminder() {
     // Don't show if already showing or if user dismissed today
-    const dismissedToday = localStorage.getItem('chikas_backup_dismissed_today');
+    const dismissedToday = localStorage.getItem(`${STORAGE_PREFIX}backup_dismissed_today`);
     const today = new Date().toDateString();
     
     if (dismissedToday === today) {
@@ -55,7 +292,7 @@
       font-weight: 500;
     `;
 
-    const lastBackup = localStorage.getItem('chikas_last_backup');
+    const lastBackup = localStorage.getItem(`${STORAGE_PREFIX}last_backup`);
     const daysSinceBackup = lastBackup ? 
       Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 
       'unknown';
@@ -101,7 +338,7 @@
       
       if (dismissBtn) {
         dismissBtn.addEventListener('click', () => {
-          localStorage.setItem('chikas_backup_dismissed_today', today);
+          localStorage.setItem(`${STORAGE_PREFIX}backup_dismissed_today`, today);
           reminderBanner.remove();
         });
       } else {
@@ -111,14 +348,338 @@
     // Fallback: Use event delegation for the dismiss button
     document.addEventListener('click', (e) => {
       if (e.target && e.target.id === 'dismiss-backup-btn') {
-        localStorage.setItem('chikas_backup_dismissed_today', today);
+        localStorage.setItem(`${STORAGE_PREFIX}backup_dismissed_today`, today);
         reminderBanner.remove();
       }
     });
   }
 
+  // ============================================================================
+  // PRO FEATURES: APP LOCK & BACKUP REMINDERS
+  // ============================================================================
+
+  async function showPinLockScreen(hashedPin) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'pin-lock-overlay';
+      overlay.style.cssText = 'position: fixed; inset: 0; background: var(--bg, #1a1a2e); z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;';
+      
+      overlay.innerHTML = `
+        <div style="text-align: center; max-width: 300px;">
+          <div style="font-size: 48px; margin-bottom: 20px;">🔒</div>
+          <h2 style="margin: 0 0 8px 0; color: white;">${LOCK_TITLE}</h2>
+          <p style="margin: 0 0 24px 0; color: #94a3b8; font-size: 14px;">Enter your 4-digit PIN to unlock</p>
+          <input type="password" id="unlock-pin-input" placeholder="• • • •" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 12px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;" />
+          <button id="unlock-btn" style="width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; font-weight: 600; background: var(--brand, #f59e0b); color: white; border: none; border-radius: 12px; cursor: pointer;">Unlock</button>
+          <p id="pin-error" style="color: #ef4444; margin-top: 12px; font-size: 13px; display: none;">Incorrect PIN. Please try again.</p>
+        </div>
+      `;
+      
+      document.body.appendChild(overlay);
+      
+      const pinInput = document.getElementById('unlock-pin-input');
+      const unlockBtn = document.getElementById('unlock-btn');
+      const errorMsg = document.getElementById('pin-error');
+      
+      setTimeout(() => pinInput.focus(), 100);
+      
+      const attemptUnlock = () => {
+        const enteredPin = pinInput.value.trim();
+        const enteredHash = btoa(enteredPin + 'tradie_salt');
+        
+        if (enteredHash === hashedPin) {
+          overlay.remove();
+          resolve(true);
+        } else {
+          errorMsg.style.display = 'block';
+          pinInput.value = '';
+          pinInput.focus();
+        }
+      };
+      
+      unlockBtn.addEventListener('click', attemptUnlock);
+      pinInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') attemptUnlock();
+      });
+    });
+  }
+
+  function checkBackupReminder() {
+    const frequency = localStorage.getItem(`${STORAGE_PREFIX}backup_reminder_frequency`);
+    if (!frequency || frequency === 'off') return;
+    
+    const nextReminderStr = localStorage.getItem(`${STORAGE_PREFIX}next_backup_reminder`);
+    if (!nextReminderStr) return;
+    
+    const nextReminder = new Date(nextReminderStr);
+    const now = new Date();
+    
+    if (now >= nextReminder) {
+      // Show reminder after a short delay
+      setTimeout(() => {
+        const shouldBackup = confirm('It\'s time for your scheduled backup! Would you like to create a backup now?');
+        
+        if (shouldBackup) {
+          // Navigate to backup page
+          navigate('/backup');
+        }
+        
+        // Schedule next reminder
+        let nextDate;
+        if (frequency === 'weekly') {
+          nextDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        } else if (frequency === 'monthly') {
+          nextDate = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+        }
+        
+        if (nextDate) {
+          localStorage.setItem(`${STORAGE_PREFIX}next_backup_reminder`, nextDate.toISOString());
+        }
+      }, 2000);
+    }
+  }
+
+  async function loadStorageStats() {
+    const container = document.getElementById('storage-meter-container');
+    if (!container) return;
+    
+    try {
+      const db = getDataApi();
+      if (!db || typeof db.getStorageStats !== 'function') {
+        container.innerHTML = '<div class="muted" style="font-size: 12px;">Storage info unavailable</div>';
+        return;
+      }
+      const stats = await db.getStorageStats();
+      
+      let statusColor = '#22c55e'; // green
+      let statusText = 'Healthy';
+      if (stats.isCritical) {
+        statusColor = '#ef4444'; // red
+        statusText = 'Critical - consider deleting some photos';
+      } else if (stats.isWarning) {
+        statusColor = '#f97316'; // orange
+        statusText = 'High usage - consider cleaning up';
+      }
+
+      const needsAttention = stats.isWarning || stats.isCritical;
+      const attentionTitle = stats.isCritical ? 'Storage Critical' : 'Storage Warning';
+      const attentionBg = stats.isCritical ? 'rgba(239,68,68,0.12)' : 'rgba(249,115,22,0.12)';
+      const attentionBorder = stats.isCritical ? 'rgba(239,68,68,0.35)' : 'rgba(249,115,22,0.35)';
+      const attentionText = stats.isCritical
+        ? 'You are close to the limit. Export and remove old photos to avoid failures.'
+        : 'Usage is getting high. Consider a data-only backup and cleaning up older photos.';
+      
+      container.innerHTML = `
+        <div style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+            <span>${stats.imageCount} photos</span>
+            <span>${stats.totalMB} MB used</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden;">
+            <div style="background: ${statusColor}; height: 100%; width: ${stats.usagePercent}%; transition: width 0.3s;"></div>
+          </div>
+          <div style="font-size: 11px; color: ${statusColor}; margin-top: 4px;">
+            ${statusText} (${stats.usagePercent}% of ~50MB limit)
+          </div>
+        </div>
+        ${needsAttention ? `
+        <div style="background: ${attentionBg}; border: 1px solid ${attentionBorder}; border-radius: 8px; padding: 10px; margin-top: 8px;">
+          <div style="font-size: 13px; font-weight: 700; color: ${statusColor}; margin-bottom: 6px;">${attentionTitle}</div>
+          <div style="font-size: 12px; color: var(--text); margin-bottom: 10px;">${attentionText}</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="storage-export-lite-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Export Data Only</button>
+            <button id="storage-cleanup-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Review Customer Photos</button>
+          </div>
+        </div>
+        ` : ''}
+      `;
+
+      const storageExportLiteBtn = document.getElementById('storage-export-lite-btn');
+      if (storageExportLiteBtn) {
+        storageExportLiteBtn.addEventListener('click', () => {
+          const exportLiteBtn = document.getElementById('export-lite-btn');
+          if (exportLiteBtn) {
+            exportLiteBtn.click();
+          } else {
+            alert('Data-only export is only available on the Options page.');
+          }
+        });
+      }
+
+      const storageCleanupBtn = document.getElementById('storage-cleanup-btn');
+      if (storageCleanupBtn) {
+        storageCleanupBtn.addEventListener('click', () => {
+          navigate('/find');
+          alert('Open a customer and remove older photos you no longer need.');
+        });
+      }
+    } catch (error) {
+      console.error('Error loading storage stats:', error);
+      container.innerHTML = '<div class="muted" style="font-size: 12px;">Could not calculate storage</div>';
+    }
+  }
+
+  async function confirmImageStorageCapacity(fileList, label = 'photos') {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return true;
+
+    try {
+      const db = getDataApi();
+      if (!db || typeof db.getStorageStats !== 'function') return true;
+
+      const stats = await db.getStorageStats();
+      const storageLimitBytes = 50 * 1024 * 1024;
+      // Rough estimate: compressed image footprint + storage overhead.
+      const estimatedIncomingBytes = files.reduce((sum, file) => sum + (file.size || 0), 0) * 0.55;
+      const projectedBytes = Number(stats.totalBytes || 0) + estimatedIncomingBytes;
+      const projectedPercent = (projectedBytes / storageLimitBytes) * 100;
+      const projectedMb = (projectedBytes / (1024 * 1024)).toFixed(1);
+
+      if (projectedPercent >= 100) {
+        alert(
+          `Storage limit risk detected.\n\n` +
+          `Current usage: ${stats.totalMB} MB\n` +
+          `Projected usage after adding ${files.length} ${label}: ~${projectedMb} MB\n\n` +
+          `Please backup and delete old photos before adding more.`
+        );
+        return false;
+      }
+
+      if (projectedPercent >= 85 || stats.isWarning || stats.isCritical) {
+        return confirm(
+          `Storage warning:\n\n` +
+          `Current usage: ${stats.totalMB} MB (${stats.usagePercent}%)\n` +
+          `Projected after this upload: ~${projectedMb} MB (${projectedPercent.toFixed(1)}%)\n\n` +
+          `Continue adding ${files.length} ${label}?`
+        );
+      }
+    } catch (error) {
+      console.warn('Could not check storage capacity before upload:', error);
+    }
+
+    return true;
+  }
+
+  let googlePlacesLoadPromise = null;
+  async function loadGooglePlacesApi() {
+    if (window.google?.maps?.places?.Autocomplete) return true;
+    if (googlePlacesLoadPromise) return googlePlacesLoadPromise;
+
+    const apiKey = window.GOOGLE_PLACES_API_KEY;
+    if (!apiKey) return false;
+
+    googlePlacesLoadPromise = new Promise((resolve) => {
+      const existing = document.querySelector('script[data-google-places="true"]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(!!window.google?.maps?.places?.Autocomplete), { once: true });
+        existing.addEventListener('error', () => resolve(false), { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.dataset.googlePlaces = 'true';
+      script.onload = () => resolve(!!window.google?.maps?.places?.Autocomplete);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+
+    return googlePlacesLoadPromise;
+  }
+
+  function getAddressComponent(components, type, key = 'long_name') {
+    const comp = (components || []).find(c => Array.isArray(c.types) && c.types.includes(type));
+    return comp ? (comp[key] || '') : '';
+  }
+
+  async function attachAddressAutocomplete(form) {
+    if (!isTradie()) return;
+    if (window.ADDRESS_LOOKUP_ENABLED === false) return;
+    if ((window.ADDRESS_LOOKUP_PROVIDER || 'google') !== 'google') return;
+
+    const line1Input = form?.querySelector('input[name="addressLine1"]');
+    const suburbInput = form?.querySelector('input[name="suburb"]');
+    const stateInput = form?.querySelector('select[name="state"]');
+    const postcodeInput = form?.querySelector('input[name="postcode"]');
+    if (!line1Input || line1Input.dataset.autocompleteBound === 'true') return;
+
+    const loaded = await loadGooglePlacesApi();
+    if (!loaded || !window.google?.maps?.places?.Autocomplete) return;
+
+    const countryCodes = String(window.ADDRESS_LOOKUP_COUNTRY_CODES || 'au')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    const options = {
+      fields: ['address_components', 'formatted_address', 'name'],
+    };
+    if (countryCodes.length > 0) {
+      options.componentRestrictions = { country: countryCodes };
+    }
+
+    const autocomplete = new window.google.maps.places.Autocomplete(line1Input, options);
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      const components = place?.address_components || [];
+      if (!components.length) return;
+
+      const subpremise = getAddressComponent(components, 'subpremise');
+      const premise = getAddressComponent(components, 'premise');
+      const streetNumber = getAddressComponent(components, 'street_number');
+      const route = getAddressComponent(components, 'route');
+
+      let streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim();
+      if (subpremise) {
+        streetAddress = streetAddress ? `${subpremise}/${streetAddress}` : subpremise;
+      } else if (!streetAddress && premise) {
+        streetAddress = premise;
+      }
+
+      if (!streetAddress) {
+        const formatted = (place?.formatted_address || '').split(',')[0].trim();
+        streetAddress = formatted || (place?.name || '').trim();
+      }
+
+      if (streetAddress) {
+        line1Input.value = streetAddress;
+      }
+
+      const suburb =
+        getAddressComponent(components, 'locality') ||
+        getAddressComponent(components, 'postal_town') ||
+        getAddressComponent(components, 'sublocality_level_1') ||
+        getAddressComponent(components, 'administrative_area_level_2');
+      if (suburbInput && suburb) {
+        suburbInput.value = suburb;
+      }
+
+      const state = getAddressComponent(components, 'administrative_area_level_1', 'short_name');
+      if (stateInput && state) {
+        const upper = state.toUpperCase();
+        if (Array.from(stateInput.options).some(opt => opt.value === upper)) {
+          stateInput.value = upper;
+        }
+      }
+
+      const postcode = getAddressComponent(components, 'postal_code');
+      if (postcodeInput && postcode) {
+        postcodeInput.value = postcode;
+      }
+    });
+
+    line1Input.dataset.autocompleteBound = 'true';
+  }
+
   async function performDailyBackup() {
     try {
+      const db = getDataApi();
+      if (!db || typeof db.exportDataWithoutImages !== 'function') {
+        alert('Backup is unavailable in the current storage mode.');
+        return;
+      }
       // Show loading state
       const backupBtn = document.getElementById('backup-now-btn');
       if (backupBtn) {
@@ -127,7 +688,7 @@
       }
 
       // Perform lightweight backup
-      const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+      const result = await db.exportDataWithoutImages((message, progress) => {
       });
 
       // Create and download backup
@@ -135,14 +696,14 @@
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `chikas-daily-backup-${timestamp}.json`;
+      a.download = `${productConfig.appSlug || 'crm'}-daily-backup-${timestamp}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
       // Update last backup time
-      localStorage.setItem('chikas_last_backup', new Date().toISOString());
+      localStorage.setItem(`${STORAGE_PREFIX}last_backup`, new Date().toISOString());
       
       // Show success message
       const reminderBanner = document.getElementById('backup-reminder');
@@ -172,7 +733,7 @@
   // Register Service Worker for PWA functionality
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js?v=1.0.2')
+      navigator.serviceWorker.register('/sw.js?v=1.0.2')
         .then((registration) => {
           
           // Check for updates every time the app loads
@@ -199,149 +760,13 @@
 
   const appRoot = document.getElementById('app');
   const modalRoot = document.getElementById('modal-root');
-  let authSession = null;
-  let authSubscription = null;
-  const CLAIMED_USER_KEY = 'chikas_claimed_user_id';
-
-  function isSupabaseLoginRequired() {
-    return !!(window.USE_SUPABASE && window.REQUIRE_LOGIN && window.ChikasDB && typeof window.ChikasDB.getSession === 'function');
-  }
-
-  function authToolbarHtml() {
-    if (!isSupabaseLoginRequired() || !authSession) return '';
-    const userEmail = (authSession.user && authSession.user.email) ? authSession.user.email : 'Signed in';
-    return `
-      <button id="sign-out-btn" class="lang-btn" title="${escapeHtml(userEmail)}">Sign out</button>
-    `;
-  }
-
-  function renderLoginView(errorMessage = '') {
-    const errorHtml = errorMessage ? `<div class="muted" style="color:#ef4444; margin-bottom:10px;">${escapeHtml(errorMessage)}</div>` : '';
-    appRoot.innerHTML = `
-      <div class="layout">
-        <section class="content" style="max-width: 480px; margin: 40px auto;">
-          <div class="card">
-            <h2 style="margin-top:0;">Sign in</h2>
-            <div class="muted" style="margin-bottom: 10px;">Use your Supabase account to access your CRM data.</div>
-            ${errorHtml}
-            <form id="login-form" class="form">
-              <div>
-                <label>Email</label>
-                <input type="email" name="email" autocomplete="username" required />
-              </div>
-              <div>
-                <label>Password</label>
-                <input type="password" name="password" autocomplete="current-password" required />
-              </div>
-              <div class="row">
-                <button id="login-btn" class="button" type="submit">Sign In</button>
-              </div>
-            </form>
-          </div>
-        </section>
-      </div>
-    `;
-
-    const loginForm = document.getElementById('login-form');
-    const loginBtn = document.getElementById('login-btn');
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const form = new FormData(loginForm);
-      const email = String(form.get('email') || '').trim();
-      const password = String(form.get('password') || '');
-      if (!email || !password) return;
-      loginBtn.disabled = true;
-      loginBtn.textContent = 'Signing in...';
-      try {
-        await ChikasDB.signInWithPassword(email, password);
-        authSession = await ChikasDB.getSession();
-        if (authSession && authSession.user && authSession.user.id) {
-          localStorage.removeItem(CLAIMED_USER_KEY);
-        }
-        await render();
-      } catch (err) {
-        renderLoginView(err && err.message ? err.message : 'Sign in failed');
-      } finally {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Sign In';
-      }
-    });
-  }
-
-  async function ensureAuthenticated() {
-    if (!isSupabaseLoginRequired()) return true;
-
-    if (!authSubscription && typeof ChikasDB.onAuthStateChange === 'function') {
-      authSubscription = ChikasDB.onAuthStateChange((_event, session) => {
-        authSession = session || null;
-        if (!authSession) localStorage.removeItem(CLAIMED_USER_KEY);
-      });
-    }
-
-    try {
-      authSession = await ChikasDB.getSession();
-      if (!authSession) {
-        renderLoginView();
-        return false;
-      }
-
-      const userId = authSession.user && authSession.user.id;
-      const claimedUserId = localStorage.getItem(CLAIMED_USER_KEY);
-      if (userId && claimedUserId !== userId && typeof ChikasDB.claimUnownedData === 'function') {
-        try {
-          await ChikasDB.claimUnownedData();
-        } catch (err) {
-          const msg = err && err.message ? err.message : '';
-          // Allow login to continue if RPC is not deployed yet.
-          if (msg && msg.toLowerCase().includes('claim_unowned_data')) {
-          } else {
-            throw err;
-          }
-        }
-        localStorage.setItem(CLAIMED_USER_KEY, userId);
-      }
-      return true;
-    } catch (err) {
-      renderLoginView(err && err.message ? err.message : 'Authentication error');
-      return false;
-    }
-  }
-
-  function attachAuthHandler() {
-    const btn = document.getElementById('sign-out-btn');
-    if (!btn) return;
-    btn.addEventListener('click', async () => {
-      try {
-        await ChikasDB.signOut();
-      } catch (err) {
-      } finally {
-        authSession = null;
-        localStorage.removeItem(CLAIMED_USER_KEY);
-        renderLoginView();
-      }
-    });
-  }
-
-  // Restrict contact number inputs to digits, + ( ) and space
-  appRoot.addEventListener('input', function (e) {
-    const el = e.target;
-    if (el && el.nodeName === 'INPUT' && el.getAttribute('name') === 'contactNumber') {
-      var start = el.selectionStart;
-      var oldVal = el.value;
-      var newVal = oldVal.replace(/[^\d+() ]/g, '');
-      if (newVal !== oldVal) {
-        el.value = newVal;
-        var pos = Math.min(start, newVal.length);
-        el.setSelectionRange(pos, pos);
-      }
-    }
-  });
 
   const routes = {
     '/': renderMenu,
     '/add': renderAddRecord,
     '/find': renderFind,
     '/calendar': renderCalendar,
+    '/follow-ups': renderFollowUps,
     '/backup': renderBackup,
     '/customer': renderCustomer, // expects id query ?id=123
     '/customer-edit': renderCustomerEdit,
@@ -359,8 +784,6 @@
         newCustomer: 'New Customer', newAppointment: 'New Appointment', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
       firstName: 'First Name', lastName: 'Last Name', contactNumber: 'Contact Number', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'Social Media Name', socialMediaNamePlaceholder: 'Enter social media username',
       referralType: 'Referral Type', referralNotes: 'Referral notes', referralNotesPlaceholder: 'Details related to referral', notes: 'Notes', attachImages: 'Attach Images',
-      address: 'Address', addressLookup: 'Address lookup', addressLookupPlaceholder: 'Search address (optional)',
-      addressLine1: 'Address line 1', addressLine2: 'Address line 2', suburb: 'Suburb', state: 'State', postcode: 'Postcode', country: 'Country',
       save: 'Save', saveChanges: 'Save Changes', cancel: 'Cancel', open: 'Open', select: 'Select',
       walkIn: 'Walk in', friend: 'Friend', instagram: 'Instagram', website: 'Website', googleMaps: 'Google Maps', other: 'Other',
       addNotes: 'Add notes', edit: 'Edit', images: 'Images', contact: 'Contact', referral: 'Referral', noNotesAdded: 'No notes added',
@@ -387,8 +810,6 @@
         newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
       firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
       referralType: '紹介区分', referralNotes: '紹介メモ', referralNotesPlaceholder: '紹介に関する詳細', notes: 'ノート', attachImages: '画像を追加',
-      address: '住所', addressLookup: '住所検索', addressLookupPlaceholder: '住所を検索（任意）',
-      addressLine1: '住所1', addressLine2: '住所2', suburb: '市区町村', state: '都道府県', postcode: '郵便番号', country: '国',
       save: '保存', saveChanges: '変更を保存', cancel: 'キャンセル', open: '開く', select: '選択',
       walkIn: '飛び込み', friend: '友人', instagram: 'インスタ', website: 'ウェブサイト', googleMaps: 'Googleマップ', other: 'その他',
       addNotes: 'ノート追加', edit: '編集', images: '画像', contact: '連絡先', referral: '紹介', noNotesAdded: 'ノートはありません',
@@ -409,13 +830,19 @@
   };
 
   function getLang() {
-    return localStorage.getItem('chikas_lang') || 'en';
+    return localStorage.getItem(`${STORAGE_PREFIX}lang`) || 'en';
   }
   function setLang(lang) {
-    localStorage.setItem('chikas_lang', lang);
+    localStorage.setItem(`${STORAGE_PREFIX}lang`, lang);
   }
   function t(key) {
     const lang = getLang();
+    // First check product-specific translations
+    if (productConfig.getProductTranslation) {
+      const productTrans = productConfig.getProductTranslation(key, lang);
+      if (productTrans) return productTrans;
+    }
+    // Fall back to base translations
     return (translations[lang] && translations[lang][key]) || translations.en[key] || key;
   }
   function formatReferralType(value) {
@@ -430,23 +857,67 @@
     }
   }
 
-  function formatCustomerAddress(customer) {
-    const line1 = (customer.addressLine1 || '').trim();
-    const line2 = (customer.addressLine2 || '').trim();
-    const suburb = (customer.suburb || '').trim();
-    const state = (customer.state || '').trim();
-    const postcode = (customer.postcode || '').trim();
-    const country = (customer.country || '').trim();
-
-    const suburbStatePostcode = [suburb, state, postcode].filter(Boolean).join(' ');
-    const parts = [line1, line2, suburbStatePostcode, country].filter(Boolean);
-    return parts.length ? parts.join(', ') : '—';
-  }
-
   function getInitials(firstName, lastName) {
     const first = (firstName || '').charAt(0).toUpperCase();
     const last = (lastName || '').charAt(0).toUpperCase();
     return first + last;
+  }
+
+  // Generate service/booking type checkboxes from ProductConfig
+  function generateServiceTypeOptions(className) {
+    const serviceTypes = productConfig.serviceTypes || [];
+    const lang = getLang();
+    return serviceTypes.map(s => {
+      const label = lang === 'ja' ? (s.labelJa || s.label) : s.label;
+      return `<label class="check"><input type="checkbox" value="${s.label}" class="${className}" /> ${label}</label>`;
+    }).join('\n                  ');
+  }
+
+  // Get service type labels array (for backward compatibility)
+  function getBookingTypes() {
+    return (productConfig.serviceTypes || []).map(s => s.label);
+  }
+
+  // Generate duration options from ProductConfig
+  function generateDurationOptions() {
+    const options = productConfig.durationOptions || [30, 45, 60, 90, 120, 150, 180];
+    const defaultDuration = productConfig.defaultDuration || 60;
+    return options.map(mins => {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      let label;
+      if (hours === 0) {
+        label = `${mins} mins`;
+      } else if (remainingMins === 0) {
+        label = hours === 1 ? '1 hour' : `${hours} hours`;
+      } else {
+        label = `${hours}.5 hours`;
+      }
+      const selected = mins === defaultDuration ? ' selected' : '';
+      return `<option value="${mins}"${selected}>${label}</option>`;
+    }).join('\n                    ');
+  }
+
+  // Generate job status options (for tradie edition)
+  function generateStatusOptions(currentStatus) {
+    const statuses = productConfig.statuses || [];
+    return statuses.map(s => {
+      const selected = s.id === currentStatus ? ' selected' : '';
+      return `<option value="${s.id}"${selected}>${s.label}</option>`;
+    }).join('\n');
+  }
+
+  // Get status badge HTML
+  function getStatusBadge(statusId) {
+    const statuses = productConfig.statuses || [];
+    const status = statuses.find(s => s.id === statusId) || statuses[0];
+    if (!status) return '';
+    return `<span class="job-status-badge status-${status.id.replace('_', '-')}">${status.label}</span>`;
+  }
+
+  // Check if we're in tradie mode
+  function isTradie() {
+    return productConfig.activeProduct === 'tradie';
   }
 
   function navigate(path) {
@@ -471,9 +942,6 @@
   }
 
   async function render() {
-    const authenticated = await ensureAuthenticated();
-    if (!authenticated) return;
-
     const path = currentPath();
     const [base, queryString] = path.split('?');
     const query = new URLSearchParams(queryString || '');
@@ -484,11 +952,25 @@
     
     appRoot.innerHTML = '';
     await view({ query });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const contentEl = appRoot.querySelector('.content');
+    if (contentEl) {
+      contentEl.scrollTo({ top: 0, behavior: 'auto' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
     adjustSidebarOffset();
     attachLangToggleHandler();
     attachVerticalBackupHandler();
-    attachAuthHandler();
+    attachRuntimeBannerHandlers();
+    
+    // Show FAB on main pages (tradie edition only)
+    if (isTradie()) {
+      const fabPages = ['/', '/find', '/calendar', '/follow-ups', '/customer'];
+      renderFAB(fabPages.includes(base), base);
+      
+      // Attach global search handler
+      attachGlobalSearchHandler();
+    }
     
     // Check if daily backup is needed (only on main pages)
     if (base === '/' || base === '/find' || base === '/calendar') {
@@ -504,12 +986,12 @@
       <div class="menu-container">
         <div class="menu-toolbar">
           <div class="lang-toolbar-group">
-            <img src="assets/CRMicro_logo_beautician_light.png" alt="CRMicro Beautician logo" class="toolbar-logo" />
-            <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
-            ${authToolbarHtml()}
-          </div>
+              <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
+              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
+            </div>
         </div>
         <div class="menu-content">
+          ${runtimeBannerHtml()}
           <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
               <div class="tile-icon" aria-hidden="true">➕</div>
@@ -522,6 +1004,10 @@
             <a class="menu-tile" href="#/calendar" aria-label="Calendar">
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
+            </a>
+            <a class="menu-tile" href="#/follow-ups" aria-label="Follow-ups">
+              <div class="tile-icon" aria-hidden="true">🔔</div>
+              <div class="tile-label">Follow-ups</div>
             </a>
             <a class="menu-tile" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
@@ -574,7 +1060,7 @@
       const today = new Date();
       
       // Use the new optimized function instead of loading all appointments
-      const todaysAppointments = await ChikasDB.getAppointmentsForDate(today);
+      const todaysAppointments = await CrmDB.getAppointmentsForDate(today);
       
       // Sort by time
       const sortedAppointments = todaysAppointments.sort((a, b) => {
@@ -591,7 +1077,7 @@
           const appointmentsWithCustomers = await Promise.all(
             sortedAppointments.map(async (apt) => {
               try {
-                const customer = await ChikasDB.getCustomerById(apt.customerId);
+                const customer = await CrmDB.getCustomerById(apt.customerId);
                 return {
                   ...apt,
                   customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : 'Unknown Customer'
@@ -664,6 +1150,10 @@
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
+            <a class="menu-tile small" href="#/follow-ups" aria-label="Follow-ups">
+              <div class="tile-icon" aria-hidden="true">🔔</div>
+              <div class="tile-label">Follow-ups</div>
+            </a>
             <a class="menu-tile small" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
@@ -675,11 +1165,18 @@
           </nav>
         </aside>
         <section class="content">
-          <div class="content-toolbar">
+          ${runtimeBannerHtml()}
+          <div class="content-toolbar" style="display: flex; align-items: center; gap: 12px;">
+            ${isTradie() ? `
+            <div class="global-search-container" style="flex: 1; max-width: 300px; position: relative;">
+              <input type="text" id="global-search-input" placeholder="Search customers, jobs..." style="width: 100%; padding: 6px 32px 6px 12px; font-size: 13px; border-radius: 6px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text);" />
+              <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+              <div id="global-search-results" class="search-results-dropdown" style="display: none;"></div>
+            </div>
+            ` : ''}
             <div class="lang-toolbar-group">
-              <img src="assets/CRMicro_logo_beautician_light.png" alt="CRMicro Beautician logo" class="toolbar-logo" />
-              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '日本語' : 'English'}</button>
-              ${authToolbarHtml()}
+              <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
+              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
             </div>
           </div>
           ${contentHtml}
@@ -704,92 +1201,77 @@
               <label>${t('firstName')}</label>
               <div class="input-with-button">
                 <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="firstName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="firstName" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('lastName')}</label>
               <div class="input-with-button">
                 <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="lastName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="lastName" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
           <div>
             <label>${t('contactNumber')}</label>
             <div class="input-with-button">
-              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" pattern="[\d+() ]*" maxlength="20" />
-              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
+              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
+              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
+          ${isTradie() ? `
+          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <strong style="font-size: 14px;">📍 Address</strong>
+            <div style="margin-top: 12px;">
+              <label style="font-size: 12px;">Street Address</label>
+              <input type="text" name="addressLine1" placeholder="123 Main Street" />
+            </div>
+            <div class="grid-2" style="margin-top: 8px;">
+              <div>
+                <label style="font-size: 12px;">Suburb</label>
+                <input type="text" name="suburb" placeholder="Suburb" />
+              </div>
+              <div class="grid-2">
+                <div>
+                  <label style="font-size: 12px;">State</label>
+                  <select name="state">
+                    <option value="">-</option>
+                    <option value="NSW">NSW</option>
+                    <option value="VIC">VIC</option>
+                    <option value="QLD">QLD</option>
+                    <option value="WA">WA</option>
+                    <option value="SA">SA</option>
+                    <option value="TAS">TAS</option>
+                    <option value="ACT">ACT</option>
+                    <option value="NT">NT</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px;">Postcode</label>
+                  <input type="text" name="postcode" placeholder="0000" maxlength="4" />
+                </div>
+              </div>
+            </div>
+          </div>
+          ` : `
           <div>
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
               <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
+          `}
           <div>
             <label>Referral</label>
             <div class="input-with-button">
               <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Handwrite">✏️</button>
-            </div>
-          </div>
-          <div>
-            <label>${t('address')}</label>
-            <input type="text" name="addressLookup" placeholder="${t('addressLookupPlaceholder')}" inputmode="text" autocomplete="off" />
-            <div class="address-lookup-results" data-address-lookup-results></div>
-          </div>
-          <div>
-            <label>${t('addressLine1')}</label>
-            <div class="input-with-button">
-              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Handwrite">✏️</button>
-            </div>
-          </div>
-          <div>
-            <label>${t('addressLine2')}</label>
-            <div class="input-with-button">
-              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Handwrite">✏️</button>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('suburb')}</label>
-              <div class="input-with-button">
-                <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="suburb" title="Handwrite">✏️</button>
-              </div>
-            </div>
-            <div>
-              <label>${t('state')}</label>
-              <div class="input-with-button">
-                <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="state" title="Handwrite">✏️</button>
-              </div>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('postcode')}</label>
-              <div class="input-with-button">
-                <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="postcode" title="Handwrite">✏️</button>
-              </div>
-            </div>
-            <div>
-              <label>${t('country')}</label>
-              <div class="input-with-button">
-                <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="country" title="Handwrite">✏️</button>
-              </div>
+              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>${t('notes')}</label>
-            <button type="button" class="add-note-btn" style="background: var(--brand); color: black; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
             <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
           <div>
@@ -803,48 +1285,40 @@
       </div>
     `);
 
+    await attachAddressAutocomplete(document.getElementById('new-form'));
+
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      fullscreenNotesCanvas.show();
+      textNotesOverlay.show('temp-new-customer');
     });
     
     // Load any existing temporary notes for new customer
     loadExistingNotes('temp-new-customer');
     
-    // Add handwriting functionality for text inputs
+    // Text input buttons - focus on input to trigger keyboard
     document.querySelectorAll('.input-icon-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const fieldName = btn.dataset.field;
         const input = document.querySelector(`input[name="${fieldName}"]`);
-        const currentValue = input.value;
-        
-        // Get field label for modal title
-        const label = input.closest('.input-with-button').previousElementSibling.textContent;
-        
-        showHandwritingModal(`Handwrite ${label}`, currentValue, (newValue) => {
-          // Extract plain text from HTML (in case user used formatting)
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = newValue;
-          input.value = tempDiv.textContent || tempDiv.innerText || '';
-        });
+        if (input) {
+          input.focus();
+          // Move cursor to end
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
       });
     });
-
-    initializeAddressLookup(document.getElementById('new-form'));
     
     document.getElementById('save-btn').addEventListener('click', async () => {
       const form = document.getElementById('new-form');
       const firstName = form.querySelector('input[name="firstName"]').value.trim();
       const lastName = form.querySelector('input[name="lastName"]').value.trim();
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
-      const socialMediaName = form.querySelector('input[name="socialMediaName"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
-      const addressLine1 = form.querySelector('input[name="addressLine1"]').value.trim();
-      const addressLine2 = form.querySelector('input[name="addressLine2"]').value.trim();
-      const suburb = form.querySelector('input[name="suburb"]').value.trim();
-      const state = form.querySelector('input[name="state"]').value.trim();
-      const postcode = form.querySelector('input[name="postcode"]').value.trim();
-      const country = form.querySelector('input[name="country"]').value.trim();
+      const socialMediaName = isTradie() ? '' : (form.querySelector('input[name="socialMediaName"]')?.value?.trim() || '');
+      const addressLine1 = isTradie() ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
+      const suburb = isTradie() ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
+      const state = isTradie() ? (form.querySelector('select[name="state"]')?.value || '') : '';
+      const postcode = isTradie() ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
@@ -856,42 +1330,44 @@
 
       const customer = {
         firstName, lastName, contactNumber, socialMediaName, referralNotes,
-        addressLine1, addressLine2, suburb, state, postcode, country,
         notesImageData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      if (isTradie()) {
+        customer.addressLine1 = addressLine1;
+        customer.suburb = suburb;
+        customer.state = state;
+        customer.postcode = postcode;
+      }
 
-      const newId = await ChikasDB.createCustomer(customer);
+      const newId = await CrmDB.createCustomer(customer);
 
-      // Transfer any temporary notes from 'temp-new-customer' to the real customer (database or localStorage)
+      // Persist any temporary notes from 'temp-new-customer' into the DB, then clear localStorage
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
       const tempNotes = existingNotes['temp-new-customer'] || [];
-      delete existingNotes['temp-new-customer'];
       if (tempNotes.length > 0) {
-        try {
-          for (let i = 0; i < tempNotes.length; i++) {
-            const note = tempNotes[i];
-            await ChikasDB.createNote({
-              customerId: newId,
-              svg: note.svg,
-              date: note.date || formatDateYYYYMMDD(new Date()),
-              noteNumber: (i + 1),
-              createdAt: note.createdAt || formatDateYYYYMMDD(new Date()),
-              editedDate: note.editedDate,
-              source: 'indexeddb-fallback'
-            });
-          }
-        } catch (e) {
-          console.warn('Could not push temp notes to database, keeping in localStorage:', e.message);
-          existingNotes[newId] = tempNotes;
+        for (let i = 0; i < tempNotes.length; i++) {
+          const note = tempNotes[i];
+          await CrmDB.createNote({
+            customerId: newId,
+            text: note.text || note.content,
+            svg: note.svg || null,
+            date: note.date,
+            noteNumber: note.noteNumber != null ? note.noteNumber : i + 1,
+            createdAt: note.createdAt || new Date().toISOString(),
+            updatedAt: note.updatedAt || new Date().toISOString()
+          });
         }
+        delete existingNotes['temp-new-customer'];
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
       }
 
       if (imageFiles && imageFiles.length > 0) {
-        const entries = await ChikasDB.fileListToEntries(imageFiles);
-        await ChikasDB.addImages(newId, entries);
+        const canUpload = await confirmImageStorageCapacity(imageFiles, 'customer photos');
+        if (!canUpload) return;
+        const entries = await CrmDB.fileListToEntries(imageFiles);
+        await CrmDB.addImages(newId, entries);
       }
 
       navigate(`/customer?id=${encodeURIComponent(newId)}`);
@@ -969,13 +1445,13 @@
         suggestedSection.classList.add('hidden');
         return;
       }
-      const customers = await ChikasDB.searchCustomers(query);
+      const customers = await CrmDB.searchCustomers(query);
       if (customers.length === 0) {
         resultsEl.innerHTML = `<div class="muted">${t('noMatchesFound')}</div>`;
       } else {
         // Use optimized query to get only future appointments
         const now = new Date().toISOString();
-        const futureAppts = await ChikasDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
+        const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
         const nextByCustomer = new Map();
         futureAppts.forEach((a) => {
           const start = new Date(a.start);
@@ -996,7 +1472,7 @@
           <div class=\"list-item\" data-id=\"${c.id}\"> 
             <div>
               <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
             </div>
             ${rightHtml}
           </div>`;
@@ -1016,11 +1492,11 @@
 
     async function refreshRecents() {
       // Use the new optimized function for recent customers
-      const customers = await ChikasDB.getRecentCustomers(10);
+      const customers = await CrmDB.getRecentCustomers(10);
       
       // Use optimized query to get only future appointments
       const now = new Date().toISOString();
-      const futureAppts = await ChikasDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
+      const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
       const nextByCustomer = new Map();
       futureAppts.forEach((a) => {
         const start = new Date(a.start);
@@ -1041,7 +1517,7 @@
         <div class=\"list-item\" data-id=\"${c.id}\"> 
           <div>
             <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
           </div>
           ${rightHtml}
         </div>`;
@@ -1075,7 +1551,7 @@
     // Function to load and display all customers
     async function loadAllCustomers() {
       try {
-        let allCustomers = await ChikasDB.getAllCustomers();
+        let allCustomers = await CrmDB.getAllCustomers();
         
 
         
@@ -1087,7 +1563,7 @@
         
         {
           const now = new Date();
-          const allAppts = await ChikasDB.getAllAppointments();
+          const allAppts = await CrmDB.getAllAppointments();
           const nextByCustomer = new Map();
           allAppts.forEach((a) => {
             const start = new Date(a.start);
@@ -1108,7 +1584,7 @@
             <div class=\"list-item\" data-first-letter=\"${(c.firstName || '').charAt(0).toUpperCase()}\" data-id=\"${c.id}\"> 
               <div>
                 <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : ''}</div>
+                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
               </div>
               ${rightHtml}
             </div>`;
@@ -1158,7 +1634,7 @@
   async function renderCustomer({ query }) {
     const id = Number(query.get('id'));
     if (!id) return renderNotFound();
-    const customer = await ChikasDB.getCustomerById(id);
+    const customer = await CrmDB.getCustomerById(id);
     if (!customer) return renderNotFound();
     
     // Store customer ID globally for notes system
@@ -1169,7 +1645,8 @@
       <div class="card customer-view">
         <div class="view-header">
           <h2 class="customer-title" style="text-align: left; font-size: 24px; margin: 0; padding-left: 16px;">👤 ${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
-          <div class="view-actions">
+          <div class="view-actions" style="display: flex; gap: 8px;">
+            <button id="reminder-btn" class="edit-btn-custom" title="Set Follow-up" aria-label="Set Follow-up" style="background: rgba(251,191,36,0.2); border: 2px solid rgba(251,191,36,0.4); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">🔔</button>
             <button id="edit-btn" class="edit-btn-custom" title="Edit" aria-label="Edit" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">✏️</button>
           </div>
         </div>
@@ -1205,19 +1682,11 @@
                 </div>
               </div>
               <div>
-                <label>Booking type</label>
+                <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : 'Booking type'}</label>
                 <div class="multi-select" id="appt-type-dropdown">
                   <div id="appt-type-display" class="multi-select-display" tabindex="0">${t('noneSelected')}</div>
                   <div class="dropdown-menu hidden" id="appt-type-menu">
-                                      <label class="check"><input type="checkbox" value="Cut" class="appt-type-opt" /> Cut</label>
-                  <label class="check"><input type="checkbox" value="Colour" class="appt-type-opt" /> Colour</label>
-                  <label class="check"><input type="checkbox" value="Touch up" class="appt-type-opt" /> Touch up</label>
-                  <label class="check"><input type="checkbox" value="Treatment" class="appt-type-opt" /> Treatment</label>
-                  <label class="check"><input type="checkbox" value="Bleach colour" class="appt-type-opt" /> Bleach colour</label>
-                  <label class="check"><input type="checkbox" value="Head Spa" class="appt-type-opt" /> Head Spa</label>
-                  <label class="check"><input type="checkbox" value="Perm" class="appt-type-opt" /> Perm</label>
-                  <label class="check"><input type="checkbox" value="Straightening" class="appt-type-opt" /> Straightening</label>
-                  <label class="check"><input type="checkbox" value="Fringe cut" class="appt-type-opt" /> Fringe cut</label>
+                  ${generateServiceTypeOptions('appt-type-opt')}
                   </div>
                 </div>
               </div>
@@ -1230,14 +1699,43 @@
 
         <div class="detail-list">
           <div class="detail-item"><span class="detail-icon">📞</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || '—')}</span></div>
-          <div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>
+          ${!isTradie() ? `<div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>` : ''}
           <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
-          <div class="detail-item"><span class="detail-icon">🏠</span><span class="detail-label">${t('address')}</span><span class="detail-value">${escapeHtml(formatCustomerAddress(customer))}</span></div>
+          ${isTradie() && customer.preferredContactMethod ? `
+          <div class="detail-item"><span class="detail-icon">❤️</span><span class="detail-label">Preferred Contact</span><span class="detail-value">${escapeHtml(customer.preferredContactMethod === 'phone' ? 'Phone Call' : customer.preferredContactMethod === 'sms' ? 'SMS' : customer.preferredContactMethod === 'email' ? 'Email' : customer.preferredContactMethod)}</span></div>
+          ` : ''}
         </div>
+
+        ${isTradie() && (customer.addressLine1 || customer.suburb) ? `
+        <div class="address-section" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <h3 style="margin: 0 0 8px 0; font-size: 14px;">📍 Address</h3>
+              <div style="font-size: 14px; line-height: 1.5;">
+                ${customer.addressLine1 ? escapeHtml(customer.addressLine1) + '<br>' : ''}
+                ${customer.suburb ? escapeHtml(customer.suburb) : ''}${customer.state ? ' ' + escapeHtml(customer.state) : ''}${customer.postcode ? ' ' + escapeHtml(customer.postcode) : ''}
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="copy-address-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Copy Address">📋 Copy</button>
+              <button id="open-maps-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Open in Maps">🗺️ Maps</button>
+            </div>
+          </div>
+        </div>
+        ` : ''}
+
+        ${isTradie() ? `
+        <div class="recent-activity" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px;">📋 Recent Activity</h3>
+          <div id="customer-recent-activity">
+            <div class="muted" style="font-size: 12px; text-align: center;">Loading...</div>
+          </div>
+        </div>
+        ` : ''}
 
         <div class="notes-view">
           <h3 style="margin:0 0 6px 0;">Notes</h3>
-          <button type="button" class="add-note-btn" style="background: var(--brand); color: black; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+          <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
           <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
         </div>
 
@@ -1245,10 +1743,6 @@
           <h3 style="margin:0;">Images</h3>
           <div id="no-images-message" class="muted" style="margin-top:10px; display: none;">No images uploaded</div>
           <div id="image-grid" class="image-grid" style="margin-top:10px;"></div>
-        </div>
-        
-        <div class="customer-view-actions-bottom">
-          <button id="delete-btn" class="icon-btn delete" title="Delete customer" aria-label="Delete customer" style="color: #dc3545;">🗑️</button>
         </div>
       </div>
     `);
@@ -1261,14 +1755,20 @@
     
     // Cleanup function to prevent memory leaks
     function cleanupImageCache() {
-      window.currentImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentImageCache.forEach(url => {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
       window.currentImageCache.clear();
     }
     
     async function renderImageThumbHtml(img) {
       try {
         
-        if (!img.blob || img.blob.size === 0) {
+        const hasBlob = !!(img.blob && img.blob.size > 0);
+        const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
         
@@ -1279,17 +1779,19 @@
             // Check if we're on iPad Safari and use dataURL directly as fallback
             const isIpadSafari = /iPad/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
             
-            if (isIpadSafari && img.dataUrl) {
+            if (isIpadSafari && hasDataUrl) {
               // Use dataURL directly for iPad Safari (more reliable)
               url = img.dataUrl;
-            } else {
+            } else if (hasBlob) {
               // Use object URL for other browsers
               url = URL.createObjectURL(img.blob);
+            } else {
+              url = img.dataUrl;
             }
             window.currentImageCache.set(img.id, url);
           } catch (urlError) {
             // Fallback to dataURL if available
-            if (img.dataUrl) {
+            if (hasDataUrl) {
               url = img.dataUrl;
             } else {
               return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Failed to create image URL</div>`;
@@ -1309,7 +1811,7 @@
     }
     
     async function refreshImages() {
-      const imgs = await ChikasDB.getImagesByCustomerId(id);
+      const imgs = await CrmDB.getImagesByCustomerId(id);
       const noImagesMessage = document.getElementById('no-images-message');
       
       if (imgs.length === 0) {
@@ -1405,14 +1907,14 @@
     
     // Add note button event listener
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      fullscreenNotesCanvas.show();
+      textNotesOverlay.show(id);
     });
 
     // Load next appointment
     async function loadNextAppointment() {
       try {
         // Use the new optimized function instead of loading all appointments
-        const futureAppointments = await ChikasDB.getFutureAppointmentsForCustomer(id);
+        const futureAppointments = await CrmDB.getFutureAppointmentsForCustomer(id);
         
         const nextAppointmentContent = document.getElementById('next-appointment-content');
         
@@ -1474,9 +1976,11 @@
       const endISO = new Date(new Date(roundedStartLocal).getTime() + durationMin * 60000).toISOString();
       const typeLabel = types.length ? types.join(' + ') : '';
       const fullName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim();
-      const title = typeLabel || 'Appointment';
-      const appt = { customerId: id, title, start: startISO, end: endISO, createdAt: new Date().toISOString() };
-      const appointmentId = await ChikasDB.createAppointment(appt);
+      const title = typeLabel || (isTradie() ? 'Job' : 'Appointment');
+      // Get default status (first status in pipeline, or 'scheduled' for hairdresser, 'lead' for tradie)
+      const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
+      const appt = { customerId: id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() };
+      const appointmentId = await CrmDB.createAppointment(appt);
       alert(t('appointmentBooked'));
       
       // Refresh the Next Appointment block to show the newly created appointment
@@ -1532,27 +2036,71 @@
       navigate(`/customer-edit?id=${encodeURIComponent(id)}`);
     });
 
-    // Delete customer functionality
-    document.getElementById('delete-btn').addEventListener('click', async () => {
-      const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'this customer';
-      if (!confirm(`Are you sure you want to delete ${customerName}? This will also delete all their appointments and images. This action cannot be undone.`)) {
-        return;
+    // Reminder button functionality
+    document.getElementById('reminder-btn')?.addEventListener('click', () => {
+      openCreateReminderModal(id, null);
+    });
+
+    // Load recent activity for tradie edition
+    if (isTradie()) {
+      loadCustomerRecentActivity(id);
+      
+      // Address buttons
+      const copyAddressBtn = document.getElementById('copy-address-btn');
+      if (copyAddressBtn) {
+        copyAddressBtn.addEventListener('click', () => {
+          const addressParts = [
+            customer.addressLine1,
+            customer.suburb,
+            customer.state,
+            customer.postcode
+          ].filter(p => p);
+          const fullAddress = addressParts.join(', ');
+          
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(fullAddress).then(() => {
+              copyAddressBtn.textContent = '✓ Copied';
+              setTimeout(() => {
+                copyAddressBtn.innerHTML = '📋 Copy';
+              }, 2000);
+            });
+          } else {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = fullAddress;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            copyAddressBtn.textContent = '✓ Copied';
+            setTimeout(() => {
+              copyAddressBtn.innerHTML = '📋 Copy';
+            }, 2000);
+          }
+        });
       }
       
-      try {
-        await ChikasDB.deleteCustomer(id);
-        alert('Customer deleted successfully');
-        navigate('/find');
-      } catch (error) {
-        alert('Error deleting customer. Please try again.');
+      const openMapsBtn = document.getElementById('open-maps-btn');
+      if (openMapsBtn) {
+        openMapsBtn.addEventListener('click', () => {
+          const addressParts = [
+            customer.addressLine1,
+            customer.suburb,
+            customer.state,
+            customer.postcode
+          ].filter(p => p);
+          const fullAddress = addressParts.join(', ');
+          const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(fullAddress);
+          window.open(mapsUrl, '_blank');
+        });
       }
-    });
-  }
+    }
+}
 
   async function renderCustomerEdit({ query }) {
     const id = Number(query.get('id'));
     if (!id) return renderNotFound();
-    const customer = await ChikasDB.getCustomerById(id);
+    const customer = await CrmDB.getCustomerById(id);
     if (!customer) return renderNotFound();
     
     // Store customer ID globally for notes system
@@ -1571,92 +2119,90 @@
               <label>First Name</label>
               <div class="input-with-button">
                 <input type="text" name="firstName" />
-                <button type="button" class="input-icon-btn" data-field="firstName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="firstName" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>Last Name</label>
               <div class="input-with-button">
                 <input type="text" name="lastName" />
-                <button type="button" class="input-icon-btn" data-field="lastName" title="Handwrite">✏️</button>
+                <button type="button" class="input-icon-btn" data-field="lastName" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
           <div>
             <label>Contact Number</label>
             <div class="input-with-button">
-              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" pattern="[\d+() ]*" maxlength="20" />
-              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Handwrite">✏️</button>
+              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
+              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
+          ${!isTradie() ? `
           <div>
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
               <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
+          ` : ''}
           <div>
             <label>Referral</label>
             <div class="input-with-button">
               <input type="text" name="referralNotes" />
-              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Handwrite">✏️</button>
+              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
-          <div>
-            <label>${t('address')}</label>
-            <input type="text" name="addressLookup" placeholder="${t('addressLookupPlaceholder')}" inputmode="text" autocomplete="off" />
-            <div class="address-lookup-results" data-address-lookup-results></div>
-          </div>
-          <div>
-            <label>${t('addressLine1')}</label>
-            <div class="input-with-button">
-              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" />
-              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Handwrite">✏️</button>
+          
+          ${isTradie() ? `
+          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <strong style="font-size: 14px;">📍 Address</strong>
+            <div style="margin-top: 12px;">
+              <label style="font-size: 12px;">Street Address</label>
+              <input type="text" name="addressLine1" placeholder="123 Main Street" />
             </div>
-          </div>
-          <div>
-            <label>${t('addressLine2')}</label>
-            <div class="input-with-button">
-              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" />
-              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Handwrite">✏️</button>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('suburb')}</label>
-              <div class="input-with-button">
-                <input type="text" name="suburb" placeholder="${t('suburb')}" />
-                <button type="button" class="input-icon-btn" data-field="suburb" title="Handwrite">✏️</button>
+            <div class="grid-2" style="margin-top: 8px;">
+              <div>
+                <label style="font-size: 12px;">Suburb</label>
+                <input type="text" name="suburb" placeholder="Suburb" />
               </div>
-            </div>
-            <div>
-              <label>${t('state')}</label>
-              <div class="input-with-button">
-                <input type="text" name="state" placeholder="${t('state')}" />
-                <button type="button" class="input-icon-btn" data-field="state" title="Handwrite">✏️</button>
-              </div>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('postcode')}</label>
-              <div class="input-with-button">
-                <input type="text" name="postcode" placeholder="${t('postcode')}" />
-                <button type="button" class="input-icon-btn" data-field="postcode" title="Handwrite">✏️</button>
-              </div>
-            </div>
-            <div>
-              <label>${t('country')}</label>
-              <div class="input-with-button">
-                <input type="text" name="country" placeholder="${t('country')}" />
-                <button type="button" class="input-icon-btn" data-field="country" title="Handwrite">✏️</button>
+              <div class="grid-2">
+                <div>
+                  <label style="font-size: 12px;">State</label>
+                  <select name="state">
+                    <option value="">-</option>
+                    <option value="NSW">NSW</option>
+                    <option value="VIC">VIC</option>
+                    <option value="QLD">QLD</option>
+                    <option value="WA">WA</option>
+                    <option value="SA">SA</option>
+                    <option value="TAS">TAS</option>
+                    <option value="ACT">ACT</option>
+                    <option value="NT">NT</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px;">Postcode</label>
+                  <input type="text" name="postcode" placeholder="0000" maxlength="4" />
+                </div>
               </div>
             </div>
           </div>
+          
+          <div style="margin-top: 12px;">
+            <label style="font-size: 12px;">Preferred Contact Method</label>
+            <select name="preferredContactMethod">
+              <option value="">No preference</option>
+              <option value="phone">📞 Phone Call</option>
+              <option value="sms">💬 SMS</option>
+              <option value="email">✉️ Email</option>
+            </select>
+          </div>
+          ` : ''}
+          
           <div>
             <label>Notes</label>
-            <button type="button" class="add-note-btn" style="background: var(--brand); color: black; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
+            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
             <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
           
@@ -1673,52 +2219,57 @@
           <div class="row" style="margin-top: 10px;">
             <button class="button" id="save-btn">${t('saveChanges')}</button>
             <a class="button secondary" href="#/customer?id=${encodeURIComponent(id)}">${t('cancel')}</a>
+            <button class="button secondary" id="delete-customer-btn" style="background: rgba(220,53,69,0.12); border-color: rgba(220,53,69,0.5); color: #ff7f8a;">Delete Customer</button>
           </div>
         </div>
       </div>
     `);
 
     const form = document.getElementById('customer-form');
+    await attachAddressAutocomplete(form);
     setInputValue(form, 'firstName', customer.firstName || '');
     setInputValue(form, 'lastName', customer.lastName || '');
     setInputValue(form, 'contactNumber', customer.contactNumber || '');
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
-    setInputValue(form, 'addressLine1', customer.addressLine1 || '');
-    setInputValue(form, 'addressLine2', customer.addressLine2 || '');
-    setInputValue(form, 'suburb', customer.suburb || '');
-    setInputValue(form, 'state', customer.state || '');
-    setInputValue(form, 'postcode', customer.postcode || '');
-    setInputValue(form, 'country', customer.country || '');
+    
+    // Set tradie-specific fields
+    if (isTradie()) {
+      setInputValue(form, 'addressLine1', customer.addressLine1 || '');
+      setInputValue(form, 'suburb', customer.suburb || '');
+      setInputValue(form, 'postcode', customer.postcode || '');
+      
+      // Set select values
+      const stateSelect = form.querySelector('select[name="state"]');
+      if (stateSelect && customer.state) {
+        stateSelect.value = customer.state;
+      }
+      const contactMethodSelect = form.querySelector('select[name="preferredContactMethod"]');
+      if (contactMethodSelect && customer.preferredContactMethod) {
+        contactMethodSelect.value = customer.preferredContactMethod;
+      }
+    }
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      fullscreenNotesCanvas.show();
+      textNotesOverlay.show(customer.id);
     });
     
     // Load existing notes
     loadExistingNotes(customer.id);
     
-    // Add handwriting functionality for text inputs
+    // Text input buttons - focus on input to trigger keyboard
     document.querySelectorAll('.input-icon-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const fieldName = btn.dataset.field;
         const input = document.querySelector(`input[name="${fieldName}"]`);
-        const currentValue = input.value;
-        
-        // Get field label for modal title
-        const label = input.closest('.input-with-button').previousElementSibling.textContent;
-        
-        showHandwritingModal(`Handwrite ${label}`, currentValue, (newValue) => {
-          // Extract plain text from HTML (in case user used formatting)
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = newValue;
-          input.value = tempDiv.textContent || tempDiv.innerText || '';
-        });
+        if (input) {
+          input.focus();
+          // Move cursor to end
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
       });
     });
-
-    initializeAddressLookup(form);
 
     // Load and display existing images
     const existingImagesGrid = document.getElementById('existing-images-grid');
@@ -1728,20 +2279,26 @@
     
     // Cleanup function for edit view
     function cleanupEditImageCache() {
-      window.currentEditImageCache.forEach(url => URL.revokeObjectURL(url));
+      window.currentEditImageCache.forEach(url => {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
       window.currentEditImageCache.clear();
     }
     
     async function renderImageThumbHtml(img) {
       try {
-        if (!img.blob || img.blob.size === 0) {
+        const hasBlob = !!(img.blob && img.blob.size > 0);
+        const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
         
         // Use cached URL if available
         let url = window.currentEditImageCache.get(img.id);
         if (!url) {
-          url = URL.createObjectURL(img.blob);
+          url = hasBlob ? URL.createObjectURL(img.blob) : img.dataUrl;
           window.currentEditImageCache.set(img.id, url);
         }
         
@@ -1757,7 +2314,7 @@
     
     async function loadExistingImages() {
       try {
-        const imgs = await ChikasDB.getImagesByCustomerId(id);
+        const imgs = await CrmDB.getImagesByCustomerId(id);
         if (imgs.length === 0) {
           existingImagesGrid.innerHTML = '<div class="muted">No images uploaded yet</div>';
           return;
@@ -1865,26 +2422,29 @@
         contactNumber: getInputValue(form, 'contactNumber').trim(),
         socialMediaName: getInputValue(form, 'socialMediaName').trim(),
         referralNotes: getInputValue(form, 'referralNotes').trim(),
-        addressLine1: getInputValue(form, 'addressLine1').trim(),
-        addressLine2: getInputValue(form, 'addressLine2').trim(),
-        suburb: getInputValue(form, 'suburb').trim(),
-        state: getInputValue(form, 'state').trim(),
-        postcode: getInputValue(form, 'postcode').trim(),
-        country: getInputValue(form, 'country').trim(),
         notesImageData: hasNotes ? notesImageData : '',
         updatedAt: new Date().toISOString(),
       };
       
+      // Add tradie-specific address fields
+      if (isTradie()) {
+        updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
+        updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
+        updated.state = form.querySelector('select[name="state"]')?.value || '';
+        updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
+        updated.preferredContactMethod = form.querySelector('select[name="preferredContactMethod"]')?.value || '';
+      }
+      
       try {
-        await ChikasDB.updateCustomer(updated);
+        await CrmDB.updateCustomer(updated);
         
         // Handle new image uploads
         const imageFiles = form.querySelector('input[name="images"]').files;
         if (imageFiles && imageFiles.length > 0) {
-          const entries = await ChikasDB.fileListToEntries(imageFiles);
+          const entries = await CrmDB.fileListToEntries(imageFiles);
           // Process images one by one to avoid transaction timeout
           for (const entry of entries) {
-            await ChikasDB.addImage(id, entry);
+            await CrmDB.addImage(id, entry);
           }
         }
         
@@ -1892,6 +2452,21 @@
       } catch (error) {
         console.error('Error saving customer:', error);
         alert(`Error saving customer: ${error.message || 'Please try again.'}`);
+      }
+    });
+
+    document.getElementById('delete-customer-btn').addEventListener('click', async () => {
+      const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'this customer';
+      if (!confirm(`Are you sure you want to delete ${customerName}? This will also delete all their appointments and images. This action cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        await CrmDB.deleteCustomer(id);
+        alert('Customer deleted successfully');
+        navigate('/find');
+      } catch (error) {
+        alert('Error deleting customer. Please try again.');
       }
     });
   }
@@ -1904,28 +2479,46 @@
     
     appRoot.innerHTML = wrapWithSidebar(`
         <div class="space-between" style="margin-bottom: 8px;">
-          <h2>${t('calendar')}</h2>
-          <button id="new-appointment-btn" style="
-            background: var(--brand);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 8px 16px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s ease;
-          ">
-            <span>+</span>
-            <span>${t('newAppointment')}</span>
-          </button>
+          <h2>${isTradie() ? 'Jobs' : t('calendar')}</h2>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            ${isTradie() ? `
+            <div class="view-toggle" style="display: flex; gap: 4px;">
+              <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">Calendar</button>
+              <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">Pipeline</button>
+            </div>
+            <div class="payment-filters" style="display: flex; gap: 4px;">
+              <button id="filter-all-btn" class="button" style="padding: 6px 10px; font-size: 11px;">All</button>
+              <button id="filter-needs-invoice-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">📄 Needs Invoice</button>
+              <button id="filter-unpaid-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">💰 Unpaid</button>
+            </div>
+            ` : ''}
+            <button id="new-appointment-btn" style="
+              background: var(--brand);
+              color: white;
+              border: none;
+              border-radius: 8px;
+              padding: 8px 16px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              transition: all 0.2s ease;
+            ">
+              <span>+</span>
+              <span>${isTradie() ? 'New Job' : t('newAppointment')}</span>
+            </button>
+          </div>
         </div>
-      <div class="card">
+      <div class="card" id="calendar-container">
         <div id="calendar"></div>
       </div>
+      ${isTradie() ? `
+      <div class="card hidden" id="pipeline-container">
+        <div id="pipeline" class="pipeline-view"></div>
+      </div>
+      ` : ''}
     `);
 
     const calendarEl = document.getElementById('calendar');
@@ -1955,22 +2548,26 @@
       },
       events: async (info, successCallback, failureCallback) => {
         try {
-          const events = await ChikasDB.getAppointmentsBetween(info.start.toISOString(), info.end.toISOString());
-          const customers = await ChikasDB.getAllCustomers();
+          const events = await CrmDB.getAppointmentsBetween(info.start.toISOString(), info.end.toISOString());
+          const customers = await CrmDB.getAllCustomers();
           const idToCustomer = new Map(customers.map(c => [c.id, c]));
           const mapped = events.map((e) => {
             const customer = idToCustomer.get(e.customerId);
             const fallbackName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '';
             const mappedEvent = {
               id: String(e.id),
-              title: e.title || 'Appointment',
+              title: e.title || (isTradie() ? 'Job' : 'Appointment'),
               start: e.start,
               end: e.end,
               extendedProps: { 
                 customerId: e.customerId,
                 customerName: fallbackName,
                 customerInitials: customer ? getInitials(customer.firstName, customer.lastName) : '',
-                bookingType: e.title || ''
+                bookingType: e.title || '',
+                status: e.status || 'scheduled',
+                quotedAmount: e.quotedAmount || null,
+                invoiceAmount: e.invoiceAmount || null,
+                paidAmount: e.paidAmount || null
               }
             };
             return mappedEvent;
@@ -1992,11 +2589,15 @@
         // Render similar content for list and month views
         const customerName = arg.event.extendedProps.customerName || '';
         const bookingType = arg.event.extendedProps.bookingType || '';
+        const status = arg.event.extendedProps.status || 'scheduled';
         const start = new Date(arg.event.start);
         const end = new Date(arg.event.end);
         const durationMs = end - start;
         const durationMinutes = Math.round(durationMs / (1000 * 60));
         const duration = durationMinutes > 0 ? `${durationMinutes}m` : '';
+        
+        // Get status badge HTML for tradie edition
+        const statusBadgeHtml = isTradie() ? getStatusBadge(status) : '';
 
         // Custom content only for list and month views. Week/day views use FullCalendar defaults.
         if (arg.view.type === 'listWeek' || arg.view.type === 'dayGridMonth') {
@@ -2005,6 +2606,7 @@
               <div class="fc-list-event-content">
                 <div class="custom-start-time">${time}</div>
                 ${duration ? `<div class="custom-duration">${duration}</div>` : ''}
+                ${statusBadgeHtml ? `<div style="margin-left: auto;">${statusBadgeHtml}</div>` : ''}
                 ${customerName ? `<div class="fc-list-event-customer">${customerName}</div>` : ''}
                 ${bookingType ? `<div class="fc-list-event-type">${bookingType}</div>` : ''}
               </div>
@@ -2038,12 +2640,84 @@
       openQuickBookModal(todayStr);
     });
     
+    // Current filter state
+    let currentFilter = 'all';
+    
+    // Set up view toggle for tradie edition
+    if (isTradie()) {
+      const calendarViewBtn = document.getElementById('calendar-view-btn');
+      const pipelineViewBtn = document.getElementById('pipeline-view-btn');
+      const calendarContainer = document.getElementById('calendar-container');
+      const pipelineContainer = document.getElementById('pipeline-container');
+
+      function adjustPipelineHeight() {
+        if (!pipelineContainer || pipelineContainer.classList.contains('hidden')) return;
+        const rect = pipelineContainer.getBoundingClientRect();
+        const available = window.innerHeight - rect.top - 16; // keep small bottom breathing room
+        pipelineContainer.style.height = `${Math.max(320, Math.floor(available))}px`;
+      }
+
+      // Keep pipeline height responsive without stacking duplicate listeners
+      if (window.__pipelineResizeHandler) {
+        window.removeEventListener('resize', window.__pipelineResizeHandler);
+      }
+      window.__pipelineResizeHandler = adjustPipelineHeight;
+      window.addEventListener('resize', window.__pipelineResizeHandler);
+      
+      // Payment filter buttons
+      const filterAllBtn = document.getElementById('filter-all-btn');
+      const filterNeedsInvoiceBtn = document.getElementById('filter-needs-invoice-btn');
+      const filterUnpaidBtn = document.getElementById('filter-unpaid-btn');
+      
+      function updateFilterButtons(activeFilter) {
+        currentFilter = activeFilter;
+        filterAllBtn?.classList.toggle('secondary', activeFilter !== 'all');
+        filterNeedsInvoiceBtn?.classList.toggle('secondary', activeFilter !== 'needs-invoice');
+        filterUnpaidBtn?.classList.toggle('secondary', activeFilter !== 'unpaid');
+        if (filterAllBtn && activeFilter === 'all') filterAllBtn.classList.remove('secondary');
+      }
+      
+      filterAllBtn?.addEventListener('click', async () => {
+        updateFilterButtons('all');
+        await renderPipelineView();
+      });
+      
+      filterNeedsInvoiceBtn?.addEventListener('click', async () => {
+        updateFilterButtons('needs-invoice');
+        await renderPipelineView();
+      });
+      
+      filterUnpaidBtn?.addEventListener('click', async () => {
+        updateFilterButtons('unpaid');
+        await renderPipelineView();
+      });
+      
+      if (calendarViewBtn && pipelineViewBtn) {
+        calendarViewBtn.addEventListener('click', () => {
+          calendarViewBtn.classList.remove('secondary');
+          pipelineViewBtn.classList.add('secondary');
+          calendarContainer.classList.remove('hidden');
+          pipelineContainer.classList.add('hidden');
+        });
+        
+        pipelineViewBtn.addEventListener('click', async () => {
+          pipelineViewBtn.classList.remove('secondary');
+          calendarViewBtn.classList.add('secondary');
+          pipelineContainer.classList.remove('hidden');
+          calendarContainer.classList.add('hidden');
+          adjustPipelineHeight();
+          // Render pipeline view
+          await renderPipelineView();
+        });
+      }
+    }
+    
     // If we have an appointment ID, open it after calendar loads
     if (appointmentId) {
       // Wait for calendar to fully load events and then open the appointment
       const openAppointment = async () => {
         try {
-          const appointment = await ChikasDB.getAppointmentById(appointmentId);
+          const appointment = await CrmDB.getAppointmentById(appointmentId);
           if (appointment) {
             // Navigate to the date of the appointment
             calendar.gotoDate(appointment.start);
@@ -2062,6 +2736,157 @@
       
       // Wait for events to load, then open appointment
       setTimeout(openAppointment, 1000);
+    }
+
+    // Render pipeline/kanban view for tradie edition
+    async function renderPipelineView() {
+      const pipelineEl = document.getElementById('pipeline');
+      if (!pipelineEl) return;
+      
+      pipelineEl.innerHTML = '<div class="muted" style="text-align: center; padding: 20px;">Loading jobs...</div>';
+      
+      try {
+        const statuses = productConfig.statuses || [];
+        const grouped = await CrmDB.getAppointmentsGroupedByStatus();
+        const customers = await CrmDB.getAllCustomers();
+        const idToCustomer = new Map(customers.map(c => [c.id, c]));
+        
+        // Apply payment filter
+        const filterJob = (job) => {
+          if (currentFilter === 'all') return true;
+          
+          const invoiced = job.invoiceAmount || 0;
+          const paid = job.paidAmount || 0;
+          const status = job.status || 'scheduled';
+          const completedStatuses = ['completed', 'invoiced', 'paid'];
+          
+          if (currentFilter === 'needs-invoice') {
+            return completedStatuses.includes(status) && invoiced === 0;
+          }
+          if (currentFilter === 'unpaid') {
+            return invoiced > 0 && paid < invoiced;
+          }
+          return true;
+        };
+        
+        // Build pipeline HTML
+        let pipelineHtml = '';
+        let totalVisibleJobs = 0;
+        
+        for (const status of statuses) {
+          const allJobs = grouped[status.id] || [];
+          const jobs = allJobs.filter(filterJob);
+          const count = jobs.length;
+          totalVisibleJobs += count;
+          
+          pipelineHtml += `
+            <div class="pipeline-column">
+              <div class="pipeline-column-header">
+                <span class="pipeline-column-title" style="color: ${status.color};">${status.label}</span>
+                <span class="pipeline-column-count">${count}</span>
+              </div>
+              <div class="pipeline-column-jobs" data-status="${status.id}">
+          `;
+          
+          for (const job of jobs) {
+            const customer = idToCustomer.get(job.customerId);
+            const customerName = customer 
+              ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() 
+              : 'Unknown Customer';
+            const jobType = job.title || 'No type';
+            const jobDate = new Date(job.start);
+            const dateStr = jobDate.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-AU', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric'
+            });
+            const timeStr = jobDate.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-AU', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            });
+            
+            // Payment indicator
+            const quoted = job.quotedAmount || 0;
+            const invoiced = job.invoiceAmount || 0;
+            const paid = job.paidAmount || 0;
+            let paymentBadge = '';
+            if (paid > 0 && paid >= invoiced && invoiced > 0) {
+              paymentBadge = '<span style="color: #22c55e; font-size: 11px;">✓ Paid</span>';
+            } else if (paid > 0 && paid < invoiced) {
+              paymentBadge = '<span style="color: #f97316; font-size: 11px;">◐ Part Paid</span>';
+            } else if (invoiced > 0) {
+              paymentBadge = '<span style="color: #60a5fa; font-size: 11px;">📄 Invoiced</span>';
+            } else if (quoted > 0) {
+              paymentBadge = `<span style="color: #a78bfa; font-size: 11px;">$${quoted.toLocaleString()}</span>`;
+            }
+            
+            pipelineHtml += `
+              <div class="pipeline-job-card" data-job-id="${job.id}" data-customer-id="${job.customerId}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div class="pipeline-job-customer">${escapeHtml(customerName)}</div>
+                  ${paymentBadge ? `<div>${paymentBadge}</div>` : ''}
+                </div>
+                <div class="pipeline-job-type">${escapeHtml(jobType)}</div>
+                <div class="pipeline-job-date">${dateStr} at ${timeStr}</div>
+              </div>
+            `;
+          }
+          
+          pipelineHtml += `
+              </div>
+            </div>
+          `;
+        }
+        
+        if (totalVisibleJobs === 0) {
+          pipelineEl.innerHTML = `
+            <div class="pipeline-empty-state">
+              No jobs found. Tap the New Job button to add a job.
+            </div>
+          `;
+          adjustPipelineHeight();
+          return;
+        }
+
+        pipelineEl.innerHTML = pipelineHtml;
+        adjustPipelineHeight();
+        
+        // Add click handlers for job cards
+        pipelineEl.querySelectorAll('.pipeline-job-card').forEach(card => {
+          card.addEventListener('click', async () => {
+            const jobId = card.dataset.jobId;
+            if (jobId) {
+              // Fetch the job and open the modal
+              const job = await CrmDB.getAppointmentById(jobId);
+              if (job) {
+                const customer = idToCustomer.get(job.customerId);
+                // Create a mock event object for the modal
+                const mockEvent = {
+                  id: String(job.id),
+                  title: job.title,
+                  start: new Date(job.start),
+                  end: new Date(job.end),
+                  extendedProps: {
+                    customerId: job.customerId,
+                    customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
+                    status: job.status || 'scheduled',
+                    quotedAmount: job.quotedAmount || null,
+                    invoiceAmount: job.invoiceAmount || null,
+                    paidAmount: job.paidAmount || null
+                  },
+                  toPlainObject: () => job
+                };
+                openAppointmentDetailsModal(mockEvent);
+              }
+            }
+          });
+        });
+        
+      } catch (error) {
+        console.error('Error rendering pipeline view:', error);
+        pipelineEl.innerHTML = '<div class="error" style="text-align: center; padding: 20px;">Error loading jobs</div>';
+      }
     }
 
     function openQuickBookModal(dateStr) {
@@ -2101,19 +2926,11 @@
             </div>
 
             <div>
-              <label>${t('bookingType')}</label>
+              <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : t('bookingType')}</label>
               <div class="multi-select" id="qb-type-dropdown">
                 <div id="qb-type-display" class="multi-select-display" tabindex="0">${t('noneSelected')}</div>
                 <div class="dropdown-menu hidden" id="qb-type-menu">
-                  <label class="check"><input type="checkbox" value="Cut" class="qb-type-opt" /> Cut</label>
-                  <label class="check"><input type="checkbox" value="Colour" class="qb-type-opt" /> Colour</label>
-                  <label class="check"><input type="checkbox" value="Touch up" class="qb-type-opt" /> Touch up</label>
-                  <label class="check"><input type="checkbox" value="Treatment" class="qb-type-opt" /> Treatment</label>
-                  <label class="check"><input type="checkbox" value="Bleach colour" class="qb-type-opt" /> Bleach colour</label>
-                  <label class="check"><input type="checkbox" value="Head Spa" class="qb-type-opt" /> Head Spa</label>
-                  <label class="check"><input type="checkbox" value="Perm" class="qb-type-opt" /> Perm</label>
-                  <label class="check"><input type="checkbox" value="Straightening" class="qb-type-opt" /> Straightening</label>
-                  <label class="check"><input type="checkbox" value="Fringe cut" class="qb-type-opt" /> Fringe cut</label>
+                  ${generateServiceTypeOptions('qb-type-opt')}
                 </div>
               </div>
             </div>
@@ -2151,7 +2968,7 @@
       async function doSearch() {
         const query = (searchEl.value || '').trim();
         if (query.length < 1) { resultsEl.innerHTML = ''; return; }
-        const people = await ChikasDB.searchCustomers(query);
+        const people = await CrmDB.searchCustomers(query);
         resultsEl.innerHTML = people.slice(0, 8).map((c) => `
           <button type="button" class="list-item" data-id="${c.id}">
             <div>
@@ -2233,7 +3050,9 @@
         const endDate = new Date(startDate.getTime() + durationMin * 60000);
         const endISO = endDate.toISOString();
         
-        const appointmentId = await ChikasDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, createdAt: new Date().toISOString() });
+        // Get default status (first status in pipeline)
+        const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
+        const appointmentId = await CrmDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() });
         
         hideModal();
         
@@ -2283,7 +3102,7 @@
       return;
     }
     
-    ChikasDB.getCustomerById(event.extendedProps.customerId).then(customer => {
+    CrmDB.getCustomerById(event.extendedProps.customerId).then(customer => {
       if (!customer) {
         alert('Customer not found');
         return;
@@ -2333,26 +3152,79 @@
               </div>
             </div>
 
-            <label>${t('bookingType')}</label>
+            <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : t('bookingType')}</label>
             <div class="select-wrap">
               <div class="multi-select" id="apt-type-dropdown">
                 <div class="multi-select-display" id="apt-type-display">${t('noneSelected')}</div>
                 <div class="dropdown-menu hidden" id="apt-type-menu">
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Cut" /> Cut</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Colour" /> Colour</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Touch up" /> Touch up</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Treatment" /> Treatment</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Bleach colour" /> Bleach colour</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Head Spa" /> Head Spa</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Perm" /> Perm</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Straightening" /> Straightening</label>
-                  <label class="check"><input type="checkbox" class="apt-type-opt" value="Fringe cut" /> Fringe cut</label>
+                  ${generateServiceTypeOptions('apt-type-opt')}
                 </div>
               </div>
             </div>
 
+            ${isTradie() ? `
+            <label>Job Status</label>
+            <div class="select-wrap">
+              <select id="apt-status" class="job-status-select">
+                ${generateStatusOptions(event.extendedProps?.status || 'scheduled')}
+              </select>
+            </div>
+            
+            <div class="payment-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">💰 Payment Tracking</strong>
+                <span id="payment-status-badge" class="job-status-badge" style="font-size: 11px;"></span>
+              </div>
+              <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                <div>
+                  <label style="font-size: 12px; margin-bottom: 4px;">Quoted $</label>
+                  <input type="number" id="apt-quoted" placeholder="0.00" step="0.01" min="0" value="${event.extendedProps?.quotedAmount || ''}" style="font-size: 14px;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; margin-bottom: 4px;">Invoiced $</label>
+                  <input type="number" id="apt-invoiced" placeholder="0.00" step="0.01" min="0" value="${event.extendedProps?.invoiceAmount || ''}" style="font-size: 14px;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; margin-bottom: 4px;">Paid $</label>
+                  <input type="number" id="apt-paid" placeholder="0.00" step="0.01" min="0" value="${event.extendedProps?.paidAmount || ''}" style="font-size: 14px;" />
+                </div>
+              </div>
+            </div>
+            
+            <div class="timeline-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">📋 Quick Log</strong>
+              </div>
+              <div class="quick-actions" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                <button class="quick-action-btn" data-type="call" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">📞 Call</button>
+                <button class="quick-action-btn" data-type="sms" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(96,165,250,0.2); border: 1px solid rgba(96,165,250,0.4); color: #60a5fa; border-radius: 6px; cursor: pointer;">💬 SMS</button>
+                <button class="quick-action-btn" data-type="email" style="padding: 8px 12px; font-size: 12px; background: rgba(167,139,250,0.2); border: 1px solid rgba(167,139,250,0.4); color: #a78bfa; border-radius: 6px; cursor: pointer;">✉️ Email</button>
+                <button class="quick-action-btn" data-type="quote_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.4); color: #fbbf24; border-radius: 6px; cursor: pointer;">📄 Quote Sent</button>
+                <button class="quick-action-btn" data-type="invoice_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(249,115,22,0.2); border: 1px solid rgba(249,115,22,0.4); color: #f97316; border-radius: 6px; cursor: pointer;">🧾 Invoice Sent</button>
+                <button class="quick-action-btn" data-type="payment_received" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">💵 Payment</button>
+              </div>
+              <div id="job-timeline" style="max-height: 200px; overflow-y: auto;">
+                <div class="muted" style="font-size: 12px; text-align: center;">Loading timeline...</div>
+              </div>
+            </div>
+            
+            <div class="job-photos-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <strong style="font-size: 14px;">📷 Job Photos</strong>
+                <label class="button secondary" style="font-size: 12px; padding: 6px 10px; cursor: pointer;">
+                  + Add
+                  <input type="file" id="job-photo-input" accept="image/*" multiple style="display: none;" />
+                </label>
+              </div>
+              <div id="job-photos-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 8px;">
+                <div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">Loading...</div>
+              </div>
+            </div>
+            ` : ''}
+
             <div class="row" style="margin-top: 16px; gap: 12px;">
               <button class="button" id="apt-save">${t('saveChanges')}</button>
+              <button class="button secondary" id="apt-reminder" title="Set Reminder">🔔 Reminder</button>
               <button class="button secondary" id="apt-delete">${t('delete')}</button>
               <button class="button secondary" id="apt-cancel">${t('cancel')}</button>
             </div>
@@ -2362,6 +3234,194 @@
 
       // Wait for DOM to be ready, then set up event listeners
       setTimeout(() => {
+        // Add reminder button
+        const reminderBtn = document.getElementById('apt-reminder');
+        if (reminderBtn) {
+          reminderBtn.addEventListener('click', () => {
+            hideModal();
+            setTimeout(() => {
+              openCreateReminderModal(customer.id, parseInt(event.id));
+            }, 100);
+          });
+        }
+
+        // Payment status badge update function
+        function updatePaymentStatusBadge() {
+          const badge = document.getElementById('payment-status-badge');
+          if (!badge) return;
+          
+          const quoted = parseFloat(document.getElementById('apt-quoted')?.value) || 0;
+          const invoiced = parseFloat(document.getElementById('apt-invoiced')?.value) || 0;
+          const paid = parseFloat(document.getElementById('apt-paid')?.value) || 0;
+          
+          let status, color;
+          if (paid > 0 && paid >= invoiced && invoiced > 0) {
+            status = 'Paid'; color = '#22c55e';
+          } else if (paid > 0 && paid < invoiced) {
+            status = 'Part Paid'; color = '#f97316';
+          } else if (invoiced > 0) {
+            status = 'Invoiced'; color = '#60a5fa';
+          } else if (quoted > 0) {
+            status = 'Quoted'; color = '#a78bfa';
+          } else {
+            status = 'Not Quoted'; color = '#94a3b8';
+          }
+          
+          badge.textContent = status;
+          badge.style.background = color;
+          badge.style.color = 'white';
+          badge.style.padding = '2px 8px';
+          badge.style.borderRadius = '4px';
+        }
+        
+        // Update badge on load and on change
+        updatePaymentStatusBadge();
+        document.getElementById('apt-quoted')?.addEventListener('input', updatePaymentStatusBadge);
+        document.getElementById('apt-invoiced')?.addEventListener('input', updatePaymentStatusBadge);
+        document.getElementById('apt-paid')?.addEventListener('input', updatePaymentStatusBadge);
+
+        // Load and display timeline
+        async function loadJobTimeline() {
+          const timelineEl = document.getElementById('job-timeline');
+          if (!timelineEl) return;
+          
+          try {
+            const events = await CrmDB.getEventsForAppointment(event.id);
+            
+            if (events.length === 0) {
+              timelineEl.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center;">No activity logged yet</div>';
+              return;
+            }
+            
+            const eventIcons = {
+              call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
+              quote_sent: '📄', invoice_sent: '🧾', payment_received: '💵', note: '📝', other: '•'
+            };
+            const eventLabels = {
+              call: 'Called', sms: 'Sent SMS', email: 'Sent Email', site_visit: 'Site Visit',
+              quote_sent: 'Quote Sent', invoice_sent: 'Invoice Sent', payment_received: 'Payment Received', note: 'Note', other: 'Activity'
+            };
+            
+            let html = '';
+            for (const evt of events) {
+              const icon = eventIcons[evt.type] || '•';
+              const label = eventLabels[evt.type] || evt.type;
+              const timeAgo = formatRelativeTime(new Date(evt.createdAt));
+              const noteHtml = evt.note ? '<div style="font-size: 11px; color: var(--muted);">' + escapeHtml(evt.note) + '</div>' : '';
+              
+              html += '<div style="display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">' +
+                '<span style="font-size: 14px;">' + icon + '</span>' +
+                '<div style="flex: 1;">' +
+                  '<div style="font-size: 12px; font-weight: 500;">' + label + '</div>' +
+                  noteHtml +
+                  '<div style="font-size: 10px; color: var(--muted); margin-top: 2px;">' + timeAgo + '</div>' +
+                '</div>' +
+              '</div>';
+            }
+            
+            timelineEl.innerHTML = html;
+          } catch (error) {
+            console.error('Error loading timeline:', error);
+            timelineEl.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center;">Error loading timeline</div>';
+          }
+        }
+        
+        // Quick action button handlers
+        document.querySelectorAll('.quick-action-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const type = btn.dataset.type;
+            const phone = btn.dataset.phone;
+            
+            // Log the event
+            try {
+              await CrmDB.createJobEvent({
+                appointmentId: event.id,
+                customerId: customer.id,
+                type: type
+              });
+              
+              // Reload timeline
+              await loadJobTimeline();
+              
+              // Open deep link if applicable
+              if (type === 'call' && phone) {
+                window.location.href = 'tel:' + phone;
+              } else if (type === 'sms' && phone) {
+                window.location.href = 'sms:' + phone;
+              }
+            } catch (error) {
+              console.error('Error logging event:', error);
+              alert('Error logging event: ' + error.message);
+            }
+          });
+        });
+        
+        // Load timeline on modal open
+        loadJobTimeline();
+
+        // Load and display job photos
+        async function loadJobPhotos() {
+          const photosGrid = document.getElementById('job-photos-grid');
+          if (!photosGrid) return;
+          
+          try {
+            const photos = await CrmDB.getImagesByAppointmentId(event.id);
+            
+            if (photos.length === 0) {
+              photosGrid.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">No photos attached to this job</div>';
+              return;
+            }
+            
+            let html = '';
+            for (const photo of photos) {
+              html += '<div style="position: relative;">' +
+                '<img src="' + photo.dataUrl + '" style="width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer;" data-id="' + photo.id + '" class="job-photo-thumb" />' +
+              '</div>';
+            }
+            
+            photosGrid.innerHTML = html;
+            
+            // Click handlers for photos
+            photosGrid.querySelectorAll('.job-photo-thumb').forEach(img => {
+              img.addEventListener('click', () => {
+                // Simple lightbox
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 10000; display: flex; align-items: center; justify-content: center; cursor: pointer;';
+                overlay.innerHTML = '<img src="' + img.src + '" style="max-width: 90%; max-height: 90%; object-fit: contain;" />';
+                overlay.addEventListener('click', () => overlay.remove());
+                document.body.appendChild(overlay);
+              });
+            });
+          } catch (error) {
+            console.error('Error loading job photos:', error);
+            photosGrid.innerHTML = '<div class="muted" style="font-size: 12px; text-align: center; grid-column: 1/-1;">Error loading photos</div>';
+          }
+        }
+        
+        // Handle job photo upload
+        const jobPhotoInput = document.getElementById('job-photo-input');
+        if (jobPhotoInput) {
+          jobPhotoInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            try {
+              const entries = await CrmDB.fileListToEntries(files);
+              for (const entry of entries) {
+                await CrmDB.addImage(customer.id, entry, event.id);
+              }
+              await loadJobPhotos();
+              e.target.value = ''; // Reset input
+            } catch (error) {
+              console.error('Error uploading job photos:', error);
+              alert('Error uploading photos: ' + error.message);
+            }
+          });
+        }
+        
+        // Load job photos on modal open
+        loadJobPhotos();
+
         // Make customer name clickable to open customer view
         const customerLink = document.getElementById('apt-customer-link');
         if (customerLink) {
@@ -2391,7 +3451,7 @@
         let hasSelectedTypes = false;
         
         // Check if title contains any of the booking types
-        const bookingTypes = ['Cut', 'Colour', 'Touch up', 'Treatment', 'Bleach colour', 'Head Spa', 'Perm', 'Straightening', 'Fringe cut'];
+        const bookingTypes = getBookingTypes();
         const foundTypes = [];
         
         typeOptions.forEach((option, index) => {
@@ -2487,6 +3547,18 @@
             const typeLabel = types.length ? types.join(' + ') : '';
             const newTitle = typeLabel || titleInput || 'No service type';
             
+            // Get status (only for tradie edition)
+            const statusEl = document.getElementById('apt-status');
+            const status = statusEl ? statusEl.value : (event.extendedProps?.status || 'scheduled');
+            
+            // Get payment fields (only for tradie edition)
+            const quotedEl = document.getElementById('apt-quoted');
+            const invoicedEl = document.getElementById('apt-invoiced');
+            const paidEl = document.getElementById('apt-paid');
+            const quotedAmount = quotedEl && quotedEl.value ? parseFloat(quotedEl.value) : null;
+            const invoiceAmount = invoicedEl && invoicedEl.value ? parseFloat(invoicedEl.value) : null;
+            const paidAmount = paidEl && paidEl.value ? parseFloat(paidEl.value) : null;
+            
             // Convert local datetime to ISO string
             const roundedLocal = roundDatetimeLocalToStep(startStr, 15);
             const startDate = new Date(roundedLocal);
@@ -2511,7 +3583,11 @@
                 customerId: customerId, // Use the validated customerId
                 title: newTitle,
                 start: startISO,
-                end: endISO
+                end: endISO,
+                status: status,
+                quotedAmount: quotedAmount,
+                invoiceAmount: invoiceAmount,
+                paidAmount: paidAmount
               };
             } else {
               // Fallback for plain appointment objects
@@ -2521,6 +3597,10 @@
                 title: newTitle,
                 start: startISO,
                 end: endISO,
+                status: status,
+                quotedAmount: quotedAmount,
+                invoiceAmount: invoiceAmount,
+                paidAmount: paidAmount,
                 createdAt: event.createdAt || new Date().toISOString()
               };
             }
@@ -2537,10 +3617,16 @@
             }
             
             try {
-              await ChikasDB.updateAppointment(updatedAppointment);
+              await CrmDB.updateAppointment(updatedAppointment);
               hideModal();
               if (globalCalendar) {
                 globalCalendar.refetchEvents();
+              }
+              // If pipeline is visible, refresh it immediately so moved status cards
+              // jump columns without requiring navigation/reload.
+              const pipelineContainerEl = document.getElementById('pipeline-container');
+              if (pipelineContainerEl && !pipelineContainerEl.classList.contains('hidden')) {
+                document.getElementById('pipeline-view-btn')?.click();
               }
             } catch (error) {
               alert('Error updating appointment: ' + error.message);
@@ -2555,10 +3641,14 @@
           deleteBtn.addEventListener('click', async () => {
             if (confirm(t('confirmDelete'))) {
               try {
-                await ChikasDB.deleteAppointment(event.id);
+                await CrmDB.deleteAppointment(event.id);
                 hideModal();
                 if (globalCalendar) {
                   globalCalendar.refetchEvents();
+                }
+                const pipelineContainerEl = document.getElementById('pipeline-container');
+                if (pipelineContainerEl && !pipelineContainerEl.classList.contains('hidden')) {
+                  document.getElementById('pipeline-view-btn')?.click();
                 }
               } catch (error) {
                 alert('Error deleting appointment');
@@ -2604,18 +3694,1051 @@
     }, { once: true });
   }
 
+  // ============================================================================
+  // FOLLOW-UPS / REMINDERS VIEW
+  // ============================================================================
+
+  async function renderFollowUps() {
+    appRoot.innerHTML = wrapWithSidebar(`
+      <div class="space-between" style="margin-bottom: 8px;">
+        <h2>Follow-ups</h2>
+        <button id="add-reminder-btn" class="button" style="padding: 8px 16px;">
+          + New Reminder
+        </button>
+      </div>
+      <div id="follow-ups-container">
+        <div class="muted" style="text-align: center; padding: 40px;">Loading...</div>
+      </div>
+    `);
+
+    await loadFollowUpsView();
+
+    // Add reminder button handler
+    document.getElementById('add-reminder-btn')?.addEventListener('click', () => {
+      openCreateReminderModal();
+    });
+  }
+
+  async function loadFollowUpsView() {
+    const container = document.getElementById('follow-ups-container');
+    if (!container) return;
+
+    try {
+      const [overdue, today, upcoming, allPending] = await Promise.all([
+        CrmDB.getOverdueReminders(),
+        CrmDB.getTodayReminders(),
+        CrmDB.getUpcomingReminders(7),
+        CrmDB.getPendingReminders()
+      ]);
+
+      // Get later reminders (beyond 7 days)
+      const now = new Date();
+      const sevenDaysFromNow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 8);
+      const later = allPending.filter(r => new Date(r.dueAt) >= sevenDaysFromNow);
+
+      // Get all customers and appointments for linking
+      const customers = await CrmDB.getAllCustomers();
+      const appointments = await CrmDB.getAllAppointments();
+      const customerMap = new Map(customers.map(c => [c.id, c]));
+      const appointmentMap = new Map(appointments.map(a => [a.id, a]));
+
+      let html = '';
+
+      // Overdue section
+      if (overdue.length > 0) {
+        html += renderReminderSection('Overdue', overdue, customerMap, appointmentMap, 'overdue');
+      }
+
+      // Today section
+      if (today.length > 0) {
+        html += renderReminderSection('Today', today, customerMap, appointmentMap, 'today');
+      }
+
+      // Next 7 days section
+      if (upcoming.length > 0) {
+        html += renderReminderSection('Next 7 Days', upcoming, customerMap, appointmentMap, 'upcoming');
+      }
+
+      // Later section
+      if (later.length > 0) {
+        html += renderReminderSection('Later', later, customerMap, appointmentMap, 'later');
+      }
+
+      // Empty state
+      if (!html) {
+        html = `
+          <div class="card" style="text-align: center; padding: 40px;">
+            <div style="font-size: 48px; margin-bottom: 16px;">🔔</div>
+            <h3 style="margin: 0 0 8px 0;">No Follow-ups</h3>
+            <p class="muted" style="margin: 0;">Create a reminder from a job or customer to track follow-ups.</p>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+
+      // Attach event handlers
+      attachReminderEventHandlers();
+
+    } catch (error) {
+      console.error('Error loading follow-ups:', error);
+      container.innerHTML = `
+        <div class="card" style="text-align: center; padding: 40px; color: #ef4444;">
+          <p>Error loading follow-ups: ${error.message}</p>
+        </div>
+      `;
+    }
+  }
+
+  function renderReminderSection(title, reminders, customerMap, appointmentMap, sectionType) {
+    const sectionColors = {
+      overdue: 'rgba(239, 68, 68, 0.2)',
+      today: 'rgba(251, 191, 36, 0.15)',
+      upcoming: 'rgba(96, 165, 250, 0.1)',
+      later: 'rgba(148, 163, 184, 0.1)'
+    };
+    const borderColors = {
+      overdue: '#ef4444',
+      today: '#fbbf24',
+      upcoming: '#60a5fa',
+      later: '#94a3b8'
+    };
+
+    let html = `
+      <div class="reminder-section" style="margin-bottom: 20px;">
+        <h3 style="margin: 0 0 12px 0; color: ${borderColors[sectionType]};">${title} (${reminders.length})</h3>
+        <div class="reminder-cards">
+    `;
+
+    for (const reminder of reminders) {
+      const customer = reminder.customerId ? customerMap.get(reminder.customerId) : null;
+      const appointment = reminder.appointmentId ? appointmentMap.get(reminder.appointmentId) : null;
+      
+      const customerName = customer 
+        ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed'
+        : null;
+      const jobTitle = appointment?.title || null;
+
+      const dueDate = new Date(reminder.dueAt);
+      const timeStr = formatRelativeTime(dueDate);
+
+      html += `
+        <div class="reminder-card" data-reminder-id="${reminder.id}" style="
+          background: ${sectionColors[sectionType]};
+          border-left: 4px solid ${borderColors[sectionType]};
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 12px;
+        ">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+            <div style="flex: 1;">
+              <div style="font-weight: 600; margin-bottom: 4px;">
+                ${escapeHtml(reminder.message || 'Follow-up reminder')}
+              </div>
+              <div class="muted" style="font-size: 13px;">
+                ${customerName ? `<span>👤 ${escapeHtml(customerName)}</span>` : ''}
+                ${jobTitle ? `<span style="margin-left: 8px;">📋 ${escapeHtml(jobTitle)}</span>` : ''}
+              </div>
+              <div class="muted" style="font-size: 12px; margin-top: 4px;">
+                ⏰ ${timeStr}
+              </div>
+            </div>
+            <div class="reminder-actions" style="display: flex; gap: 8px; flex-shrink: 0;">
+              <button class="reminder-done-btn" data-id="${reminder.id}" title="Mark Done" style="
+                background: #22c55e;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: white;
+                cursor: pointer;
+                font-size: 14px;
+              ">✓</button>
+              <button class="reminder-snooze-btn" data-id="${reminder.id}" title="Snooze" style="
+                background: rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.2);
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: white;
+                cursor: pointer;
+                font-size: 14px;
+              ">💤</button>
+              <button class="reminder-delete-btn" data-id="${reminder.id}" title="Delete" style="
+                background: rgba(239, 68, 68, 0.2);
+                border: 1px solid rgba(239, 68, 68, 0.4);
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #ef4444;
+                cursor: pointer;
+                font-size: 14px;
+              ">🗑️</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function formatRelativeTime(date) {
+    const now = new Date();
+    const diffMs = date - now;
+    const diffMins = Math.round(diffMs / 60000);
+    const diffHours = Math.round(diffMs / 3600000);
+    const diffDays = Math.round(diffMs / 86400000);
+
+    if (diffMs < 0) {
+      // Past
+      const absMins = Math.abs(diffMins);
+      const absHours = Math.abs(diffHours);
+      const absDays = Math.abs(diffDays);
+      
+      if (absMins < 60) return `${absMins} min ago`;
+      if (absHours < 24) return `${absHours} hours ago`;
+      if (absDays === 1) return 'Yesterday';
+      if (absDays < 7) return `${absDays} days ago`;
+      return date.toLocaleDateString();
+    } else {
+      // Future
+      if (diffMins < 60) return `In ${diffMins} min`;
+      if (diffHours < 24) return `In ${diffHours} hours`;
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Tomorrow';
+      if (diffDays < 7) return `In ${diffDays} days`;
+      return date.toLocaleDateString();
+    }
+  }
+
+  async function loadCustomerRecentActivity(customerId) {
+    const container = document.getElementById('customer-recent-activity');
+    if (!container) return;
+    
+    try {
+      const events = await CrmDB.getRecentEventsForCustomer(customerId, 5);
+      const lastContact = await CrmDB.getLastContactTime(customerId);
+      
+      const eventIcons = {
+        call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
+        quote_sent: '📄', invoice_sent: '🧾', payment_received: '💵', note: '📝', other: '•'
+      };
+      const eventLabels = {
+        call: 'Called', sms: 'SMS', email: 'Email', site_visit: 'Site Visit',
+        quote_sent: 'Quote Sent', invoice_sent: 'Invoice', payment_received: 'Payment', note: 'Note', other: 'Activity'
+      };
+      
+      let html = '';
+      
+      // Last contacted info
+      if (lastContact) {
+        const timeAgo = formatRelativeTime(lastContact);
+        html += `<div style="font-size: 12px; margin-bottom: 12px; color: var(--muted);">Last contacted: <strong>${timeAgo}</strong></div>`;
+      }
+      
+      if (events.length === 0) {
+        html += '<div class="muted" style="font-size: 12px; text-align: center;">No recent activity</div>';
+      } else {
+        for (const evt of events) {
+          const icon = eventIcons[evt.type] || '•';
+          const label = eventLabels[evt.type] || evt.type;
+          const timeAgo = formatRelativeTime(new Date(evt.createdAt));
+          
+          html += `
+            <div style="display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px;">
+              <span>${icon}</span>
+              <span style="flex: 1;">${label}${evt.note ? ': ' + escapeHtml(evt.note) : ''}</span>
+              <span style="color: var(--muted);">${timeAgo}</span>
+            </div>
+          `;
+        }
+      }
+      
+      container.innerHTML = html;
+    } catch (error) {
+      console.error('Error loading recent activity:', error);
+      container.innerHTML = '<div class="muted" style="font-size: 12px;">Error loading activity</div>';
+    }
+  }
+
+  function attachReminderEventHandlers() {
+    // Done buttons
+    document.querySelectorAll('.reminder-done-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        try {
+          const reminder = await CrmDB.getReminderById(id);
+          if (reminder) {
+            reminder.status = 'done';
+            await CrmDB.updateReminder(reminder);
+            await loadFollowUpsView();
+          }
+        } catch (error) {
+          console.error('Error marking reminder done:', error);
+          alert('Error: ' + error.message);
+        }
+      });
+    });
+
+    // Snooze buttons
+    document.querySelectorAll('.reminder-snooze-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        openSnoozeModal(id);
+      });
+    });
+
+    // Delete buttons
+    document.querySelectorAll('.reminder-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        if (confirm('Delete this reminder?')) {
+          try {
+            await CrmDB.deleteReminder(id);
+            await loadFollowUpsView();
+          } catch (error) {
+            console.error('Error deleting reminder:', error);
+            alert('Error: ' + error.message);
+          }
+        }
+      });
+    });
+
+    // Card click to view details
+    document.querySelectorAll('.reminder-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const id = card.dataset.reminderId;
+        const reminder = await CrmDB.getReminderById(id);
+        if (reminder) {
+          if (reminder.appointmentId) {
+            navigate(`/calendar?appointment=${reminder.appointmentId}`);
+          } else if (reminder.customerId) {
+            navigate(`/customer?id=${reminder.customerId}`);
+          }
+        }
+      });
+    });
+  }
+
+  function openSnoozeModal(reminderId) {
+    showModal(`
+      <div class="modal">
+        <h3 style="margin-top: 0;">Snooze Reminder</h3>
+        <div class="form">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <button class="button secondary snooze-option" data-hours="1">1 Hour</button>
+            <button class="button secondary snooze-option" data-hours="3">3 Hours</button>
+            <button class="button secondary snooze-option" data-days="1">Tomorrow 9am</button>
+            <button class="button secondary snooze-option" data-days="3">3 Days</button>
+            <button class="button secondary snooze-option" data-days="7">1 Week</button>
+            <button class="button secondary" id="snooze-custom-btn">Custom...</button>
+          </div>
+          <div id="snooze-custom-picker" style="display: none; margin-top: 12px;">
+            <input type="datetime-local" id="snooze-custom-datetime" class="form-input" />
+          </div>
+          <div class="row" style="margin-top: 16px;">
+            <button class="button secondary" id="snooze-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Snooze option handlers
+    document.querySelectorAll('.snooze-option').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const hours = btn.dataset.hours ? parseInt(btn.dataset.hours) : 0;
+        const days = btn.dataset.days ? parseInt(btn.dataset.days) : 0;
+        
+        let newDueAt;
+        if (days === 1) {
+          // Tomorrow 9am
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(9, 0, 0, 0);
+          newDueAt = tomorrow;
+        } else if (hours > 0) {
+          newDueAt = new Date(Date.now() + hours * 3600000);
+        } else if (days > 0) {
+          newDueAt = new Date(Date.now() + days * 86400000);
+        }
+
+        await snoozeReminder(reminderId, newDueAt);
+      });
+    });
+
+    // Custom picker
+    document.getElementById('snooze-custom-btn')?.addEventListener('click', () => {
+      document.getElementById('snooze-custom-picker').style.display = 'block';
+    });
+
+    document.getElementById('snooze-custom-datetime')?.addEventListener('change', async (e) => {
+      const newDueAt = new Date(e.target.value);
+      if (!isNaN(newDueAt.getTime())) {
+        await snoozeReminder(reminderId, newDueAt);
+      }
+    });
+
+    document.getElementById('snooze-cancel')?.addEventListener('click', hideModal);
+  }
+
+  async function snoozeReminder(reminderId, newDueAt) {
+    try {
+      const reminder = await CrmDB.getReminderById(reminderId);
+      if (reminder) {
+        reminder.dueAt = newDueAt.toISOString();
+        reminder.snoozedUntil = newDueAt.toISOString();
+        await CrmDB.updateReminder(reminder);
+        hideModal();
+        await loadFollowUpsView();
+      }
+    } catch (error) {
+      console.error('Error snoozing reminder:', error);
+      alert('Error: ' + error.message);
+    }
+  }
+
+  function openCreateReminderModal(prefilledCustomerId = null, prefilledAppointmentId = null) {
+    const now = new Date();
+    const tomorrow9am = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0);
+    const defaultDateTime = tomorrow9am.toISOString().slice(0, 16);
+
+    showModal(`
+      <div class="modal">
+        <h3 style="margin-top: 0;">New Reminder</h3>
+        <div class="form">
+          <label>Message</label>
+          <input type="text" id="reminder-message" placeholder="e.g., Call back, Send quote..." />
+          
+          <label>Due Date/Time</label>
+          <input type="datetime-local" id="reminder-due" value="${defaultDateTime}" />
+          
+          <div style="margin-top: 12px;">
+            <strong style="font-size: 13px;">Quick Presets:</strong>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+              <button class="button secondary preset-btn" data-message="Call back" style="font-size: 12px; padding: 6px 12px;">📞 Call back</button>
+              <button class="button secondary preset-btn" data-message="Send quote" style="font-size: 12px; padding: 6px 12px;">📄 Send quote</button>
+              <button class="button secondary preset-btn" data-message="Chase invoice" style="font-size: 12px; padding: 6px 12px;">💰 Chase invoice</button>
+              <button class="button secondary preset-btn" data-message="Follow up" style="font-size: 12px; padding: 6px 12px;">🔔 Follow up</button>
+            </div>
+          </div>
+          
+          <div class="row" style="margin-top: 20px; gap: 12px;">
+            <button class="button" id="save-reminder-btn">Save Reminder</button>
+            <button class="button secondary" id="cancel-reminder-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Preset buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('reminder-message').value = btn.dataset.message;
+      });
+    });
+
+    // Save button
+    document.getElementById('save-reminder-btn')?.addEventListener('click', async () => {
+      const message = document.getElementById('reminder-message').value.trim();
+      const dueAt = document.getElementById('reminder-due').value;
+
+      if (!dueAt) {
+        alert('Please select a due date/time');
+        return;
+      }
+
+      try {
+        await CrmDB.createReminder({
+          customerId: prefilledCustomerId,
+          appointmentId: prefilledAppointmentId,
+          message: message || 'Follow-up reminder',
+          dueAt: new Date(dueAt).toISOString(),
+          status: 'pending'
+        });
+        hideModal();
+        await loadFollowUpsView();
+      } catch (error) {
+        console.error('Error creating reminder:', error);
+        alert('Error: ' + error.message);
+      }
+    });
+
+    document.getElementById('cancel-reminder-btn')?.addEventListener('click', hideModal);
+  }
+
+  // ============================================================================
+  // GLOBAL SEARCH
+  // ============================================================================
+
+  let searchDebounceTimer = null;
+
+  function attachGlobalSearchHandler() {
+    const searchInput = document.getElementById('global-search-input');
+    const resultsContainer = document.getElementById('global-search-results');
+    if (!searchInput || !resultsContainer) return;
+    
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim();
+      
+      // Clear previous debounce
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      
+      if (query.length < 2) {
+        resultsContainer.style.display = 'none';
+        return;
+      }
+      
+      // Debounce search
+      searchDebounceTimer = setTimeout(() => {
+        performGlobalSearch(query);
+      }, 200);
+    });
+    
+    // Hide results when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.global-search-container')) {
+        resultsContainer.style.display = 'none';
+      }
+    });
+    
+    // Show results on focus if there's a query
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim().length >= 2) {
+        performGlobalSearch(searchInput.value.trim());
+      }
+    });
+  }
+
+  async function performGlobalSearch(query) {
+    const resultsContainer = document.getElementById('global-search-results');
+    if (!resultsContainer) return;
+    
+    const lowerQuery = query.toLowerCase();
+    
+    try {
+      // Search in parallel
+      const [customers, appointments, notes] = await Promise.all([
+        CrmDB.getAllCustomers(),
+        CrmDB.getAllAppointments(),
+        CrmDB.getAllNotes()
+      ]);
+      
+      // Filter customers
+      const matchingCustomers = customers.filter(c => {
+        const name = ((c.firstName || '') + ' ' + (c.lastName || '')).toLowerCase();
+        const phone = (c.contactNumber || '').toLowerCase();
+        const social = (c.socialMediaName || '').toLowerCase();
+        return name.includes(lowerQuery) || phone.includes(lowerQuery) || social.includes(lowerQuery);
+      }).slice(0, 5);
+      
+      // Filter jobs
+      const matchingJobs = appointments.filter(a => {
+        const title = (a.title || '').toLowerCase();
+        const address = (a.address || '').toLowerCase();
+        return title.includes(lowerQuery) || address.includes(lowerQuery);
+      }).slice(0, 5);
+      
+      // Filter notes
+      const matchingNotes = notes.filter(n => {
+        const content = (n.content || '').toLowerCase();
+        return content.includes(lowerQuery);
+      }).slice(0, 3);
+      
+      // Build customer map for job display
+      const customerMap = new Map(customers.map(c => [c.id, c]));
+      
+      // Build results HTML
+      let html = '';
+      
+      if (matchingCustomers.length > 0) {
+        html += '<div class="search-section"><div class="search-section-title">Customers</div>';
+        for (const c of matchingCustomers) {
+          const name = ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || 'Unnamed';
+          html += '<div class="search-result-item" data-type="customer" data-id="' + c.id + '">';
+          html += '<span class="search-icon">👤</span>';
+          html += '<span class="search-text">' + escapeHtml(name) + '</span>';
+          if (c.contactNumber) html += '<span class="search-meta">' + escapeHtml(c.contactNumber) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      
+      if (matchingJobs.length > 0) {
+        html += '<div class="search-section"><div class="search-section-title">Jobs</div>';
+        for (const j of matchingJobs) {
+          const customer = customerMap.get(j.customerId);
+          const customerName = customer ? ((customer.firstName || '') + ' ' + (customer.lastName || '')).trim() : '';
+          html += '<div class="search-result-item" data-type="job" data-id="' + j.id + '">';
+          html += '<span class="search-icon">📋</span>';
+          html += '<span class="search-text">' + escapeHtml(j.title || 'Job') + '</span>';
+          if (customerName) html += '<span class="search-meta">' + escapeHtml(customerName) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      
+      if (matchingNotes.length > 0) {
+        html += '<div class="search-section"><div class="search-section-title">Notes</div>';
+        for (const n of matchingNotes) {
+          const preview = (n.content || '').substring(0, 50) + (n.content && n.content.length > 50 ? '...' : '');
+          html += '<div class="search-result-item" data-type="note" data-customer-id="' + n.customerId + '">';
+          html += '<span class="search-icon">📝</span>';
+          html += '<span class="search-text">' + escapeHtml(preview) + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      
+      if (!html) {
+        html = '<div class="search-no-results">No results found</div>';
+      }
+      
+      resultsContainer.innerHTML = html;
+      resultsContainer.style.display = 'block';
+      
+      // Attach click handlers
+      resultsContainer.querySelectorAll('.search-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const type = item.dataset.type;
+          const id = item.dataset.id;
+          const customerId = item.dataset.customerId;
+          
+          resultsContainer.style.display = 'none';
+          document.getElementById('global-search-input').value = '';
+          
+          if (type === 'customer') {
+            navigate('/customer?id=' + id);
+          } else if (type === 'job') {
+            navigate('/calendar?appointment=' + id);
+          } else if (type === 'note' && customerId) {
+            navigate('/customer?id=' + customerId);
+          }
+        });
+      });
+      
+    } catch (error) {
+      console.error('Search error:', error);
+      resultsContainer.innerHTML = '<div class="search-no-results">Error searching</div>';
+      resultsContainer.style.display = 'block';
+    }
+  }
+
+  // ============================================================================
+  // FLOATING ACTION BUTTON (FAB) & QUICK ADD JOB
+  // ============================================================================
+
+  function renderFAB(show, currentRoute) {
+    // Remove existing FAB
+    const existingFab = document.getElementById('quick-add-fab');
+    if (existingFab) existingFab.remove();
+    
+    if (!show) return;
+    
+    const fab = document.createElement('button');
+    fab.id = 'quick-add-fab';
+    fab.innerHTML = '+';
+    fab.title = 'Quick Add Job';
+    fab.setAttribute('aria-label', 'Quick Add Job');
+    const isCustomerScreen = currentRoute === '/customer' || currentRoute === '/customer-edit';
+    const fabBottom = isCustomerScreen ? 'calc(96px + env(safe-area-inset-bottom, 0px))' : '24px';
+
+    fab.style.cssText = `
+      position: fixed;
+      bottom: ${fabBottom};
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: white;
+      font-size: 28px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    `;
+    
+    fab.addEventListener('mouseenter', () => {
+      fab.style.transform = 'scale(1.1)';
+    });
+    fab.addEventListener('mouseleave', () => {
+      fab.style.transform = 'scale(1)';
+    });
+    
+    fab.addEventListener('click', () => {
+      // Pre-fill customer if on customer page
+      const customerId = window.currentCustomerId || null;
+      openQuickAddJobModal(customerId);
+    });
+    
+    document.body.appendChild(fab);
+  }
+
+  async function openQuickAddJobModal(prefilledCustomerId = null) {
+    // Load customers for the dropdown
+    const customers = await CrmDB.getAllCustomers();
+    customers.sort((a, b) => {
+      const nameA = (a.firstName + ' ' + a.lastName).trim().toLowerCase();
+      const nameB = (b.firstName + ' ' + b.lastName).trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    
+    const customerOptions = customers.map(c => {
+      const name = (c.firstName + ' ' + c.lastName).trim() || 'Unnamed';
+      const selected = c.id === prefilledCustomerId ? 'selected' : '';
+      return '<option value="' + c.id + '" ' + selected + '>' + escapeHtml(name) + '</option>';
+    }).join('');
+    
+    // Get service types for job suggestions
+    const serviceTypes = productConfig.serviceTypes || [];
+    const jobSuggestions = serviceTypes.map(t => 
+      '<button type="button" class="job-suggestion-btn button secondary" data-value="' + escapeHtml(t.label) + '" style="font-size: 11px; padding: 4px 8px;">' + escapeHtml(t.label) + '</button>'
+    ).join('');
+    
+    showModal(`
+      <div class="modal" style="max-width: 400px;">
+        <h3 style="margin-top: 0;">Quick Add Job</h3>
+        <div class="form">
+          <label>Customer</label>
+          <div style="display: flex; gap: 8px;">
+            <select id="quick-add-customer" style="flex: 1;">
+              <option value="">-- Select Customer --</option>
+              ${customerOptions}
+              <option value="__new__">+ Create New Customer</option>
+            </select>
+          </div>
+          
+          <div id="new-customer-fields" style="display: none; margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+            <label style="font-size: 12px;">New Customer Name *</label>
+            <input type="text" id="quick-add-customer-name" placeholder="Name" />
+            <label style="font-size: 12px; margin-top: 8px;">Phone</label>
+            <input type="tel" id="quick-add-customer-phone" placeholder="Phone number" />
+          </div>
+          
+          <label style="margin-top: 12px;">Job Title</label>
+          <input type="text" id="quick-add-title" placeholder="e.g., Quote, Repair, Installation..." />
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px;">
+            ${jobSuggestions}
+          </div>
+          
+          ${isTradie() ? `
+          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 12px;">
+              <input type="checkbox" id="quick-add-address-different" />
+              <span>Different from customer address</span>
+            </label>
+            <div id="quick-add-address-fields">
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px;">Street Address</label>
+                <input type="text" id="quick-add-address-line1" placeholder="123 Main Street" />
+              </div>
+              <div class="grid-2" style="gap: 8px;">
+                <div>
+                  <label style="font-size: 12px;">Suburb</label>
+                  <input type="text" id="quick-add-suburb" placeholder="Suburb" />
+                </div>
+                <div class="grid-2" style="gap: 4px;">
+                  <div>
+                    <label style="font-size: 12px;">State</label>
+                    <select id="quick-add-state">
+                      <option value="">-</option>
+                      <option value="NSW">NSW</option>
+                      <option value="VIC">VIC</option>
+                      <option value="QLD">QLD</option>
+                      <option value="WA">WA</option>
+                      <option value="SA">SA</option>
+                      <option value="TAS">TAS</option>
+                      <option value="ACT">ACT</option>
+                      <option value="NT">NT</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size: 12px;">Postcode</label>
+                    <input type="text" id="quick-add-postcode" placeholder="0000" maxlength="4" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          ` : `
+          <label style="margin-top: 12px;">Address (optional)</label>
+          <input type="text" id="quick-add-address" placeholder="Job address" />
+          `}
+          
+          <label style="margin-top: 12px;">Set Reminder</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button type="button" class="reminder-preset-btn button" data-days="0" style="font-size: 11px; padding: 6px 10px;">None</button>
+            <button type="button" class="reminder-preset-btn button secondary" data-days="1" style="font-size: 11px; padding: 6px 10px;">Tomorrow</button>
+            <button type="button" class="reminder-preset-btn button secondary" data-days="3" style="font-size: 11px; padding: 6px 10px;">3 Days</button>
+            <button type="button" class="reminder-preset-btn button secondary" data-days="7" style="font-size: 11px; padding: 6px 10px;">1 Week</button>
+          </div>
+          <input type="hidden" id="quick-add-reminder-days" value="0" />
+          
+          <div class="row" style="margin-top: 20px; gap: 12px;">
+            <button class="button" id="quick-add-save">Create Job</button>
+            <button class="button secondary" id="quick-add-cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+    
+    function setQuickAddAddressFromCustomer(customer) {
+      if (!customer || !isTradie()) return;
+      const line1 = document.getElementById('quick-add-address-line1');
+      const suburb = document.getElementById('quick-add-suburb');
+      const state = document.getElementById('quick-add-state');
+      const postcode = document.getElementById('quick-add-postcode');
+      if (line1) line1.value = customer.addressLine1 || '';
+      if (suburb) suburb.value = customer.suburb || '';
+      if (state) state.value = customer.state || '';
+      if (postcode) postcode.value = customer.postcode || '';
+    }
+    function clearQuickAddAddressFields() {
+      if (!isTradie()) return;
+      const line1 = document.getElementById('quick-add-address-line1');
+      const suburb = document.getElementById('quick-add-suburb');
+      const state = document.getElementById('quick-add-state');
+      const postcode = document.getElementById('quick-add-postcode');
+      if (line1) line1.value = '';
+      if (suburb) suburb.value = '';
+      if (state) state.value = '';
+      if (postcode) postcode.value = '';
+    }
+    async function refreshQuickAddAddressFromCustomer() {
+      const different = document.getElementById('quick-add-address-different');
+      const customerSelect = document.getElementById('quick-add-customer');
+      if (!isTradie() || !customerSelect) return;
+      const customerId = customerSelect.value;
+      if (different && different.checked) {
+        clearQuickAddAddressFields();
+        return;
+      }
+      if (!customerId || customerId === '__new__') {
+        clearQuickAddAddressFields();
+        return;
+      }
+      try {
+        const customer = await CrmDB.getCustomerById(parseInt(customerId, 10));
+        setQuickAddAddressFromCustomer(customer || {});
+      } catch (e) {
+        clearQuickAddAddressFields();
+      }
+    }
+
+    // Customer dropdown change handler
+    document.getElementById('quick-add-customer')?.addEventListener('change', async (e) => {
+      const newCustomerFields = document.getElementById('new-customer-fields');
+      if (e.target.value === '__new__') {
+        newCustomerFields.style.display = 'block';
+      } else {
+        newCustomerFields.style.display = 'none';
+      }
+      await refreshQuickAddAddressFromCustomer();
+    });
+
+    // "Different from customer address" checkbox
+    document.getElementById('quick-add-address-different')?.addEventListener('change', async (e) => {
+      if (e.target.checked) {
+        clearQuickAddAddressFields();
+      } else {
+        await refreshQuickAddAddressFromCustomer();
+      }
+    });
+    
+    // Job suggestion buttons
+    document.querySelectorAll('.job-suggestion-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('quick-add-title').value = btn.dataset.value;
+      });
+    });
+    
+    // Reminder preset buttons
+    document.querySelectorAll('.reminder-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.reminder-preset-btn').forEach(b => b.classList.add('secondary'));
+        btn.classList.remove('secondary');
+        document.getElementById('quick-add-reminder-days').value = btn.dataset.days;
+      });
+    });
+    
+    // Save handler
+    document.getElementById('quick-add-save')?.addEventListener('click', async () => {
+      const customerSelect = document.getElementById('quick-add-customer');
+      const title = document.getElementById('quick-add-title').value.trim();
+      let address = '';
+      if (isTradie()) {
+        const line1 = document.getElementById('quick-add-address-line1')?.value?.trim() || '';
+        const suburb = document.getElementById('quick-add-suburb')?.value?.trim() || '';
+        const state = document.getElementById('quick-add-state')?.value?.trim() || '';
+        const postcode = document.getElementById('quick-add-postcode')?.value?.trim() || '';
+        address = [line1, suburb, state, postcode].filter(Boolean).join(', ');
+      } else {
+        address = document.getElementById('quick-add-address')?.value?.trim() || '';
+      }
+      const reminderDays = parseInt(document.getElementById('quick-add-reminder-days').value) || 0;
+      
+      let customerId = customerSelect.value;
+      
+      // Create new customer if selected
+      if (customerId === '__new__') {
+        const newName = document.getElementById('quick-add-customer-name').value.trim();
+        const newPhone = document.getElementById('quick-add-customer-phone').value.trim();
+        
+        if (!newName) {
+          alert('Please enter a customer name');
+          return;
+        }
+        
+        // Split name into first/last
+        const nameParts = newName.split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
+        try {
+          customerId = await CrmDB.createCustomer({
+            firstName,
+            lastName,
+            contactNumber: newPhone,
+            socialMediaName: '',
+            referralNotes: ''
+          });
+        } catch (error) {
+          console.error('Error creating customer:', error);
+          alert('Error creating customer: ' + error.message);
+          return;
+        }
+      }
+      
+      if (!customerId) {
+        alert('Please select or create a customer');
+        return;
+      }
+      
+      if (!title) {
+        alert('Please enter a job title');
+        return;
+      }
+      
+      try {
+        // Create the job (appointment) with status "lead"
+        const now = new Date();
+        const appointmentId = await CrmDB.createAppointment({
+          customerId: parseInt(customerId),
+          title: title,
+          start: now.toISOString(),
+          end: new Date(now.getTime() + 3600000).toISOString(), // 1 hour default
+          status: 'lead',
+          address: address || null,
+          quotedAmount: null,
+          invoiceAmount: null,
+          paidAmount: null
+        });
+        
+        // Create reminder if requested
+        if (reminderDays > 0) {
+          const dueAt = new Date();
+          dueAt.setDate(dueAt.getDate() + reminderDays);
+          dueAt.setHours(9, 0, 0, 0); // 9am
+          
+          await CrmDB.createReminder({
+            customerId: parseInt(customerId),
+            appointmentId: appointmentId,
+            message: 'Follow up on: ' + title,
+            dueAt: dueAt.toISOString(),
+            status: 'pending'
+          });
+        }
+        
+        hideModal();
+        
+        // Refresh the current view
+        render();
+        
+      } catch (error) {
+        console.error('Error creating job:', error);
+        alert('Error creating job: ' + error.message);
+      }
+    });
+    
+    document.getElementById('quick-add-cancel')?.addEventListener('click', hideModal);
+
+    // Populate address from prefilled customer when modal opens
+    if (prefilledCustomerId && isTradie()) {
+      setTimeout(() => refreshQuickAddAddressFromCustomer(), 0);
+    }
+  }
+
   async function renderBackup() {
+    const db = getDataApi();
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
         <h2>Options</h2>
       </div>
-      <div class="card">
+      
+      ${isTradie() ? `
+      <div class="card" style="margin-bottom: 16px;">
+        <h3 style="margin-top: 0;">📊 Storage Usage</h3>
+        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+          Driver: <span id="storage-driver-name">Detecting...</span>
+        </div>
+        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+          Runtime: <span id="native-runtime-status">Detecting...</span>
+        </div>
+        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
+          Native Plugins: <span id="native-plugin-status">Detecting...</span>
+        </div>
+        <div class="row" style="align-items: flex-end; margin-bottom: 8px; gap: 8px;">
+          <label style="font-size: 12px;">
+            Native Driver Mode<br />
+            <select id="native-driver-mode" style="margin-top: 4px;">
+              <option value="adapter">Adapter (Default)</option>
+              <option value="sqlite_test">SQLite Test Mode</option>
+            </select>
+          </label>
+          <button id="save-native-driver-mode-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Save Mode</button>
+        </div>
+        <div id="native-driver-mode-status" class="muted" style="font-size: 12px; margin-bottom: 8px;"></div>
+        <div id="storage-meter-container">
+          <div class="muted" style="font-size: 12px;">Calculating...</div>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+          <button id="native-migrate-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Migrate Current Data to Native SQLite</button>
+        </div>
+        <div id="native-migrate-status" class="muted" style="font-size: 12px; margin-top: 6px;"></div>
+        <div class="row" style="margin-top: 10px;">
+          <button id="native-smoke-test-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Run Native Storage Smoke Test</button>
+        </div>
+        <div id="native-smoke-test-status" class="muted" style="font-size: 12px; margin-top: 6px;"></div>
+      </div>
+      ` : ''}
+      
+      <div class="card" style="margin-bottom: 16px;">
         <div class="form">
+          <h3 style="margin-top: 0; margin-bottom: 10px;">Export</h3>
+          <div class="muted" style="font-size: 12px; margin-bottom: 10px;">
+            Create a backup file first, then download it.
+          </div>
           <div class="row">
-            <button id="export-btn" class="button">${t('export')}</button>
+            <button id="export-btn" class="button">Export with Images</button>
+            <button id="export-lite-btn" class="button secondary">Export Data Only</button>
+            <button id="export-images-only-btn" class="button secondary">Export Images Only</button>
             <button id="download-btn" class="button secondary" disabled>${t('download')}</button>
           </div>
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%;" />
+          <div class="muted" id="backup-status" style="margin-top: 8px;"></div>
+          
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
+          <h3 style="margin-top: 0; margin-bottom: 10px;">Import</h3>
+          <div class="muted" style="font-size: 12px; margin-bottom: 10px;">
+            Load a backup file, preview what will import, then run selected import.
+          </div>
           <div class="row">
             <input id="import-file" type="file" accept="application/json" />
             <button id="load-backup" class="button secondary">${t('load')}</button>
@@ -2640,6 +4763,11 @@
               <button id="import-selected" class="button">${t('importSelected')}</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form">
           <div class="row">
             <button id="wipe-btn" class="button danger">${t('wipeAllData')}</button>
           </div>
@@ -2686,6 +4814,45 @@
             <div id="restore-notes-status" style="margin-top: 12px; font-size: 12px;"></div>
           </div>
           
+          ${isTradie() ? `
+          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          
+          <h3 style="margin-top: 16px; margin-bottom: 8px;">⭐ Pro Settings</h3>
+          
+          <div class="card" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3);">
+            <div style="margin-bottom: 16px;">
+              <strong style="font-size: 14px;">🔔 Backup Reminders</strong>
+              <div class="muted" style="font-size: 12px; margin: 8px 0;">Get reminded to backup your data regularly.</div>
+              <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <select id="backup-reminder-frequency" style="flex: 1;">
+                  <option value="off">Off</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <button id="save-backup-reminder" class="button secondary" style="padding: 8px 12px;">Save</button>
+              </div>
+            </div>
+            
+            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px;">
+              <strong style="font-size: 14px;">🔒 App Lock</strong>
+              <div class="muted" style="font-size: 12px; margin: 8px 0;">Protect your data with a PIN code when opening the app.</div>
+              <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                  <input type="checkbox" id="app-lock-enabled" />
+                  <span>Enable PIN Lock</span>
+                </label>
+              </div>
+              <div id="pin-setup-section" style="display: none; margin-top: 12px;">
+                <div style="display: flex; gap: 8px;">
+                  <input type="password" id="app-lock-pin" placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="flex: 1; text-align: center; letter-spacing: 8px; font-size: 18px;" />
+                  <button id="save-app-lock" class="button" style="padding: 8px 16px;">Set PIN</button>
+                </div>
+              </div>
+              <div id="pin-status" style="margin-top: 8px; font-size: 12px;"></div>
+            </div>
+          </div>
+          ` : ''}
+          
           <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
           
           <div class="row">
@@ -2696,13 +4863,263 @@
           <div class="muted" style="font-size: 12px; margin-top: 8px;">
             Use this if notes don't appear after migration, especially when using the app from home screen.
           </div>
-          
-          <div class="muted" id="backup-status"></div>
         </div>
       </div>
     `);
 
+    // Load storage stats for tradie edition
+    if (isTradie()) {
+      loadStorageStats();
+      const driverNameEl = document.getElementById('storage-driver-name');
+      const runtimeEl = document.getElementById('native-runtime-status');
+      const pluginEl = document.getElementById('native-plugin-status');
+      const nativeDriverModeEl = document.getElementById('native-driver-mode');
+      const saveNativeDriverModeBtn = document.getElementById('save-native-driver-mode-btn');
+      const nativeDriverModeStatusEl = document.getElementById('native-driver-mode-status');
+      const nativeMigrateBtn = document.getElementById('native-migrate-btn');
+      const nativeMigrateStatusEl = document.getElementById('native-migrate-status');
+      const nativeSmokeBtn = document.getElementById('native-smoke-test-btn');
+      const nativeSmokeStatusEl = document.getElementById('native-smoke-test-status');
+      if (driverNameEl) {
+        const status = window.StorageDriverFactory?.getStatus?.();
+        if (status?.initialized) {
+          driverNameEl.textContent = `${status.driver} (${status.backend})`;
+        } else {
+          driverNameEl.textContent = productConfig.useSupabase ? 'Supabase API' : 'IndexedDB';
+        }
+      }
+      const readiness = window.StorageDriverFactory?.getNativeReadiness?.();
+      if (runtimeEl) {
+        if (readiness) {
+          runtimeEl.textContent = readiness.isNative ? `Native (${readiness.platform})` : `Web/PWA (${readiness.platform})`;
+        } else {
+          runtimeEl.textContent = 'Unknown';
+        }
+      }
+      if (pluginEl) {
+        if (readiness) {
+          const sqliteText = readiness.sqlite?.available ? `SQLite: ready (${readiness.sqlite.pluginName})` : 'SQLite: missing';
+          const fsText = readiness.filesystem?.available ? `Filesystem: ready (${readiness.filesystem.pluginName})` : 'Filesystem: missing';
+          pluginEl.textContent = `${sqliteText} | ${fsText}`;
+        } else {
+          pluginEl.textContent = 'Unavailable';
+        }
+      }
+
+      if (nativeDriverModeEl) {
+        nativeDriverModeEl.value = getNativeDriverMode();
+      }
+      if (nativeDriverModeStatusEl) {
+        nativeDriverModeStatusEl.textContent = `Current mode: ${getNativeDriverMode() === 'sqlite_test' ? 'SQLite Test Mode' : 'Adapter (Default)'}`;
+      }
+      if (saveNativeDriverModeBtn && nativeDriverModeEl) {
+        saveNativeDriverModeBtn.addEventListener('click', () => {
+          const saved = setNativeDriverMode(nativeDriverModeEl.value);
+          if (nativeDriverModeStatusEl) {
+            nativeDriverModeStatusEl.textContent = `Saved mode: ${saved === 'sqlite_test' ? 'SQLite Test Mode' : 'Adapter (Default)'}`;
+          }
+        });
+      }
+
+      if (nativeMigrateBtn && nativeMigrateStatusEl) {
+        nativeMigrateBtn.addEventListener('click', async () => {
+          const readinessCheck = window.StorageDriverFactory?.getNativeReadiness?.();
+          if (!readinessCheck?.isNative) {
+            nativeMigrateStatusEl.textContent = 'Native migration is only available in iOS/Android builds.';
+            return;
+          }
+          if (!readinessCheck?.sqlite?.available) {
+            nativeMigrateStatusEl.textContent = 'SQLite plugin is not available on this native runtime.';
+            return;
+          }
+
+          const proceed = confirm(
+            'This will copy current app data into a native SQLite database for migration testing. ' +
+            'Your existing data source will remain unchanged. Continue?'
+          );
+          if (!proceed) return;
+
+          nativeMigrateBtn.disabled = true;
+          nativeMigrateStatusEl.textContent = 'Preparing data...';
+          const backend = productConfig.useSupabase ? 'supabase-native' : 'indexeddb-native';
+          const sourceApi = window.CrmDB || null;
+
+          const sanitizeRecord = (record) => {
+            if (!record || typeof record !== 'object') return null;
+            const clone = { ...record };
+            if ('blob' in clone) delete clone.blob;
+            try {
+              return JSON.parse(JSON.stringify(clone));
+            } catch (error) {
+              return null;
+            }
+          };
+
+          try {
+            if (!sourceApi) {
+              throw new Error('Source data API unavailable');
+            }
+
+            const customers = typeof sourceApi.getAllCustomers === 'function' ? await sourceApi.getAllCustomers() : [];
+            nativeMigrateStatusEl.textContent = `Loaded customers (${customers.length})...`;
+            const appointments = typeof sourceApi.getAllAppointments === 'function' ? await sourceApi.getAllAppointments() : [];
+            nativeMigrateStatusEl.textContent = `Loaded jobs (${appointments.length})...`;
+            const notes = typeof sourceApi.getAllNotes === 'function' ? await sourceApi.getAllNotes() : [];
+            const reminders = typeof sourceApi.getAllReminders === 'function' ? await sourceApi.getAllReminders() : [];
+            const jobEvents = typeof sourceApi.getAllJobEvents === 'function' ? await sourceApi.getAllJobEvents() : [];
+
+            let images = [];
+            if (typeof sourceApi.getImagesByCustomerId === 'function') {
+              nativeMigrateStatusEl.textContent = `Collecting photos for ${customers.length} customers...`;
+              const imageMap = new Map();
+              for (let i = 0; i < customers.length; i++) {
+                const customer = customers[i];
+                const customerImages = await sourceApi.getImagesByCustomerId(customer.id);
+                customerImages.forEach((img) => {
+                  const safe = sanitizeRecord(img);
+                  if (!safe) return;
+                  const key = safe.id != null ? String(safe.id) : `${safe.customerId || customer.id}-${safe.name || 'img'}-${safe.createdAt || i}`;
+                  if (!imageMap.has(key)) imageMap.set(key, safe);
+                });
+              }
+              images = Array.from(imageMap.values());
+            }
+
+            const datasets = {
+              customers: (customers || []).map(sanitizeRecord).filter(Boolean),
+              appointments: (appointments || []).map(sanitizeRecord).filter(Boolean),
+              notes: (notes || []).map(sanitizeRecord).filter(Boolean),
+              reminders: (reminders || []).map(sanitizeRecord).filter(Boolean),
+              jobEvents: (jobEvents || []).map(sanitizeRecord).filter(Boolean),
+              images: (images || []).map(sanitizeRecord).filter(Boolean)
+            };
+
+            nativeMigrateStatusEl.textContent = 'Opening native SQLite database...';
+            await window.StorageDriverFactory.initialize({
+              forceDriver: 'sqlite',
+              dbName: `${productConfig.dbName || 'tradie-crm-db'}-native`,
+              dbVersion: Number(productConfig.dbVersion || 1)
+            });
+
+            const sqliteDriver = window.StorageDriverFactory.getDriver();
+            const stores = ['customers', 'appointments', 'notes', 'reminders', 'jobEvents', 'images'];
+            const migratedCounts = {};
+
+            for (let i = 0; i < stores.length; i++) {
+              const store = stores[i];
+              const rows = datasets[store] || [];
+              nativeMigrateStatusEl.textContent = `Migrating ${store} (${rows.length})...`;
+              await sqliteDriver.clear(store);
+              for (let j = 0; j < rows.length; j++) {
+                await sqliteDriver.create(store, rows[j]);
+              }
+              migratedCounts[store] = rows.length;
+            }
+
+            localStorage.setItem(`${STORAGE_PREFIX}last_native_migration`, JSON.stringify({
+              at: new Date().toISOString(),
+              database: `${productConfig.dbName || 'tradie-crm-db'}-native`,
+              counts: migratedCounts
+            }));
+
+            nativeMigrateStatusEl.textContent =
+              `Migration complete. customers:${migratedCounts.customers || 0}, jobs:${migratedCounts.appointments || 0}, notes:${migratedCounts.notes || 0}, reminders:${migratedCounts.reminders || 0}, events:${migratedCounts.jobEvents || 0}, images:${migratedCounts.images || 0}`;
+          } catch (error) {
+            nativeMigrateStatusEl.textContent = `Migration failed: ${error.message || error}`;
+          } finally {
+            try {
+              if (window.CrmDB && typeof window.StorageDriverFactory.initializeFromDbApi === 'function') {
+                await window.StorageDriverFactory.initializeFromDbApi(window.CrmDB, { backend });
+              }
+            } catch (restoreError) {
+              // Keep migration result visible; restore errors can be checked in console.
+            }
+            const status = window.StorageDriverFactory?.getStatus?.();
+            if (driverNameEl && status?.initialized) {
+              driverNameEl.textContent = `${status.driver} (${status.backend})`;
+            }
+            nativeMigrateBtn.disabled = false;
+          }
+        });
+      }
+
+      if (nativeSmokeBtn && nativeSmokeStatusEl) {
+        nativeSmokeBtn.addEventListener('click', async () => {
+          const readinessCheck = window.StorageDriverFactory?.getNativeReadiness?.();
+          if (!readinessCheck?.isNative) {
+            nativeSmokeStatusEl.textContent = 'Native smoke test is only available in iOS/Android builds.';
+            return;
+          }
+          const selectedMode = getNativeDriverMode();
+          if (selectedMode !== 'sqlite_test') {
+            nativeSmokeStatusEl.textContent = 'Driver mode is set to Adapter. Switch to SQLite Test Mode to run the SQLite smoke test.';
+            return;
+          }
+          if (!readinessCheck?.sqlite?.available) {
+            nativeSmokeStatusEl.textContent = 'SQLite plugin is not available on this native runtime.';
+            return;
+          }
+
+          nativeSmokeBtn.disabled = true;
+          nativeSmokeStatusEl.textContent = 'Running SQLite smoke test...';
+          const backend = productConfig.useSupabase ? 'supabase-native' : 'indexeddb-native';
+
+          try {
+            await window.StorageDriverFactory.initialize({
+              forceDriver: 'sqlite',
+              dbName: `${productConfig.dbName || 'tradie-crm-db'}-smoke`,
+              dbVersion: 1
+            });
+            const driver = window.StorageDriverFactory.getDriver();
+            const store = 'smoke_test';
+
+            await driver.clear(store);
+            const id = await driver.create(store, {
+              label: 'smoke',
+              probe: 'write',
+              createdAt: new Date().toISOString()
+            });
+            const fetched = await driver.getById(store, id);
+            if (!fetched || fetched.id !== id) {
+              throw new Error('create/getById check failed');
+            }
+
+            await driver.update(store, { ...fetched, label: 'updated' });
+            const indexed = await driver.getByIndex(store, 'label', 'updated');
+            if (!Array.isArray(indexed) || !indexed.some((row) => row && row.id === id)) {
+              throw new Error('update/getByIndex check failed');
+            }
+
+            await driver.delete(store, id);
+            const deleted = await driver.getById(store, id);
+            if (deleted) {
+              throw new Error('delete/getById check failed');
+            }
+
+            nativeSmokeStatusEl.textContent = 'SQLite smoke test passed (create/read/update/index/delete).';
+          } catch (error) {
+            nativeSmokeStatusEl.textContent = `SQLite smoke test failed: ${error.message || error}`;
+          } finally {
+            try {
+              if (window.CrmDB && typeof window.StorageDriverFactory.initializeFromDbApi === 'function') {
+                await window.StorageDriverFactory.initializeFromDbApi(window.CrmDB, { backend });
+              }
+            } catch (restoreError) {
+              // Keep smoke result visible; restore errors can be checked via console.
+            }
+            const status = window.StorageDriverFactory?.getStatus?.();
+            if (driverNameEl && status?.initialized) {
+              driverNameEl.textContent = `${status.driver} (${status.backend})`;
+            }
+            nativeSmokeBtn.disabled = false;
+          }
+        });
+      }
+    }
+
     const exportBtn = document.getElementById('export-btn');
+    const exportLiteBtn = document.getElementById('export-lite-btn');
+    const exportImagesOnlyBtn = document.getElementById('export-images-only-btn');
     const downloadBtn = document.getElementById('download-btn');
     const loadBtn = document.getElementById('load-backup');
     const importFile = document.getElementById('import-file');
@@ -2720,32 +5137,128 @@
     let lastExportBlobUrl = null;
     let lastExportFileName = null;
     let loadedBackup = null;
+    const filterCustomerNotesForIds = (notesInput, allowedIds) => {
+      const allowed = new Set((allowedIds || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id)));
+      if (Array.isArray(notesInput)) {
+        return notesInput.filter((n) => allowed.has(Number(n?.customerId)));
+      }
+      if (notesInput && typeof notesInput === 'object') {
+        const out = {};
+        Object.keys(notesInput).forEach((cid) => {
+          const numId = Number(cid);
+          if (!allowed.has(numId)) return;
+          out[cid] = (notesInput[cid] || []).filter((n) => allowed.has(Number(n?.customerId ?? cid)));
+        });
+        return out;
+      }
+      return [];
+    };
+    const isImagesOnlyBackup = (backup) => {
+      if (!backup || typeof backup !== 'object') return false;
+      const type = String(backup.__meta?.backupType || '').toLowerCase();
+      return type === 'images-only' || ((backup.customers || []).length === 0 && (backup.images || []).length > 0);
+    };
+
+    if (!db) {
+      statusEl.textContent = 'Storage backend unavailable on this screen.';
+      [exportBtn, exportLiteBtn, exportImagesOnlyBtn, downloadBtn, loadBtn, importSelectedBtn, wipeBtn].forEach((el) => {
+        if (el) el.disabled = true;
+      });
+      return;
+    }
 
     exportBtn.addEventListener('click', async () => {
       try {
-        statusEl.textContent = 'Starting export...';
+        statusEl.textContent = 'Starting full export...';
         exportBtn.disabled = true;
+        if (exportLiteBtn) exportLiteBtn.disabled = true;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = true;
         exportBtn.textContent = 'Exporting...';
         
-        const result = await ChikasDB.safeExportAllData((message, progress) => {
+        const result = await db.safeExportAllData((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         
         statusEl.textContent = 'Creating backup file...';
         
-        // Use the pre-created blob
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
         lastExportBlobUrl = URL.createObjectURL(result.blob);
-        lastExportFileName = `chikas-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
         downloadBtn.disabled = false;
-        statusEl.textContent = `✅ Backup ready: ${lastExportFileName}`;
+        statusEl.textContent = `Full backup ready: ${lastExportFileName}`;
         
         exportBtn.disabled = false;
-        exportBtn.textContent = t('export');
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportBtn.textContent = 'Export with Images';
       } catch (error) {
-        statusEl.textContent = `❌ Export failed: ${error.message}`;
+        statusEl.textContent = `Full export failed: ${error.message}`;
         exportBtn.disabled = false;
-        exportBtn.textContent = t('export');
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportBtn.textContent = 'Export with Images';
+      }
+    });
+
+    exportLiteBtn?.addEventListener('click', async () => {
+      try {
+        statusEl.textContent = 'Starting data-only export...';
+        exportBtn.disabled = true;
+        exportLiteBtn.disabled = true;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = true;
+        exportLiteBtn.textContent = 'Exporting...';
+
+        const result = await db.exportDataWithoutImages((message, progress) => {
+          statusEl.textContent = `${message} (${Math.round(progress)}%)`;
+        });
+
+        if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
+        lastExportBlobUrl = URL.createObjectURL(result.blob);
+        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-data-only-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        downloadBtn.disabled = false;
+        statusEl.textContent = `Data-only backup ready: ${lastExportFileName}`;
+
+        exportBtn.disabled = false;
+        exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportLiteBtn.textContent = 'Export Data Only';
+      } catch (error) {
+        statusEl.textContent = `Data-only export failed: ${error.message}`;
+        exportBtn.disabled = false;
+        exportLiteBtn.disabled = false;
+        if (exportImagesOnlyBtn) exportImagesOnlyBtn.disabled = false;
+        exportLiteBtn.textContent = 'Export Data Only';
+      }
+    });
+
+    exportImagesOnlyBtn?.addEventListener('click', async () => {
+      try {
+        statusEl.textContent = 'Starting images-only export...';
+        exportBtn.disabled = true;
+        if (exportLiteBtn) exportLiteBtn.disabled = true;
+        exportImagesOnlyBtn.disabled = true;
+        exportImagesOnlyBtn.textContent = 'Exporting...';
+
+        const result = await db.exportImagesOnly((message, progress) => {
+          statusEl.textContent = `${message} (${Math.round(progress)}%)`;
+        });
+
+        if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
+        lastExportBlobUrl = URL.createObjectURL(result.blob);
+        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-images-only-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        downloadBtn.disabled = false;
+        statusEl.textContent = `Images-only backup ready: ${lastExportFileName}`;
+
+        exportBtn.disabled = false;
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        exportImagesOnlyBtn.disabled = false;
+        exportImagesOnlyBtn.textContent = 'Export Images Only';
+      } catch (error) {
+        statusEl.textContent = `Images-only export failed: ${error.message}`;
+        exportBtn.disabled = false;
+        if (exportLiteBtn) exportLiteBtn.disabled = false;
+        exportImagesOnlyBtn.disabled = false;
+        exportImagesOnlyBtn.textContent = 'Export Images Only';
       }
     });
 
@@ -2768,16 +5281,29 @@
         const customers = loadedBackup.customers || [];
         const appointments = loadedBackup.appointments || [];
         const images = loadedBackup.images || [];
-        summary.textContent = `Customers: ${customers.length}, Appointments: ${appointments.length}, Images: ${images.length}`;
-        customerList.innerHTML = customers.map((c) => `
-          <label class="list-item">
-            <span>
-              <strong>${escapeHtml(c.lastName || '')} ${escapeHtml(c.firstName || '')}</strong>
-              <span class="muted"> (ID ${c.id || '?'}, ${escapeHtml(c.contactNumber || '')})</span>
-            </span>
-            <input type="checkbox" class="select-customer" data-id="${c.id}" checked />
-          </label>
-        `).join('');
+        if (isImagesOnlyBackup(loadedBackup)) {
+          summary.textContent = `Images-only backup detected: ${images.length} images`;
+          customerList.innerHTML = `<div class="muted">This file contains images only. Import will merge images into existing data.</div>`;
+          importSelectedBtn.textContent = 'Import Images Only';
+          includeApptsEl.checked = false;
+          includeApptsEl.disabled = true;
+          includeImagesEl.checked = true;
+          includeImagesEl.disabled = true;
+        } else {
+          summary.textContent = `Customers: ${customers.length}, Appointments: ${appointments.length}, Images: ${images.length}`;
+          customerList.innerHTML = customers.map((c) => `
+            <label class="list-item">
+              <span>
+                <strong>${escapeHtml(c.lastName || '')} ${escapeHtml(c.firstName || '')}</strong>
+                <span class="muted"> (ID ${c.id || '?'}, ${escapeHtml(c.contactNumber || '')})</span>
+              </span>
+              <input type="checkbox" class="select-customer" data-id="${c.id}" checked />
+            </label>
+          `).join('');
+          importSelectedBtn.textContent = t('importSelected');
+          includeApptsEl.disabled = false;
+          includeImagesEl.disabled = false;
+        }
         preview.classList.remove('hidden');
       } catch (e) {
         alert('Could not read backup file: ' + e.message);
@@ -2794,6 +5320,28 @@
 
     importSelectedBtn.addEventListener('click', async () => {
       if (!loadedBackup) { alert('Load a backup first'); return; }
+
+      if (isImagesOnlyBackup(loadedBackup)) {
+        const images = loadedBackup.images || [];
+        if (images.length === 0) { alert('No images found in this backup'); return; }
+        try {
+          statusEl.textContent = 'Importing images...';
+          await db.importAllData({
+            __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 },
+            customers: [],
+            appointments: [],
+            images,
+            customerNotes: {}
+          }, { mode: 'merge' });
+          statusEl.textContent = `Images import complete (${images.length} images)`;
+          alert(`Imported ${images.length} images`);
+        } catch (e) {
+          statusEl.textContent = 'Images import failed';
+          alert('Images import failed: ' + e.message);
+        }
+        return;
+      }
+
       const selectedIds = Array.from(customerList.querySelectorAll('.select-customer'))
         .filter((cb) => cb.checked)
         .map((cb) => Number(cb.getAttribute('data-id')))
@@ -2806,14 +5354,6 @@
       const customers = (loadedBackup.customers || []).filter((c) => selectedIds.includes(c.id));
       const appointments = includeAppointments ? (loadedBackup.appointments || []).filter((a) => selectedIds.includes(a.customerId)) : [];
       const images = includeImages ? (loadedBackup.images || []).filter((img) => selectedIds.includes(img.customerId)) : [];
-      const allCustomerNotes = loadedBackup.customerNotes || {};
-      const selectedIdSet = new Set(selectedIds.map((id) => String(id)));
-      const filteredCustomerNotes = {};
-      Object.keys(allCustomerNotes).forEach((customerId) => {
-        if (selectedIdSet.has(String(customerId))) {
-          filteredCustomerNotes[customerId] = allCustomerNotes[customerId];
-        }
-      });
       
       // Chunked import for large datasets
       const CHUNK_SIZE = 5; // Process 5 customers at a time
@@ -2834,20 +5374,14 @@
             const chunkImages = images.filter(img => chunkCustomerIds.includes(img.customerId));
             
             const payload = {
-              __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 },
+              __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 },
               customers: chunk, 
               appointments: chunkAppointments, 
               images: chunkImages,
-              customerNotes: Object.fromEntries(
-                chunkCustomerIds
-                  .map((id) => String(id))
-                  .filter((id) => filteredCustomerNotes[id] != null)
-                  .map((id) => [id, filteredCustomerNotes[id]])
-              )
+              customerNotes: filterCustomerNotesForIds(loadedBackup.customerNotes || loadedBackup.notes || [], chunkCustomerIds)
             };
             
-            const chunkMode = (mode === 'replace' && i > 0) ? 'merge' : mode;
-            await ChikasDB.importAllData(payload, { mode: chunkMode });
+            await db.importAllData(payload, { mode });
             
             const processed = Math.min(i + CHUNK_SIZE, totalCustomers);
             statusEl.textContent = `Importing in chunks... (${processed}/${totalCustomers})`;
@@ -2867,15 +5401,15 @@
       } else {
         // Small dataset, import normally
         const payload = { 
-          __meta: loadedBackup.__meta || { app: 'chikas-db', version: 1 }, 
+          __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 }, 
           customers, 
           appointments, 
           images,
-          customerNotes: filteredCustomerNotes
+          customerNotes: filterCustomerNotesForIds(loadedBackup.customerNotes || loadedBackup.notes || [], selectedIds)
         };
         try {
           statusEl.textContent = 'Importing...';
-          await ChikasDB.importAllData(payload, { mode });
+          await db.importAllData(payload, { mode });
           statusEl.textContent = 'Import complete';
           alert('Import complete');
         } catch (e) {
@@ -2886,14 +5420,10 @@
     });
 
     wipeBtn.addEventListener('click', async () => {
-      const targetLabel = window.USE_SUPABASE ? 'Supabase data' : 'local data';
-      if (!confirm(`This will permanently delete all ${targetLabel}. Continue?`)) return;
-      try {
-        await ChikasDB.clearAllStores();
-        alert(`All ${targetLabel} deleted`);
-      } catch (e) {
-        alert('Wipe failed: ' + (e && e.message ? e.message : e));
-      }
+      const wipeScope = productConfig.useSupabase ? 'all cloud data in Supabase for this profile' : 'all local data on this device';
+      if (!confirm(`This will permanently delete ${wipeScope}. Continue?`)) return;
+      await db.clearAllStores();
+      alert(productConfig.useSupabase ? 'All Supabase data deleted' : 'All local data deleted');
     });
 
     // Add event listener for refresh app button
@@ -2901,10 +5431,84 @@
     if (refreshAppBtn) {
       refreshAppBtn.addEventListener('click', () => {
         // Clear migration completed flag to force re-migration
-        localStorage.removeItem('chikas_migration_completed');
+        localStorage.removeItem(`${STORAGE_PREFIX}migration_completed`);
         // Reload the page
         window.location.reload();
       });
+    }
+
+    // Pro Settings handlers (tradie edition)
+    if (isTradie()) {
+      // Load saved backup reminder setting
+      const backupReminderSelect = document.getElementById('backup-reminder-frequency');
+      if (backupReminderSelect) {
+        const savedFrequency = localStorage.getItem(`${STORAGE_PREFIX}backup_reminder_frequency`) || 'off';
+        backupReminderSelect.value = savedFrequency;
+        
+        document.getElementById('save-backup-reminder')?.addEventListener('click', () => {
+          const frequency = backupReminderSelect.value;
+          localStorage.setItem(`${STORAGE_PREFIX}backup_reminder_frequency`, frequency);
+          
+          // Schedule next reminder
+          if (frequency !== 'off') {
+            const now = new Date();
+            let nextReminder;
+            if (frequency === 'weekly') {
+              nextReminder = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            } else if (frequency === 'monthly') {
+              nextReminder = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+            }
+            localStorage.setItem(`${STORAGE_PREFIX}next_backup_reminder`, nextReminder.toISOString());
+          } else {
+            localStorage.removeItem(`${STORAGE_PREFIX}next_backup_reminder`);
+          }
+          
+          alert('Backup reminder setting saved!');
+        });
+      }
+      
+      // App Lock settings
+      const appLockCheckbox = document.getElementById('app-lock-enabled');
+      const pinSetupSection = document.getElementById('pin-setup-section');
+      const pinStatus = document.getElementById('pin-status');
+      
+      if (appLockCheckbox) {
+        // Load current setting
+        const hasPin = localStorage.getItem(`${STORAGE_PREFIX}app_lock_pin`);
+        appLockCheckbox.checked = !!hasPin;
+        if (hasPin) {
+          pinStatus.innerHTML = '<span style="color: #22c55e;">✓ PIN is set</span>';
+        }
+        
+        appLockCheckbox.addEventListener('change', () => {
+          if (appLockCheckbox.checked) {
+            pinSetupSection.style.display = 'block';
+          } else {
+            pinSetupSection.style.display = 'none';
+            // Clear the PIN
+            localStorage.removeItem(`${STORAGE_PREFIX}app_lock_pin`);
+            pinStatus.innerHTML = '<span style="color: #94a3b8;">PIN lock disabled</span>';
+          }
+        });
+        
+        document.getElementById('save-app-lock')?.addEventListener('click', () => {
+          const pinInput = document.getElementById('app-lock-pin');
+          const pin = pinInput.value.trim();
+          
+          if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+            alert('Please enter a 4-digit PIN');
+            return;
+          }
+          
+          // Store hashed PIN (simple hash for demo - in production use proper hashing)
+          const hashedPin = btoa(pin + 'tradie_salt');
+          localStorage.setItem(`${STORAGE_PREFIX}app_lock_pin`, hashedPin);
+          
+          pinInput.value = '';
+          pinSetupSection.style.display = 'none';
+          pinStatus.innerHTML = '<span style="color: #22c55e;">✓ PIN has been set!</span>';
+        });
+      }
     }
 
     // Note Recovery handlers
@@ -2928,11 +5532,11 @@
         recoveryStatus.textContent = '🔍 Scanning notes... This may take a moment.';
         recoveryStatus.style.color = '';
 
-        const results = await ChikasDB.scanForCorruptedNotes();
+        const results = await CrmDB.scanForCorruptedNotes();
         scanResultData = results;
 
         // Get customer names for display
-        const allCustomers = await ChikasDB.getAllCustomers();
+        const allCustomers = await CrmDB.getAllCustomers();
         const customerMap = new Map();
         allCustomers.forEach(customer => {
           customerMap.set(customer.id, customer);
@@ -3496,7 +6100,7 @@
         recoveryStatus.textContent = `🔄 Recovering ${recoverable.length} note(s)...`;
         recoveryStatus.style.color = '';
 
-        const result = await ChikasDB.recoverCorruptedNotes(false); // dryRun = false
+        const result = await CrmDB.recoverCorruptedNotes(false); // dryRun = false
 
         if (result.recovered > 0) {
           recoveryStatus.innerHTML = `
@@ -3551,7 +6155,7 @@
 
         restoreNotesStatus.textContent = '🔄 Restoring notes from backup...';
         
-        const result = await ChikasDB.restoreNotesFromBackup(backupData, {
+        const result = await CrmDB.restoreNotesFromBackup(backupData, {
           mode: 'merge' // Smart mode - only replaces corrupted notes
         });
 
@@ -3630,7 +6234,7 @@
         exportBtn.disabled = true;
         exportBtn.textContent = 'Backing up...';
         
-        const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+        const result = await CrmDB.exportDataWithoutImages((message, progress) => {
           statusEl.textContent = `${message} (${Math.round(progress)}%)`;
         });
         
@@ -3640,7 +6244,7 @@
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `chikas-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `${productConfig.appSlug || 'crm'}-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -3680,9 +6284,9 @@
         }
         
         // Clear localStorage (but keep language preference)
-        const lang = localStorage.getItem('chikas_lang');
+        const lang = localStorage.getItem(`${STORAGE_PREFIX}lang`);
         localStorage.clear();
-        if (lang) localStorage.setItem('chikas_lang', lang);
+        if (lang) localStorage.setItem(`${STORAGE_PREFIX}lang`, lang);
         
         // Force reload with cache busting
         const timestamp = Date.now();
@@ -3696,46 +6300,11 @@
   }
 
   // Helpers
-  function initializeAddressLookup(formEl) {
-    if (!formEl) return;
-    if (typeof window.attachAddressLookup !== 'function') return;
-
-    const searchInput = formEl.querySelector('input[name="addressLookup"]');
-    if (!searchInput) return;
-
-    window.attachAddressLookup({
-      form: formEl,
-      searchInput: searchInput,
-      resultsContainer: formEl.querySelector('[data-address-lookup-results]'),
-      fields: {
-        addressLine1: formEl.querySelector('input[name="addressLine1"]'),
-        suburb: formEl.querySelector('input[name="suburb"]'),
-        state: formEl.querySelector('input[name="state"]'),
-        postcode: formEl.querySelector('input[name="postcode"]'),
-        country: formEl.querySelector('input[name="country"]')
-      }
-    });
-  }
-
   function setFormReadOnly(formEl, readOnly) {
     formEl.dataset.readOnly = readOnly ? 'true' : 'false';
     const inputs = formEl.querySelectorAll('input, select, textarea');
     inputs.forEach((el) => {
-      if (
-        el.name === 'firstName' ||
-        el.name === 'lastName' ||
-        el.name === 'contactNumber' ||
-        el.name === 'socialMediaName' ||
-        el.name === 'referralType' ||
-        el.name === 'referralNotes' ||
-        el.name === 'addressLookup' ||
-        el.name === 'addressLine1' ||
-        el.name === 'addressLine2' ||
-        el.name === 'suburb' ||
-        el.name === 'state' ||
-        el.name === 'postcode' ||
-        el.name === 'country'
-      ) {
+      if (el.name === 'firstName' || el.name === 'lastName' || el.name === 'contactNumber' || el.name === 'referralType' || el.name === 'referralNotes') {
         el.disabled = readOnly;
       }
     });
@@ -3882,7 +6451,7 @@
       if (!confirm('Delete this image?')) return;
       
       try {
-        await ChikasDB.deleteImage(imageId);
+        await CrmDB.deleteImage(imageId);
         // Remove from local array
         images.splice(currentIdx, 1);
         
@@ -4178,6 +6747,30 @@
     return String(str || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c] || c);
   }
 
+  // Helper function to get current customer ID from URL or page context
+  function getCurrentCustomerId() {
+    // Try to get customer ID from URL hash parameters
+    const hash = window.location.hash;
+    const idMatch = hash.match(/[?&]id=([^&]+)/);
+    if (idMatch) {
+      return idMatch[1];
+    }
+    
+    // Try to get from search params
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    if (id) {
+      return id;
+    }
+    
+    // Check for temp-new-customer (add customer screen)
+    if (hash.includes('#/add')) {
+      return 'temp-new-customer';
+    }
+    
+    return null;
+  }
+
   // Helper function to format date as yyyy-mm-dd (ISO date format)
   function formatDateYYYYMMDD(date = new Date()) {
     const d = date instanceof Date ? date : new Date(date);
@@ -4252,15 +6845,37 @@
 
 
   window.addEventListener('hashchange', render);
-  window.addEventListener('load', () => {
+  window.addEventListener('load', async () => {
+    applyProductTheme();
+    await initializeStorageDriverLayer();
+    const authReady = await ensureSupabaseAuthSession();
+    if (!authReady) {
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#ef4444;font-size:18px;">Sign-in required. Reload to try again.</div>';
+      return;
+    }
+    await refreshRuntimeUserInfo();
+
+    // Check for app lock (tradie edition)
+    if (isTradie()) {
+      const hashedPin = localStorage.getItem(`${STORAGE_PREFIX}app_lock_pin`);
+      if (hashedPin) {
+        const unlocked = await showPinLockScreen(hashedPin);
+        if (!unlocked) {
+          document.body.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; color: #ef4444; font-size: 18px;">App locked. Please reload and enter your PIN.</div>';
+          return;
+        }
+      }
+      
+      // Check for backup reminder
+      checkBackupReminder();
+    }
+    
     // Default route
     if (!window.location.hash) navigate('/');
     render();
     
     // Run migration for old notes system
-    if (!isSupabaseLoginRequired()) {
-      migrateOldNotes();
-    }
+    migrateOldNotes();
   });
 
   // Handwriting digitization settings and functionality
@@ -4545,8 +7160,6 @@
       this.eraserWidth = 10;
       this.pencilBtn = null;
       this.eraserBtn = null;
-      this.hasBackgroundLayer = false;
-      this.backgroundImageData = null;
     }
 
 
@@ -4961,8 +7574,6 @@
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.strokes = [];
       this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
-      this.hasBackgroundLayer = false;
-      this.backgroundImageData = null;
     }
 
     undo() {
@@ -4973,50 +7584,33 @@
     }
 
     redrawStrokes() {
-      if (!this.ctx || !this.canvas) return;
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-      const drawStrokeLayer = () => {
-        this.strokes.forEach(stroke => {
-          if (stroke.points && stroke.points.length > 1) {
-            // Set up context for eraser or normal drawing
-            if (stroke.color === 'eraser') {
-              this.ctx.globalCompositeOperation = 'destination-out';
-            } else {
-              this.ctx.globalCompositeOperation = 'source-over';
-              this.ctx.strokeStyle = stroke.color;
-            }
-            
-            this.ctx.lineWidth = stroke.width;
-            this.ctx.lineCap = 'round';
-            this.ctx.lineJoin = 'round';
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-            for (let i = 1; i < stroke.points.length; i++) {
-              this.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-            }
-            this.ctx.stroke();
+      
+      this.strokes.forEach(stroke => {
+        if (stroke.points && stroke.points.length > 1) {
+          // Set up context for eraser or normal drawing
+          if (stroke.color === 'eraser') {
+            this.ctx.globalCompositeOperation = 'destination-out';
+          } else {
+            this.ctx.globalCompositeOperation = 'source-over';
+            this.ctx.strokeStyle = stroke.color;
           }
-        });
-        
-        // Reset to normal drawing mode
-        this.ctx.globalCompositeOperation = 'source-over';
-      };
-
-      // If this note has a background layer (image/text-rendered SVG), draw it first.
-      if (this.hasBackgroundLayer && this.backgroundImageData) {
-        const bg = new Image();
-        bg.onload = () => {
-          this.ctx.globalCompositeOperation = 'source-over';
-          this.ctx.drawImage(bg, 0, 0, this.canvas.width, this.canvas.height);
-          drawStrokeLayer();
-        };
-        bg.onerror = () => drawStrokeLayer();
-        bg.src = this.backgroundImageData;
-      } else {
-        drawStrokeLayer();
-      }
+          
+          this.ctx.lineWidth = stroke.width;
+          this.ctx.lineCap = 'round';
+          this.ctx.lineJoin = 'round';
+          
+          this.ctx.beginPath();
+          this.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+          for (let i = 1; i < stroke.points.length; i++) {
+            this.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+          }
+          this.ctx.stroke();
+        }
+      });
+      
+      // Reset to normal drawing mode
+      this.ctx.globalCompositeOperation = 'source-over';
     }
 
     setStrokeColor(color) {
@@ -5062,30 +7656,11 @@
     canvasToSVG() {
       // Check if there are any eraser strokes - if so, we need to use a different approach
       const hasEraserStrokes = this.strokes.some(stroke => stroke.color === 'eraser');
-
-      // If editing a note with background content, always serialize full canvas
-      // so new strokes don't replace existing content.
-      const hasBackgroundContent = this.hasBackgroundLayer && !!this.backgroundImageData;
       
-      if (hasBackgroundContent) {
-        const canvasData = this.canvas.toDataURL('image/png');
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', this.canvas.width);
-        svg.setAttribute('height', this.canvas.height);
-        svg.setAttribute('viewBox', `0 0 ${this.canvas.width} ${this.canvas.height}`);
-        
-        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        image.setAttribute('href', canvasData);
-        image.setAttribute('width', this.canvas.width);
-        image.setAttribute('height', this.canvas.height);
-        image.setAttribute('x', '0');
-        image.setAttribute('y', '0');
-        svg.appendChild(image);
-        
-        return new XMLSerializer().serializeToString(svg);
-      }
+      // Check if we're editing an image-based note (no strokes but editing)
+      const isEditingImageNote = this.editingNote && this.strokes.length === 0;
       
-      if (hasEraserStrokes) {
+      if (hasEraserStrokes || isEditingImageNote) {
         // When eraser strokes are present OR we're editing an image-based note,
         // capture the final canvas state as an image
         
@@ -5104,6 +7679,26 @@
             });
           }
         });
+        
+        // If we're editing an image-based note and have no new strokes,
+        // use the entire canvas since it already contains the full image
+        if (!hasStrokes && isEditingImageNote) {
+          const canvasData = this.canvas.toDataURL('image/png');
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('width', this.canvas.width);
+          svg.setAttribute('height', this.canvas.height);
+          svg.setAttribute('viewBox', `0 0 ${this.canvas.width} ${this.canvas.height}`);
+          
+          const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+          image.setAttribute('href', canvasData);
+          image.setAttribute('width', this.canvas.width);
+          image.setAttribute('height', this.canvas.height);
+          image.setAttribute('x', '0');
+          image.setAttribute('y', '0');
+          svg.appendChild(image);
+          
+          return new XMLSerializer().serializeToString(svg);
+        }
         
         // If no strokes and not editing, return empty SVG
         if (!hasStrokes) {
@@ -5425,7 +8020,7 @@
           if (this.editingNote.source === 'indexeddb-fallback' || this.editingNote.source === 'indexeddb') {
             // Update in IndexedDB
             try {
-              await ChikasDB.updateNote(updatedNote);
+              await CrmDB.updateNote(updatedNote);
               console.log('Note updated successfully in IndexedDB');
             } catch (error) {
               throw new Error(`Failed to update note in IndexedDB: ${error.message}`);
@@ -5444,7 +8039,7 @@
             const existingNote = customerNotes[noteIndex];
             try {
               // Try to save version history in IndexedDB (lightweight, doesn't affect localStorage quota)
-              await ChikasDB.getNotePreviousVersion(existingNote.id).catch(() => null); // Check if noteVersions store exists
+              await CrmDB.getNotePreviousVersion(existingNote.id).catch(() => null); // Check if noteVersions store exists
               // Only save if this note might be migrated to IndexedDB later
               // For now, we'll skip version history for pure localStorage notes to save space
             } catch (versionError) {
@@ -5490,7 +8085,7 @@
                     originalId: this.editingNote.id
                   };
                   
-                  const savedId = await ChikasDB.createNote(noteForDB);
+                  const savedId = await CrmDB.createNote(noteForDB);
                   console.log('✅ Note migrated to IndexedDB successfully, new ID:', savedId);
                   
                   // Update the editing note reference for future operations
@@ -5750,7 +8345,7 @@ Time: ${new Date().toISOString()}`;
 
       // Copy functionality
       copyButton.addEventListener('click', async () => {
-        const errorInfo = `Chikas DB - Save Error Report
+        const errorInfo = `${APP_NAME} - Save Error Report
 Time: ${new Date().toISOString()}
 Error: ${technicalDetails}
 
@@ -5939,7 +8534,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
               keysToRemove.push(key);
             }
             // Remove old image cache keys (if any)
-            if (key.startsWith('chikas_image_') && Math.random() < 0.1) { // Remove 10% randomly
+            if (key.startsWith(`${STORAGE_PREFIX}image_`) && Math.random() < 0.1) { // Remove 10% randomly
               keysToRemove.push(key);
             }
           }
@@ -6088,12 +8683,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     // Check if IndexedDB is ready for notes storage
     async checkIndexedDBReady() {
       try {
-        if (!window.ChikasDB) {
-          return { ready: false, error: 'ChikasDB not available' };
+        if (!window.CrmDB) {
+          return { ready: false, error: 'CrmDB not available' };
         }
         
         // Try to access the notes store by attempting a simple operation
-        const testNotes = await ChikasDB.getNotesByCustomerId(999999); // Non-existent customer
+        const testNotes = await CrmDB.getNotesByCustomerId(999999); // Non-existent customer
         return { ready: true, error: null };
         
       } catch (error) {
@@ -6101,7 +8696,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
     }
 
-    // Hybrid storage manager - uses database (Supabase/IndexedDB) when customer ID is real, localStorage only for temp-new-customer
+    // Hybrid storage manager - tries localStorage first, falls back to IndexedDB
     async saveNoteHybrid(noteData, customerId) {
       console.log('Attempting hybrid save for customer:', customerId);
       
@@ -6113,50 +8708,74 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         createdAt: noteData.createdAt ? formatDateYYYYMMDD(noteData.createdAt) : undefined
       };
       
-      const numId = typeof customerId === 'number' ? customerId : parseInt(customerId, 10);
-      const isRealCustomer = customerId != null && customerId !== '' && customerId !== 'temp-new-customer' && !Number.isNaN(numId);
-      
-      // For real customers, try database (Supabase or IndexedDB) first
-      if (isRealCustomer) {
-        try {
-          const dbStatus = await this.checkIndexedDBReady();
-          if (dbStatus.ready) {
-            const noteForDB = {
-              customerId: numId,
-              svg: normalizedNoteData.svg,
-              date: normalizedNoteData.date,
-              noteNumber: normalizedNoteData.noteNumber,
-              createdAt: normalizedNoteData.createdAt || formatDateYYYYMMDD(new Date()),
-              editedDate: normalizedNoteData.editedDate,
-              source: 'indexeddb-fallback',
-              originalId: normalizedNoteData.id
-            };
-            const savedId = await ChikasDB.createNote(noteForDB);
-            console.log('✅ Note saved to database successfully, ID:', savedId);
-            normalizedNoteData.id = savedId;
-            normalizedNoteData.source = 'indexeddb-fallback';
-            normalizedNoteData.originalId = noteForDB.originalId;
-            Object.assign(noteData, normalizedNoteData);
-            return { method: 'indexeddb', success: true, id: savedId };
-          }
-        } catch (dbError) {
-          console.warn('Database save failed, falling back to localStorage:', dbError.message);
-        }
-      }
-      
-      // Temp-new-customer or database failed: use localStorage
       try {
+        // First, try localStorage (existing method)
         const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
         if (!existingNotes[customerId]) {
           existingNotes[customerId] = [];
         }
         existingNotes[customerId].push(normalizedNoteData);
-        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        
+        const dataToSave = JSON.stringify(existingNotes);
+        localStorage.setItem('customerNotes', dataToSave);
+        
         console.log('✅ Note saved to localStorage successfully');
         return { method: 'localStorage', success: true };
+        
       } catch (localStorageError) {
-        console.error('❌ localStorage failed:', localStorageError.message);
-        throw new Error('Failed to save note: ' + localStorageError.message);
+        console.log('❌ localStorage failed:', localStorageError.message);
+        console.log('🔄 Attempting IndexedDB fallback...');
+        
+        try {
+          // Fallback to IndexedDB
+          console.log('🔄 Initializing IndexedDB for notes fallback...');
+          
+          // Check if IndexedDB is ready
+          const dbStatus = await this.checkIndexedDBReady();
+          if (!dbStatus.ready) {
+            throw new Error(`IndexedDB not ready: ${dbStatus.error}`);
+          }
+          
+          const noteForDB = {
+            customerId: parseInt(customerId),
+            svg: normalizedNoteData.svg,
+            date: normalizedNoteData.date,
+            noteNumber: normalizedNoteData.noteNumber,
+            createdAt: formatDateYYYYMMDD(new Date()),
+            editedDate: normalizedNoteData.editedDate,
+            source: 'indexeddb-fallback', // Mark as fallback save
+            originalId: normalizedNoteData.id // Store the original ID for reference
+          };
+          
+          console.log('Attempting to save note to IndexedDB...', noteForDB);
+          const savedId = await CrmDB.createNote(noteForDB);
+          console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
+          
+          // Update the noteData with the database ID for UI consistency
+          normalizedNoteData.id = savedId;
+          normalizedNoteData.source = 'indexeddb-fallback';
+          normalizedNoteData.originalId = noteForDB.originalId;
+          
+          // Also update original noteData for return consistency
+          Object.assign(noteData, normalizedNoteData);
+          
+          return { method: 'indexeddb', success: true, id: savedId };
+          
+        } catch (indexedDBError) {
+          console.error('❌ IndexedDB fallback also failed:', indexedDBError);
+          
+          // Provide specific guidance based on the error
+          let errorDetails = `Both storage methods failed:\nLocalStorage: ${localStorageError.message}\nIndexedDB: ${indexedDBError.message}`;
+          
+          if (indexedDBError.message.includes('object stores was not found') || 
+              indexedDBError.message.includes('IndexedDB not ready')) {
+            errorDetails += '\n\n🔧 Fix: Please refresh the page to update the database schema.';
+          } else if (indexedDBError.message.includes('CrmDB not available')) {
+            errorDetails += '\n\n🔧 Fix: Please refresh the page to initialize the database.';
+          }
+          
+          throw new Error(errorDetails);
+        }
       }
     }
 
@@ -6183,7 +8802,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       try {
         // Load from IndexedDB
-        const indexedDBNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        const indexedDBNotes = await CrmDB.getNotesByCustomerId(customerId);
         
         // Mark IndexedDB notes
         indexedDBNotes.forEach(note => {
@@ -6493,7 +9112,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         `;
         editButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
-          this.editNote(noteData);
+          // Use text overlay for text-based notes, canvas for SVG notes
+          const isTextNote = noteData.type === 'text' || (noteData.text && !noteData.svg);
+          if (isTextNote) {
+            textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
+          } else {
+            this.editNote(noteData);
+          }
         });
         editButton.addEventListener('mouseenter', () => {
           editButton.style.background = 'rgba(255,255,255,0.2)';
@@ -6594,127 +9219,152 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         overflow-y: auto;
       `;
 
-      const svgContainer = document.createElement('div');
-      svgContainer.innerHTML = noteData.svg;
-      svgContainer.style.cssText = `
-        max-width: 100%;
-        overflow: visible;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 4px;
-        padding: 8px;
-        background: transparent;
-        display: flex;
-        justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
-        align-items: flex-start;
-        min-height: 100px;
-      `;
+      // Check if this is a text-based note or SVG-based note
+      const isTextNote = noteData.type === 'text' || (noteData.text && !noteData.svg);
       
-      // Scale the SVG to fit the container - calculate proper dimensions for content
-      const svg = svgContainer.querySelector('svg');
-      if (svg) {
-        // Get the original viewBox to understand the intended dimensions
-        const originalViewBox = svg.getAttribute('viewBox');
-        const originalWidth = svg.getAttribute('width');
-        const originalHeight = svg.getAttribute('height');
-        
-        let contentWidth = 500; // default width
-        let contentHeight = 60; // default height
-        
-        // Parse original dimensions
-        if (originalViewBox) {
-          const parts = originalViewBox.split(' ');
-          if (parts.length >= 4) {
-            contentWidth = parseInt(parts[2]) || 500;
-            contentHeight = parseInt(parts[3]) || 60;
-          }
-        } else if (originalWidth && originalHeight) {
-          contentWidth = parseInt(originalWidth) || 500;
-          contentHeight = parseInt(originalHeight) || 60;
-        }
-        
-        // Calculate the actual content dimensions needed by analyzing all text elements
-        const textElements = svg.querySelectorAll('text, tspan');
-        let maxY = 0;
-        let maxX = 0;
-        let fontSize = 16; // default font size
-        
-        textElements.forEach(textEl => {
-          // Get font size from the element
-          const computedFontSize = textEl.getAttribute('font-size');
-          if (computedFontSize) {
-            fontSize = parseInt(computedFontSize) || 16;
-          }
-          
-          // Get x and y positions
-          const x = parseFloat(textEl.getAttribute('x')) || 0;
-          const y = parseFloat(textEl.getAttribute('y')) || 0;
-          
-          // Get dy offset for tspan elements
-          const dy = parseFloat(textEl.getAttribute('dy')) || 0;
-          const actualY = y + dy;
-          
-          // Calculate approximate height needed for this text element
-          const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
-          const textHeight = actualY + lineHeight;
-          
-          // Estimate text width based on content and font size
-          const textContent = textEl.textContent || '';
-          const estimatedTextWidth = textContent.length * fontSize * 0.6; // rough estimate
-          const textWidth = x + estimatedTextWidth;
-          
-          if (textHeight > maxY) {
-            maxY = textHeight;
-          }
-          
-          if (textWidth > maxX) {
-            maxX = textWidth;
-          }
-        });
-        
-        // Use the calculated dimensions if they're larger than the original
-        if (maxY > 0) {
-          contentHeight = Math.max(contentHeight, maxY + 20); // Add some padding
-        }
-        
-        if (maxX > 0) {
-          contentWidth = Math.max(contentWidth, maxX + 20); // Add some padding
-        }
-        
-        // Ensure dimensions don't exceed container bounds (with some margin)
-        const containerWidth = svgContainer.parentElement?.offsetWidth || 500;
-        const containerHeight = svgContainer.parentElement?.offsetHeight || 400;
-        const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
-        const maxAllowedHeight = containerHeight - 40; // Account for padding and borders
-        
-        // Calculate scale factor to fit within bounds while maintaining aspect ratio
-        const widthScale = maxAllowedWidth / contentWidth;
-        const heightScale = maxAllowedHeight / contentHeight;
-        const scale = Math.min(widthScale, heightScale, 1); // Don't scale up, only down
-        
-        // Apply scaling if needed
-        if (scale < 1) {
-          contentWidth = contentWidth * scale;
-          contentHeight = contentHeight * scale;
-        } else {
-          // Still respect max bounds even if no scaling needed
-          contentWidth = Math.min(contentWidth, maxAllowedWidth);
-          contentHeight = Math.min(contentHeight, maxAllowedHeight);
-        }
-        
-        // Update the SVG viewBox and dimensions to match content
-        svg.setAttribute('viewBox', `0 0 ${contentWidth / scale} ${contentHeight / scale}`);
-        svg.setAttribute('width', contentWidth);
-        svg.setAttribute('height', contentHeight);
-        
-        svg.style.cssText = `
+      let contentContainer;
+      
+      if (isTextNote) {
+        // Render text-based note
+        contentContainer = document.createElement('div');
+        contentContainer.className = 'text-note-content';
+        contentContainer.style.cssText = `
           max-width: 100%;
-          width: ${contentWidth}px;
-          height: ${contentHeight}px;
-          background: transparent;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 4px;
+          padding: 16px;
+          background: rgba(255,255,255,0.03);
+          color: var(--text);
+          font-size: 15px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-wrap: break-word;
         `;
+        contentContainer.textContent = noteData.text || '';
+      } else {
+        // Render SVG-based note (legacy handwriting)
+        contentContainer = document.createElement('div');
+        contentContainer.innerHTML = noteData.svg || '';
+        contentContainer.style.cssText = `
+          max-width: 100%;
+          overflow: visible;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 4px;
+          padding: 8px;
+          background: transparent;
+          display: flex;
+          justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
+          align-items: flex-start;
+          min-height: 100px;
+        `;
+        
+        // Scale the SVG to fit the container - calculate proper dimensions for content
+        const svg = contentContainer.querySelector('svg');
+        if (svg) {
+          // Get the original viewBox to understand the intended dimensions
+          const originalViewBox = svg.getAttribute('viewBox');
+          const originalWidth = svg.getAttribute('width');
+          const originalHeight = svg.getAttribute('height');
+          
+          let svgWidth = 500; // default width
+          let svgHeight = 60; // default height
+          
+          // Parse original dimensions
+          if (originalViewBox) {
+            const parts = originalViewBox.split(' ');
+            if (parts.length >= 4) {
+              svgWidth = parseInt(parts[2]) || 500;
+              svgHeight = parseInt(parts[3]) || 60;
+            }
+          } else if (originalWidth && originalHeight) {
+            svgWidth = parseInt(originalWidth) || 500;
+            svgHeight = parseInt(originalHeight) || 60;
+          }
+          
+          // Calculate the actual content dimensions needed by analyzing all text elements
+          const textElements = svg.querySelectorAll('text, tspan');
+          let maxY = 0;
+          let maxX = 0;
+          let fontSize = 16; // default font size
+          
+          textElements.forEach(textEl => {
+            // Get font size from the element
+            const computedFontSize = textEl.getAttribute('font-size');
+            if (computedFontSize) {
+              fontSize = parseInt(computedFontSize) || 16;
+            }
+            
+            // Get x and y positions
+            const x = parseFloat(textEl.getAttribute('x')) || 0;
+            const y = parseFloat(textEl.getAttribute('y')) || 0;
+            
+            // Get dy offset for tspan elements
+            const dy = parseFloat(textEl.getAttribute('dy')) || 0;
+            const actualY = y + dy;
+            
+            // Calculate approximate height needed for this text element
+            const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
+            const textHeight = actualY + lineHeight;
+            
+            // Estimate text width based on content and font size
+            const textContent = textEl.textContent || '';
+            const estimatedTextWidth = textContent.length * fontSize * 0.6; // rough estimate
+            const textWidth = x + estimatedTextWidth;
+            
+            if (textHeight > maxY) {
+              maxY = textHeight;
+            }
+            
+            if (textWidth > maxX) {
+              maxX = textWidth;
+            }
+          });
+          
+          // Use the calculated dimensions if they're larger than the original
+          if (maxY > 0) {
+            svgHeight = Math.max(svgHeight, maxY + 20); // Add some padding
+          }
+          
+          if (maxX > 0) {
+            svgWidth = Math.max(svgWidth, maxX + 20); // Add some padding
+          }
+          
+          // Ensure dimensions don't exceed container bounds (with some margin)
+          const containerWidth = contentContainer.parentElement?.offsetWidth || 500;
+          const containerHeight = contentContainer.parentElement?.offsetHeight || 400;
+          const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
+          const maxAllowedHeight = containerHeight - 40; // Account for padding and borders
+          
+          // Calculate scale factor to fit within bounds while maintaining aspect ratio
+          const widthScale = maxAllowedWidth / svgWidth;
+          const heightScale = maxAllowedHeight / svgHeight;
+          const scale = Math.min(widthScale, heightScale, 1); // Don't scale up, only down
+          
+          // Apply scaling if needed
+          if (scale < 1) {
+            svgWidth = svgWidth * scale;
+            svgHeight = svgHeight * scale;
+          } else {
+            // Still respect max bounds even if no scaling needed
+            svgWidth = Math.min(svgWidth, maxAllowedWidth);
+            svgHeight = Math.min(svgHeight, maxAllowedHeight);
+          }
+          
+          // Update the SVG viewBox and dimensions to match content
+          svg.setAttribute('viewBox', `0 0 ${svgWidth / scale} ${svgHeight / scale}`);
+          svg.setAttribute('width', svgWidth);
+          svg.setAttribute('height', svgHeight);
+          
+          svg.style.cssText = `
+            max-width: 100%;
+            width: ${svgWidth}px;
+            height: ${svgHeight}px;
+            background: transparent;
+          `;
+        }
       }
 
-      noteContent.appendChild(svgContainer);
+      noteContent.appendChild(contentContainer);
       noteElement.appendChild(noteHeader);
       noteElement.appendChild(noteContent);
 
@@ -6743,8 +9393,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Force database upgrade if needed by closing and reopening
         try {
           // Close any existing database connections to force upgrade
+          const dbName = productConfig.dbName || 'chikas-db';
           const existingDb = await new Promise((resolve) => {
-            const req = indexedDB.open('chikas-db');
+            const req = indexedDB.open(dbName);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
           });
@@ -6755,7 +9406,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             
             if (!hasStore) {
               // Force upgrade by opening with higher version
-              const upgradeReq = indexedDB.open('chikas-db', 5);
+              const upgradeReq = indexedDB.open(dbName, 5);
               upgradeReq.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains('noteVersions')) {
@@ -6787,13 +9438,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         }
         
         // Check if previous version exists
-        const previousVersion = await ChikasDB.getNotePreviousVersion(noteId);
+        const previousVersion = await CrmDB.getNotePreviousVersion(noteId);
         if (!previousVersion) {
           throw new Error('No previous version found for this note. The note may not have been edited yet, or try refreshing the page.');
         }
         
         // Restore the note
-        await ChikasDB.restoreNoteToPreviousVersion(noteId);
+        await CrmDB.restoreNoteToPreviousVersion(noteId);
         
         // Refresh the notes display
         const customerId = this.getCurrentCustomerId();
@@ -6822,7 +9473,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Determine which storage method to use based on the note's source
         if (noteData.source === 'indexeddb-fallback' || noteData.source === 'indexeddb') {
           // Delete from IndexedDB
-          await ChikasDB.deleteNote(noteData.id);
+          await CrmDB.deleteNote(noteData.id);
           console.log('Note deleted successfully from IndexedDB');
         } else {
           // Delete from localStorage
@@ -6888,12 +9539,6 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     loadNoteFromSVG(svgString) {
       try {
-        // Reset note layers for fresh load
-        this.strokes = [];
-        this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
-        this.hasBackgroundLayer = false;
-        this.backgroundImageData = null;
-
         // Parse the SVG string
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
@@ -6904,14 +9549,28 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Handle image-based SVG
           const imageData = image.getAttribute('href');
           if (imageData) {
-            this.hasBackgroundLayer = true;
-            this.backgroundImageData = imageData;
+            // Clear existing strokes
+            this.strokes = [];
+            this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+            
+            // Create a temporary image to load the data
+            const tempImg = new Image();
+            tempImg.onload = () => {
+              // Draw the image onto the canvas
+              this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+              this.ctx.drawImage(tempImg, 0, 0);
+            };
+            tempImg.src = imageData;
           }
           return;
         }
         
         // Handle vector-based SVG
         const paths = svgDoc.querySelectorAll('path');
+        
+        // Clear existing strokes
+        this.strokes = [];
+        this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
         
         // Convert SVG paths back to stroke data
         paths.forEach(path => {
@@ -6931,13 +9590,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             }
           }
         });
-
-        // If no path strokes were found (e.g., text-based SVG), preserve the full SVG
-        // as a background image so edits append visually instead of replacing content.
-        if (this.strokes.length === 0 && svgString && svgString.trim().length > 0) {
-          this.hasBackgroundLayer = true;
-          this.backgroundImageData = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
-        }
+        
+        // Redraw the strokes
+        this.redrawStrokes();
         
       } catch (error) {
         console.error('Error loading note from SVG:', error);
@@ -6988,9 +9643,311 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     }
   }
 
-  // Global instance
-  // Initialize fullscreen notes canvas
+  // ============================================================================
+  // TEXT-BASED NOTES OVERLAY (Primary note-taking method)
+  // ============================================================================
+  class FullscreenTextNotesOverlay {
+    constructor() {
+      this.overlay = null;
+      this.textarea = null;
+      this.editingNote = null;
+      this.customerId = null;
+      this.onSaveCallback = null;
+    }
+
+    show(customerId = null, editingNote = null) {
+      this.customerId = customerId || getCurrentCustomerId();
+      this.editingNote = editingNote;
+      this.createOverlay();
+      
+      // Focus the textarea after a brief delay to ensure DOM is ready
+      setTimeout(() => {
+        if (this.textarea) {
+          this.textarea.focus();
+          // Scroll to end if editing
+          if (this.editingNote && this.editingNote.text) {
+            this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
+          }
+        }
+      }, 100);
+    }
+
+    createOverlay() {
+      this.overlay = document.createElement('div');
+      this.overlay.id = 'fullscreen-text-notes-overlay';
+      this.overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(17, 24, 39, 0.98);
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        padding-bottom: env(safe-area-inset-bottom, 20px);
+      `;
+      
+      // Header
+      const header = document.createElement('div');
+      header.className = 'header';
+      header.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        flex-shrink: 0;
+      `;
+      
+      const title = document.createElement('h2');
+      title.textContent = this.editingNote ? `Edit Note ${this.editingNote.noteNumber || ''}` : 'Add Note';
+      title.style.margin = '0';
+      title.style.color = 'var(--text)';
+      
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+      
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: none;
+        color: var(--text);
+        border-radius: 6px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      `;
+      
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save';
+      saveBtn.style.cssText = `
+        background: var(--brand);
+        border: none;
+        color: white;
+        border-radius: 6px;
+        padding: 10px 20px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+      `;
+
+      buttonContainer.appendChild(cancelBtn);
+      buttonContainer.appendChild(saveBtn);
+      header.appendChild(title);
+      header.appendChild(buttonContainer);
+
+      // Textarea container
+      const textareaContainer = document.createElement('div');
+      textareaContainer.style.cssText = `
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      `;
+
+      this.textarea = document.createElement('textarea');
+      this.textarea.placeholder = 'Type your note here...';
+      this.textarea.style.cssText = `
+        flex: 1;
+        width: 100%;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 16px;
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.6;
+        resize: none;
+        font-family: inherit;
+        outline: none;
+      `;
+      this.textarea.addEventListener('focus', () => {
+        this.textarea.style.borderColor = 'var(--brand)';
+      });
+      this.textarea.addEventListener('blur', () => {
+        this.textarea.style.borderColor = 'rgba(255,255,255,0.1)';
+      });
+
+      // Pre-fill if editing
+      if (this.editingNote) {
+        // Handle both text-based notes and legacy SVG notes
+        if (this.editingNote.text) {
+          this.textarea.value = this.editingNote.text;
+        } else if (this.editingNote.svg) {
+          // Try to extract text from SVG (for legacy notes)
+          const textContent = this.extractTextFromSVG(this.editingNote.svg);
+          this.textarea.value = textContent || '[This note contains handwritten content that cannot be edited as text]';
+        }
+      }
+
+      textareaContainer.appendChild(this.textarea);
+
+      this.overlay.appendChild(header);
+      this.overlay.appendChild(textareaContainer);
+
+      // Event listeners
+      cancelBtn.addEventListener('click', () => this.hide());
+      saveBtn.addEventListener('click', () => this.handleSave());
+      
+      // Handle keyboard shortcuts
+      this.textarea.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Enter to save
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          this.handleSave();
+        }
+        // Escape to cancel
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.hide();
+        }
+      });
+
+      document.body.appendChild(this.overlay);
+    }
+
+    extractTextFromSVG(svgString) {
+      // Try to extract text content from SVG text elements
+      try {
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+        const textElements = svgDoc.querySelectorAll('text');
+        if (textElements.length > 0) {
+          return Array.from(textElements).map(el => el.textContent).join('\n');
+        }
+      } catch (e) {
+        console.warn('Could not extract text from SVG:', e);
+      }
+      return null;
+    }
+
+    async handleSave() {
+      const text = this.textarea.value.trim();
+      
+      if (!text) {
+        // Don't save empty notes
+        this.hide();
+        return;
+      }
+
+      try {
+        const customerId = this.customerId;
+        const now = new Date();
+        const dateStr = formatDateYYYYMMDD(now);
+        
+        if (this.editingNote) {
+          await this.updateNote(text);
+        } else {
+          await this.createNote(customerId, text, dateStr);
+        }
+        
+        await loadExistingNotes(customerId);
+        this.hide();
+      } catch (error) {
+        console.error('Error saving note:', error);
+        alert('Error saving note: ' + error.message);
+      }
+    }
+
+    async createNote(customerId, text, dateStr) {
+      const existingNotesList = await this.getNotesForCustomer(customerId);
+      const noteNumber = existingNotesList.length + 1;
+      
+      const noteData = {
+        customerId: customerId,
+        text: text,
+        svg: null,
+        date: dateStr,
+        noteNumber: noteNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        type: 'text'
+      };
+      
+      // New customer flow: queue in localStorage until customer is saved
+      if (customerId === 'temp-new-customer') {
+        const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+        noteData.id = tempId;
+        noteData.source = 'localStorage';
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const tempNotes = existingNotes['temp-new-customer'] || [];
+        tempNotes.push(noteData);
+        existingNotes['temp-new-customer'] = tempNotes;
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        return tempId;
+      }
+      
+      const savedId = await CrmDB.createNote(noteData);
+      return savedId;
+    }
+
+    async updateNote(text) {
+      if (!this.editingNote) return;
+      
+      const updatedNote = {
+        ...this.editingNote,
+        text: text,
+        updatedAt: new Date().toISOString(),
+        type: 'text'
+      };
+      
+      // Temp-new-customer: update in localStorage queue
+      if (this.customerId === 'temp-new-customer') {
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const tempNotes = existingNotes['temp-new-customer'] || [];
+        const idx = tempNotes.findIndex(n => (n.id === this.editingNote.id) || (n.id === this.editingNote.originalId));
+        if (idx !== -1) {
+          tempNotes[idx] = { ...tempNotes[idx], ...updatedNote };
+          existingNotes['temp-new-customer'] = tempNotes;
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        }
+        return;
+      }
+      
+      if (this.editingNote.id && (this.editingNote.source === 'indexeddb' || this.editingNote.source === 'indexeddb-fallback')) {
+        await CrmDB.updateNote(updatedNote);
+      } else {
+        await CrmDB.createNote({ ...updatedNote, customerId: this.customerId });
+      }
+    }
+
+    async getNotesForCustomer(customerId) {
+      // Temp notes (new customer flow): queue in localStorage until customer is saved
+      if (customerId === 'temp-new-customer') {
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        return existingNotes['temp-new-customer'] || [];
+      }
+      try {
+        const dbNotes = await CrmDB.getNotesByCustomerId(customerId);
+        return dbNotes || [];
+      } catch (error) {
+        console.error('Error getting notes:', error);
+        return [];
+      }
+    }
+
+    hide() {
+      if (this.overlay && document.body.contains(this.overlay)) {
+        document.body.removeChild(this.overlay);
+        this.overlay = null;
+      }
+      this.textarea = null;
+      this.editingNote = null;
+      this.customerId = null;
+    }
+  }
+
+  // Global instances
+  // Initialize fullscreen notes canvas (kept for legacy SVG note viewing)
   const fullscreenNotesCanvas = new FullscreenNotesCanvas();
+  
+  // Initialize text-based notes overlay (primary note-taking method)
+  const textNotesOverlay = new FullscreenTextNotesOverlay();
 
   // Debug utility for testing save functionality
   window.debugNoteSave = {
@@ -7237,12 +10194,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         console.log(`Error: ${dbStatus.error}`);
       }
       
-      // Also check if ChikasDB is available
-      console.log(`ChikasDB Available: ${window.ChikasDB ? '✅ YES' : '❌ NO'}`);
+      // Also check if CrmDB is available
+      console.log(`CrmDB Available: ${window.CrmDB ? '✅ YES' : '❌ NO'}`);
       
-      if (window.ChikasDB) {
+      if (window.CrmDB) {
         // List available functions
-        const functions = Object.keys(window.ChikasDB);
+        const functions = Object.keys(window.CrmDB);
         console.log(`Available functions: ${functions.join(', ')}`);
       }
       
@@ -7317,7 +10274,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         });
         
         // Check IndexedDB notes
-        const indexedDBNotes = await ChikasDB.getNotesByCustomerId(customerId);
+        const indexedDBNotes = await CrmDB.getNotesByCustomerId(customerId);
         
         console.log(`🗄️ IndexedDB notes (${indexedDBNotes.length}):`);
         indexedDBNotes.forEach((note, index) => {
@@ -7399,7 +10356,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     try {
       
       // Get all customers from the database
-      const customers = await ChikasDB.getAllCustomers();
+      const customers = await CrmDB.getAllCustomers();
       let migratedCount = 0;
       
       for (const customer of customers) {
@@ -7432,7 +10389,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Remove the old notesHtml from the customer record
           const updatedCustomer = { ...customer };
           delete updatedCustomer.notesHtml;
-          await ChikasDB.updateCustomer(updatedCustomer);
+          await CrmDB.updateCustomer(updatedCustomer);
           
           migratedCount++;
         }
@@ -7750,3 +10707,4 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
 
 })();
+

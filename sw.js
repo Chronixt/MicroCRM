@@ -1,11 +1,13 @@
-const CACHE_NAME = 'chikas-db-v1.0.2';
+// TradieCRM Service Worker
+const CACHE_NAME = 'tradie-crm-v1.0.0';
 const urlsToCache = [
-  './',
-  './index.html',
-  './styles.css',
-  './js/app.js',
-  './js/db.js',
-  './assets/bg.jpg'
+  '/',
+  '/index.html',
+  '/styles.css',
+  '/js/productConfig.js',
+  '/js/app.js',
+  '/js/db.js',
+  '/assets/bg.jpg'
 ];
 
 // Install event - cache resources
@@ -24,14 +26,6 @@ self.addEventListener('install', (event) => {
 // Fetch event - serve from cache when offline, but always check network first for JS/CSS
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  const isSameOrigin = url.origin === self.location.origin;
-
-  // Never intercept cross-origin requests (Supabase/API/CDN) or non-GET requests.
-  // Let the browser handle these directly to avoid CORS/network noise from SW.
-  if (!isSameOrigin || event.request.method !== 'GET') {
-    return;
-  }
-
   const isJS = url.pathname.endsWith('.js');
   const isCSS = url.pathname.endsWith('.css');
   const isHTML = url.pathname.endsWith('.html') || url.pathname === '/';

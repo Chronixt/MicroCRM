@@ -1,0 +1,21 @@
+{
+  "scripts": {
+    "compare:backups": "node scripts/compare-backups.js",
+    "native:web": "node scripts/prepare-native-web.js",
+    "native:sync": "npm run native:web && npx cap sync",
+    "native:add:android": "npx cap add android",
+    "native:add:ios": "npx cap add ios",
+    "native:open:android": "npx cap open android",
+    "native:open:ios": "npx cap open ios",
+    "native:doctor": "npx cap doctor"
+  },
+  "dependencies": {
+    "@capacitor-community/sqlite": "^7.0.1",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/filesystem": "^7.1.4",
+    "postgres": "^3.4.8"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}
