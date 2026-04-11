@@ -1,4 +1,4 @@
-/* Supabase backend for Chikas DB (hairdresser schema). Same API as db.js. */
+/* Supabase backend for CRMicro (hairdresser schema). Same API as db.js. */
 (function () {
   const SCHEMA = window.SUPABASE_SCHEMA || 'hairdresser';
   var cachedClient = null;
