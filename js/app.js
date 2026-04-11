@@ -1309,7 +1309,11 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      textNotesOverlay.show('temp-new-customer');
+      if (productConfig.activeProduct === 'hairdresser') {
+        fullscreenNotesCanvas.show();
+      } else {
+        textNotesOverlay.show('temp-new-customer');
+      }
     });
     
     // Load any existing temporary notes for new customer
@@ -1927,7 +1931,11 @@
     
     // Add note button event listener
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      textNotesOverlay.show(id);
+      if (productConfig.activeProduct === 'hairdresser') {
+        fullscreenNotesCanvas.show();
+      } else {
+        textNotesOverlay.show(id);
+      }
     });
 
     // Load next appointment
@@ -2272,7 +2280,11 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      textNotesOverlay.show(customer.id);
+      if (productConfig.activeProduct === 'hairdresser') {
+        fullscreenNotesCanvas.show();
+      } else {
+        textNotesOverlay.show(customer.id);
+      }
     });
     
     // Load existing notes
