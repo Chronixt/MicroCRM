@@ -733,6 +733,9 @@
   // Register Service Worker for PWA functionality
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+      const host = window.location.hostname;
+      const isLocalDev = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      if (isLocalDev) return;
       navigator.serviceWorker.register('/sw.js?v=1.0.2')
         .then((registration) => {
           

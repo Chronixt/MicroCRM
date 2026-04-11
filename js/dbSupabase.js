@@ -13,11 +13,14 @@
   var supabase = null;
 
   function initSupabaseClient() {
+    if (window.SupabaseClient) return window.SupabaseClient;
     if (window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
       try {
-        return window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+        var client = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
           db: { schema: SUPABASE_SCHEMA }
         });
+        window.SupabaseClient = client;
+        return client;
       } catch (e) {
         console.warn('[dbSupabase] Failed to create schema-aware client, falling back to default client:', e && e.message ? e.message : e);
       }
