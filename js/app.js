@@ -1209,6 +1209,7 @@
     // Clear global customer variables to prevent notes from being assigned to wrong customer
     window.currentCustomerId = null;
     window.currentCustomer = null;
+    clearTempNewCustomerDraft();
     
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
@@ -1386,6 +1387,9 @@
         delete existingNotes['temp-new-customer'];
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
       }
+
+      // Always clear temp draft notes once customer save is complete
+      clearTempNewCustomerDraft();
 
       if (imageFiles && imageFiles.length > 0) {
         const canUpload = await confirmImageStorageCapacity(imageFiles, 'customer photos');
@@ -10592,6 +10596,26 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         noteData.noteNumber = index + 1;
         fullscreenNotesCanvas.addNoteToUI(noteData);
       });
+    }
+  }
+
+  function clearTempNewCustomerDraft() {
+    try {
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      if (existingNotes['temp-new-customer']) {
+        delete existingNotes['temp-new-customer'];
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+      }
+    } catch (error) {
+      console.warn('Failed clearing temp-new-customer notes draft:', error);
+    }
+
+    try {
+      if (fullscreenNotesCanvas && typeof fullscreenNotesCanvas.clear === 'function') {
+        fullscreenNotesCanvas.clear();
+      }
+    } catch (error) {
+      // Non-blocking cleanup
     }
   }
 
