@@ -6899,19 +6899,28 @@
     migrateOldNotes();
   });
 
+  function getDefaultHandwritingSettings() {
+    const isHairdresser = productConfig.activeProduct === 'hairdresser';
+    return {
+      digitizationMode: isHairdresser ? 'vector' : 'auto', // hairdresser defaults to canvas/vector
+      vectorFormat: 'svg',
+      autoResize: true,
+      lineHeight: 24
+    };
+  }
+
   // Handwriting digitization settings and functionality
   let handwritingSettings = {
-    digitizationMode: 'auto', // 'auto' or 'vector'
-    vectorFormat: 'svg', // 'svg' or 'png'
-    autoResize: true,
-    lineHeight: 24 // pixels
+    ...getDefaultHandwritingSettings()
   };
 
   // Load settings from localStorage
   function loadHandwritingSettings() {
     const saved = localStorage.getItem('handwritingSettings');
     if (saved) {
-      handwritingSettings = { ...handwritingSettings, ...JSON.parse(saved) };
+      handwritingSettings = { ...getDefaultHandwritingSettings(), ...JSON.parse(saved) };
+    } else {
+      handwritingSettings = { ...getDefaultHandwritingSettings() };
     }
   }
 
