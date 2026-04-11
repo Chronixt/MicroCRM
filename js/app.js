@@ -50,6 +50,21 @@
     if (body) body.setAttribute('data-product', productConfig.activeProduct || 'core');
   }
 
+  function applyProductMetadata() {
+    var appName = productConfig.appName || APP_NAME || 'CRM';
+    var themeColor = productConfig.themeColor || '#0f172a';
+    document.title = appName;
+
+    var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (appleTitle) appleTitle.setAttribute('content', appName);
+    var appNameMeta = document.querySelector('meta[name="application-name"]');
+    if (appNameMeta) appNameMeta.setAttribute('content', appName);
+    var themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute('content', themeColor);
+    var tileMeta = document.querySelector('meta[name="msapplication-TileColor"]');
+    if (tileMeta) tileMeta.setAttribute('content', themeColor);
+  }
+
   function getNativeDriverMode() {
     const mode = localStorage.getItem(NATIVE_DRIVER_MODE_KEY) || 'adapter';
     return mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
@@ -212,6 +227,8 @@
     const backend = productConfig.useSupabase ? 'SUPABASE' : 'INDEXEDDB';
     const schema = productConfig.supabaseSchema || 'public';
     const user = RUNTIME_INFO.email || 'not signed in';
+    const productLabel = (productConfig.activeProduct || 'core').toUpperCase();
+    const appLabel = productConfig.appName || APP_NAME || 'CRM';
     const isTestUser = /test/i.test(user);
     const toneBg = isTestUser ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)';
     const toneBorder = isTestUser ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)';
@@ -221,7 +238,7 @@
       : '';
     return `
       <div class="runtime-banner" style="margin: 0 0 10px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid ${toneBorder}; background: ${toneBg}; color: ${toneText}; font-size: 12px; line-height: 1.35;">
-        <strong>${env}</strong> | ${APP_NAME} | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
+        <strong>${env}</strong> | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
       </div>
     `;
   }
@@ -6849,6 +6866,7 @@
 
   window.addEventListener('hashchange', render);
   window.addEventListener('load', async () => {
+    applyProductMetadata();
     applyProductTheme();
     await initializeStorageDriverLayer();
     const authReady = await ensureSupabaseAuthSession();
