@@ -1,5 +1,8 @@
 # Main to hairdresser-crm Cutover Checklist
 
+> Legacy checklist: this file reflects the earlier IndexedDB migration wave (`USE_SUPABASE=false`).
+> For current production cutovers, use `Plans/hairdresser-production-cutover-signoff.md`.
+
 Date:
 Operator:
 Freeze Window Start:
