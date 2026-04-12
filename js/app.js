@@ -578,6 +578,7 @@
   }
 
   let googlePlacesLoadPromise = null;
+  let placesAvailabilityProbePromise = null;
   async function loadGooglePlacesApi() {
     if (window.google?.maps?.places?.Autocomplete) return true;
     if (googlePlacesLoadPromise) return googlePlacesLoadPromise;
@@ -606,6 +607,42 @@
     return googlePlacesLoadPromise;
   }
 
+  async function canUsePlacesAutocomplete() {
+    if (placesAvailabilityProbePromise) return placesAvailabilityProbePromise;
+    placesAvailabilityProbePromise = new Promise((resolve) => {
+      try {
+        if (!window.google?.maps?.places?.AutocompleteService) {
+          resolve(false);
+          return;
+        }
+        const statusValues = window.google.maps.places.PlacesServiceStatus || {};
+        const service = new window.google.maps.places.AutocompleteService();
+        let settled = false;
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+
+        // Safety timeout so autocomplete never blocks manual entry.
+        setTimeout(() => settle(true), 1200);
+
+        service.getPlacePredictions({ input: 'test address' }, (_predictions, status) => {
+          if (status === statusValues.REQUEST_DENIED) {
+            console.warn('[AddressLookup] Places API denied. Falling back to manual address entry.');
+            settle(false);
+            return;
+          }
+          settle(true);
+        });
+      } catch (error) {
+        console.warn('[AddressLookup] Places availability probe failed. Falling back to manual entry.');
+        resolve(false);
+      }
+    });
+    return placesAvailabilityProbePromise;
+  }
+
   function getAddressComponent(components, type, key = 'long_name') {
     const comp = (components || []).find(c => Array.isArray(c.types) && c.types.includes(type));
     return comp ? (comp[key] || '') : '';
@@ -626,6 +663,8 @@
 
     const loaded = await loadGooglePlacesApi();
     if (!loaded || !window.google?.maps?.places?.Autocomplete) return;
+    const placesAllowed = await canUsePlacesAutocomplete();
+    if (!placesAllowed) return;
 
     const countryCodes = String(window.ADDRESS_LOOKUP_COUNTRY_CODES || 'au')
       .split(',')
