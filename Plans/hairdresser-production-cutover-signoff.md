@@ -1,13 +1,13 @@
 # Hairdresser Production Cutover Sign-Off
 
-Date:
-Release / PR:
-Operator:
-Reviewer:
-Decision Owner:
+Date: 2026-04-13
+Release / PR: Hairdresser sync candidate #2
+Operator: DV
+Reviewer: DV
+Decision Owner: DV
 
-Start Time (AEST):
-End Time (AEST):
+Start Time (AEST): 9:30am
+End Time (AEST): 9:44am
 
 ## Scope
 
@@ -18,77 +18,77 @@ End Time (AEST):
 
 ## A) Pre-Deploy Configuration Sign-Off
 
-- [ ] Netlify `ACTIVE_PRODUCT=hairdresser`
-- [ ] Netlify `SUPABASE_SCHEMA=hairdresser`
-- [ ] Netlify `SUPABASE_URL` set
-- [ ] Netlify `SUPABASE_ANON_KEY` set
-- [ ] Netlify `SHOW_ENV_BANNER=false` (prod)
-- [ ] Netlify `ALLOW_DESTRUCTIVE_WIPE=false` (prod)
-- [ ] Netlify `ENABLE_AUTO_CLAIM_UNOWNED_DATA=false` (prod)
-- [ ] Confirm `js/config.local.js` is not part of production bundle
-- [ ] Confirm branch diff reviewed and approved
+- [x] Netlify `ACTIVE_PRODUCT=hairdresser`
+- [x] Netlify `SUPABASE_SCHEMA=hairdresser`
+- [x] Netlify `SUPABASE_URL` set
+- [x] Netlify `SUPABASE_ANON_KEY` set
+- [x] Netlify `SHOW_ENV_BANNER=false` (prod)
+- [x] Netlify `ALLOW_DESTRUCTIVE_WIPE=false` (prod)
+- [x] Netlify `ENABLE_AUTO_CLAIM_UNOWNED_DATA=false` (prod)
+- [x] Confirm `js/config.local.js` is not part of production bundle
+- [x] Confirm branch diff reviewed and approved
 
-Initials:
-Timestamp:
+Initials: DV
+Timestamp: 9:44am 2026-04-13
 
 ## B) Supabase Migration Sign-Off
 
-- [ ] `001_hairdresser_schema.sql` applied
-- [ ] `002_customers_address.sql` applied
-- [ ] `004_hairdresser_owner_rls.sql` applied
-- [ ] `007_self_service_delete_my_data.sql` applied
-- [ ] `005_tradie_schema_from_public.sql` applied (shared project isolation)
-- [ ] `006_tradie_owner_rls.sql` applied (shared project isolation)
+- [x] `001_hairdresser_schema.sql` applied
+- [x] `002_customers_address.sql` applied
+- [x] `004_hairdresser_owner_rls.sql` applied
+- [x] `007_self_service_delete_my_data.sql` applied
+- [x] `005_tradie_schema_from_public.sql` applied (shared project isolation)
+- [x] `006_tradie_owner_rls.sql` applied (shared project isolation)
 
-- [ ] RLS policies verified in `hairdresser` schema
-- [ ] `hairdresser.delete_my_data()` exists and executable by `authenticated`
+- [x] RLS policies verified in `hairdresser` schema
+- [x] `hairdresser.delete_my_data()` exists and executable by `authenticated`
 
-Initials:
-Timestamp:
+Initials: DV
+Timestamp: 9:44am 2026-04-13
 
 ## C) Post-Deploy Smoke Test (Must Pass)
 
-- [ ] Live URL loads Hairdresser branding (not Tradie)
-- [ ] Console shows active product `hairdresser`
-- [ ] Console shows schema `hairdresser`
-- [ ] Login succeeds with non-admin test account
-- [ ] Create customer succeeds
-- [ ] Full backup export succeeds
-- [ ] `Delete My Data` visible (not `Wipe All Data`)
-- [ ] `Sign Out` button visible and functioning
-- [ ] Dev banner hidden in production
+- [x] Live URL loads Hairdresser branding (not Tradie)
+- [x] Console shows active product `hairdresser` - To be specific this shows "hairdresser (CRMicro)"
+- [x] Console shows schema `hairdresser`
+- [x] Login succeeds with non-admin test account
+- [x] Create customer succeeds
+- [x] Full backup export succeeds
+- [x] `Delete My Data` visible (not `Wipe All Data`)
+- [x] `Sign Out` button visible and functioning
+- [x] Dev banner hidden in production
 
-Initials:
-Timestamp:
+Initials: DV
+Timestamp: 9:44am 2026-04-13
 
 ## D) Isolation / Data Ownership Checks
 
-- [ ] Test user A cannot see test user B data
-- [ ] Test user B cannot see test user A data
-- [ ] Same login cannot see Tradie product records from Hairdresser
-- [ ] Same login cannot see Hairdresser records from Tradie
-- [ ] Delete My Data only deletes current logged-in user's records
+- [x] Test user A cannot see test user B data
+- [x] Test user B cannot see test user A data
+- [x] Same login cannot see Tradie product records from Hairdresser
+- [x] Same login cannot see Hairdresser records from Tradie
+- [x] Delete My Data only deletes current logged-in user's records
 
-Initials:
-Timestamp:
+Initials: DV
+Timestamp: 9:44am 2026-04-13
 
 ## E) Backup + Recovery Readiness
 
-- [ ] Fresh production backup taken after deploy
-- [ ] Backup file location recorded:
-- [ ] Restore smoke test performed in non-production context
-- [ ] Recovery owner assigned:
+- [x] Fresh production backup taken after deploy
+- [x] Backup file location recorded:
+- [x] Restore smoke test performed in non-production context
+- [x] Recovery owner assigned: admin@crmicro.com
 
-Initials:
-Timestamp:
+Initials: DV
+Timestamp: 9:44am 2026-04-13
 
 ## Go / No-Go
 
-- [ ] GO approved
+- [x] GO approved
 - [ ] NO-GO / rollback initiated
 
-Decision Owner Signature:
-Decision Time (AEST):
+Decision Owner Signature: DV
+Decision Time (AEST): 9:44am 2026-04-13
 
 ## Rollback Trigger Checklist
 
@@ -103,4 +103,3 @@ Trigger rollback immediately if any are true:
 Rollback executed by:
 Rollback time (AEST):
 Incident notes:
-
