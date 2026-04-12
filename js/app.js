@@ -694,6 +694,32 @@
     }
   }
 
+  function attachLegacyAutocomplete(fields, countryCodes) {
+    try {
+      if (!window.google?.maps?.places?.Autocomplete || !fields.line1Input) return false;
+      if (fields.line1Input.dataset.autocompleteBound === 'true') return true;
+
+      const options = {
+        fields: ['address_components', 'formatted_address', 'name'],
+      };
+      if (countryCodes.length > 0) {
+        options.componentRestrictions = { country: countryCodes };
+      }
+
+      const autocomplete = new window.google.maps.places.Autocomplete(fields.line1Input, options);
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        applyAddressComponentsToForm(fields, place);
+      });
+
+      fields.line1Input.dataset.autocompleteBound = 'true';
+      return true;
+    } catch (error) {
+      console.warn('[AddressLookup] Legacy autocomplete setup failed:', error);
+      return false;
+    }
+  }
+
   function createAddressLookupWidget(form, line1Input, countryCodes) {
     if (form.querySelector('[data-address-lookup-widget="true"]')) return form.querySelector('[data-address-lookup-widget="true"]');
 
@@ -738,12 +764,16 @@
 
     const placesLib = await loadPlacesLibrary();
     const PlaceAutocompleteElement = placesLib?.PlaceAutocompleteElement || window.google?.maps?.places?.PlaceAutocompleteElement;
+
+    const fields = { line1Input, suburbInput, stateInput, postcodeInput, countryInput };
     if (!PlaceAutocompleteElement) {
-      console.warn('[AddressLookup] New PlaceAutocompleteElement is unavailable. Using manual address entry.');
+      const legacyAttached = attachLegacyAutocomplete(fields, countryCodes);
+      if (!legacyAttached) {
+        console.warn('[AddressLookup] PlaceAutocompleteElement and legacy Autocomplete are unavailable. Using manual address entry.');
+      }
       return;
     }
 
-    const fields = { line1Input, suburbInput, stateInput, postcodeInput, countryInput };
     const host = createAddressLookupWidget(form, line1Input, countryCodes);
     if (!host) return;
 
