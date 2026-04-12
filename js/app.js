@@ -614,18 +614,29 @@
     placesLibraryLoadPromise = (async () => {
       const loaded = await loadGooglePlacesApi();
       if (!loaded || !window.google?.maps) return null;
-      if (typeof window.google.maps.importLibrary === 'function') {
-        try {
-          return await window.google.maps.importLibrary('places');
-        } catch (error) {
-          console.warn('[AddressLookup] Failed to import Places library:', error);
-          return null;
+      for (let i = 0; i < 10; i++) {
+        if (typeof window.google.maps.importLibrary === 'function') {
+          try {
+            const lib = await window.google.maps.importLibrary('places');
+            if (lib) return lib;
+          } catch (error) {
+            console.warn('[AddressLookup] Failed to import Places library:', error);
+            return null;
+          }
         }
+        if (window.google.maps.places) {
+          return window.google.maps.places;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-      return window.google.maps.places || null;
+      return null;
     })();
-
-    return placesLibraryLoadPromise;
+    const result = await placesLibraryLoadPromise;
+    // Do not cache null forever; allow retry once Maps finishes bootstrapping.
+    if (!result) {
+      placesLibraryLoadPromise = null;
+    }
+    return result;
   }
 
   function getAddressComponent(components, type, useShortText = false) {
@@ -763,7 +774,11 @@
       .filter(Boolean);
 
     const placesLib = await loadPlacesLibrary();
-    const PlaceAutocompleteElement = placesLib?.PlaceAutocompleteElement || window.google?.maps?.places?.PlaceAutocompleteElement;
+    let PlaceAutocompleteElement = placesLib?.PlaceAutocompleteElement || window.google?.maps?.places?.PlaceAutocompleteElement;
+    if (!PlaceAutocompleteElement) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      PlaceAutocompleteElement = window.google?.maps?.places?.PlaceAutocompleteElement || null;
+    }
 
     const fields = { line1Input, suburbInput, stateInput, postcodeInput, countryInput };
     if (!PlaceAutocompleteElement) {
