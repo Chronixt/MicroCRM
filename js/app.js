@@ -578,9 +578,10 @@
   }
 
   let googlePlacesLoadPromise = null;
-  let placesAvailabilityProbePromise = null;
+  let placesLibraryLoadPromise = null;
+
   async function loadGooglePlacesApi() {
-    if (window.google?.maps?.places?.Autocomplete) return true;
+    if (window.google?.maps) return true;
     if (googlePlacesLoadPromise) return googlePlacesLoadPromise;
 
     const apiKey = window.GOOGLE_PLACES_API_KEY;
@@ -589,17 +590,17 @@
     googlePlacesLoadPromise = new Promise((resolve) => {
       const existing = document.querySelector('script[data-google-places="true"]');
       if (existing) {
-        existing.addEventListener('load', () => resolve(!!window.google?.maps?.places?.Autocomplete), { once: true });
+        existing.addEventListener('load', () => resolve(!!window.google?.maps), { once: true });
         existing.addEventListener('error', () => resolve(false), { once: true });
         return;
       }
 
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&v=weekly&loading=async`;
       script.async = true;
       script.defer = true;
       script.dataset.googlePlaces = 'true';
-      script.onload = () => resolve(!!window.google?.maps?.places?.Autocomplete);
+      script.onload = () => resolve(!!window.google?.maps);
       script.onerror = () => resolve(false);
       document.head.appendChild(script);
     });
@@ -607,45 +608,114 @@
     return googlePlacesLoadPromise;
   }
 
-  async function canUsePlacesAutocomplete() {
-    if (placesAvailabilityProbePromise) return placesAvailabilityProbePromise;
-    placesAvailabilityProbePromise = new Promise((resolve) => {
-      try {
-        if (!window.google?.maps?.places?.AutocompleteService) {
-          resolve(false);
-          return;
+  async function loadPlacesLibrary() {
+    if (placesLibraryLoadPromise) return placesLibraryLoadPromise;
+
+    placesLibraryLoadPromise = (async () => {
+      const loaded = await loadGooglePlacesApi();
+      if (!loaded || !window.google?.maps) return null;
+      if (typeof window.google.maps.importLibrary === 'function') {
+        try {
+          return await window.google.maps.importLibrary('places');
+        } catch (error) {
+          console.warn('[AddressLookup] Failed to import Places library:', error);
+          return null;
         }
-        const statusValues = window.google.maps.places.PlacesServiceStatus || {};
-        const service = new window.google.maps.places.AutocompleteService();
-        let settled = false;
-        const settle = (value) => {
-          if (settled) return;
-          settled = true;
-          resolve(value);
-        };
-
-        // Safety timeout so autocomplete never blocks manual entry.
-        setTimeout(() => settle(true), 1200);
-
-        service.getPlacePredictions({ input: 'test address' }, (_predictions, status) => {
-          if (status === statusValues.REQUEST_DENIED) {
-            console.warn('[AddressLookup] Places API denied. Falling back to manual address entry.');
-            settle(false);
-            return;
-          }
-          settle(true);
-        });
-      } catch (error) {
-        console.warn('[AddressLookup] Places availability probe failed. Falling back to manual entry.');
-        resolve(false);
       }
-    });
-    return placesAvailabilityProbePromise;
+      return window.google.maps.places || null;
+    })();
+
+    return placesLibraryLoadPromise;
   }
 
-  function getAddressComponent(components, type, key = 'long_name') {
+  function getAddressComponent(components, type, useShortText = false) {
     const comp = (components || []).find(c => Array.isArray(c.types) && c.types.includes(type));
-    return comp ? (comp[key] || '') : '';
+    if (!comp) return '';
+    if (useShortText) {
+      return comp.shortText || comp.short_name || comp.longText || comp.long_name || '';
+    }
+    return comp.longText || comp.long_name || comp.shortText || comp.short_name || '';
+  }
+
+  function applyAddressComponentsToForm(fields, place) {
+    const components = place?.addressComponents || place?.address_components || [];
+    if (!components.length) return;
+
+    const subpremise = getAddressComponent(components, 'subpremise');
+    const premise = getAddressComponent(components, 'premise');
+    const streetNumber = getAddressComponent(components, 'street_number');
+    const route = getAddressComponent(components, 'route');
+
+    let streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim();
+    if (subpremise) {
+      streetAddress = streetAddress ? `${subpremise}/${streetAddress}` : subpremise;
+    } else if (!streetAddress && premise) {
+      streetAddress = premise;
+    }
+
+    if (!streetAddress) {
+      const formatted = (place?.formattedAddress || place?.formatted_address || '').split(',')[0].trim();
+      streetAddress = formatted || (place?.displayName || place?.name || '').trim();
+    }
+
+    if (fields.line1Input && streetAddress) {
+      fields.line1Input.value = streetAddress;
+    }
+
+    const suburb =
+      getAddressComponent(components, 'locality') ||
+      getAddressComponent(components, 'postal_town') ||
+      getAddressComponent(components, 'sublocality_level_1') ||
+      getAddressComponent(components, 'administrative_area_level_2');
+    if (fields.suburbInput && suburb) {
+      fields.suburbInput.value = suburb;
+    }
+
+    const state = getAddressComponent(components, 'administrative_area_level_1', true);
+    if (fields.stateInput && state) {
+      const upper = String(state).toUpperCase();
+      if (fields.stateInput.tagName === 'SELECT') {
+        if (Array.from(fields.stateInput.options).some(opt => opt.value === upper)) {
+          fields.stateInput.value = upper;
+        }
+      } else {
+        fields.stateInput.value = upper;
+      }
+    }
+
+    const postcode = getAddressComponent(components, 'postal_code');
+    if (fields.postcodeInput && postcode) {
+      fields.postcodeInput.value = postcode;
+    }
+
+    const country = getAddressComponent(components, 'country');
+    if (fields.countryInput && country) {
+      fields.countryInput.value = country;
+    }
+  }
+
+  function createAddressLookupWidget(form, line1Input, countryCodes) {
+    if (form.querySelector('[data-address-lookup-widget="true"]')) return form.querySelector('[data-address-lookup-widget="true"]');
+
+    const wrapper = document.createElement('div');
+    wrapper.dataset.addressLookupWidget = 'true';
+    wrapper.style.marginBottom = '10px';
+
+    const label = document.createElement('label');
+    label.textContent = t('addressLookupPlaceholder');
+    wrapper.appendChild(label);
+
+    const host = document.createElement('div');
+    host.style.marginTop = '4px';
+    wrapper.appendChild(host);
+
+    const reference = line1Input.closest('.input-with-button') || line1Input;
+    const parent = reference.parentElement;
+    if (parent) {
+      parent.parentElement?.insertBefore(wrapper, parent);
+    }
+
+    return host;
   }
 
   async function attachAddressAutocomplete(form) {
@@ -661,83 +731,60 @@
     const countryInput = form?.querySelector('input[name="country"]');
     if (!line1Input || line1Input.dataset.autocompleteBound === 'true') return;
 
-    const loaded = await loadGooglePlacesApi();
-    if (!loaded || !window.google?.maps?.places?.Autocomplete) return;
-    const placesAllowed = await canUsePlacesAutocomplete();
-    if (!placesAllowed) return;
-
     const countryCodes = String(window.ADDRESS_LOOKUP_COUNTRY_CODES || 'au')
       .split(',')
       .map(s => s.trim().toLowerCase())
       .filter(Boolean);
 
-    const options = {
-      fields: ['address_components', 'formatted_address', 'name'],
-    };
-    if (countryCodes.length > 0) {
-      options.componentRestrictions = { country: countryCodes };
+    const placesLib = await loadPlacesLibrary();
+    const PlaceAutocompleteElement = placesLib?.PlaceAutocompleteElement || window.google?.maps?.places?.PlaceAutocompleteElement;
+    if (!PlaceAutocompleteElement) {
+      console.warn('[AddressLookup] New PlaceAutocompleteElement is unavailable. Using manual address entry.');
+      return;
     }
 
-    const autocomplete = new window.google.maps.places.Autocomplete(line1Input, options);
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      const components = place?.address_components || [];
-      if (!components.length) return;
+    const fields = { line1Input, suburbInput, stateInput, postcodeInput, countryInput };
+    const host = createAddressLookupWidget(form, line1Input, countryCodes);
+    if (!host) return;
 
-      const subpremise = getAddressComponent(components, 'subpremise');
-      const premise = getAddressComponent(components, 'premise');
-      const streetNumber = getAddressComponent(components, 'street_number');
-      const route = getAddressComponent(components, 'route');
-
-      let streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim();
-      if (subpremise) {
-        streetAddress = streetAddress ? `${subpremise}/${streetAddress}` : subpremise;
-      } else if (!streetAddress && premise) {
-        streetAddress = premise;
+    try {
+      const widget = new PlaceAutocompleteElement();
+      widget.setAttribute('placeholder', t('addressLookupPlaceholder'));
+      if (countryCodes.length > 0) {
+        widget.setAttribute('included-region-codes', countryCodes.join(','));
+        widget.includedRegionCodes = countryCodes;
       }
+      widget.style.width = '100%';
+      widget.style.display = 'block';
+      host.replaceChildren(widget);
 
-      if (!streetAddress) {
-        const formatted = (place?.formatted_address || '').split(',')[0].trim();
-        streetAddress = formatted || (place?.name || '').trim();
-      }
+      const handleSelection = async (event) => {
+        try {
+          const prediction =
+            event?.placePrediction ||
+            event?.detail?.placePrediction ||
+            event?.detail?.prediction ||
+            null;
 
-      if (streetAddress) {
-        line1Input.value = streetAddress;
-      }
+          if (!prediction || typeof prediction.toPlace !== 'function') return;
+          const place = prediction.toPlace();
+          if (!place || typeof place.fetchFields !== 'function') return;
 
-      const suburb =
-        getAddressComponent(components, 'locality') ||
-        getAddressComponent(components, 'postal_town') ||
-        getAddressComponent(components, 'sublocality_level_1') ||
-        getAddressComponent(components, 'administrative_area_level_2');
-      if (suburbInput && suburb) {
-        suburbInput.value = suburb;
-      }
-
-      const state = getAddressComponent(components, 'administrative_area_level_1', 'short_name');
-      if (stateInput && state) {
-        const upper = state.toUpperCase();
-        if (stateInput.tagName === 'SELECT') {
-          if (Array.from(stateInput.options).some(opt => opt.value === upper)) {
-            stateInput.value = upper;
-          }
-        } else {
-          stateInput.value = upper;
+          await place.fetchFields({
+            fields: ['displayName', 'formattedAddress', 'addressComponents']
+          });
+          applyAddressComponentsToForm(fields, place);
+        } catch (error) {
+          console.warn('[AddressLookup] Could not apply selected address:', error);
         }
-      }
+      };
 
-      const postcode = getAddressComponent(components, 'postal_code');
-      if (postcodeInput && postcode) {
-        postcodeInput.value = postcode;
-      }
-
-      const country = getAddressComponent(components, 'country');
-      if (countryInput && country) {
-        countryInput.value = country;
-      }
-    });
-
-    line1Input.dataset.autocompleteBound = 'true';
+      widget.addEventListener('gmp-select', handleSelection);
+      widget.addEventListener('gmp-placeselect', handleSelection);
+      line1Input.dataset.autocompleteBound = 'true';
+    } catch (error) {
+      console.warn('[AddressLookup] Failed to initialize PlaceAutocompleteElement:', error);
+    }
   }
 
   async function performDailyBackup() {
