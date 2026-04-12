@@ -13,6 +13,15 @@
     }
   }
 
+  if (!window.SUPABASE_SCHEMA) {
+    var activeProduct = String(window.ACTIVE_PRODUCT || window.PRODUCT_PROFILE || '').toLowerCase();
+    if (activeProduct === 'hairdresser') {
+      window.SUPABASE_SCHEMA = 'hairdresser';
+    } else if (activeProduct === 'tradie') {
+      window.SUPABASE_SCHEMA = 'tradie';
+    }
+  }
+
   window.SUPABASE_URL = window.SUPABASE_URL || '';
   window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
   var hasCredentials = !!(window.SUPABASE_URL && window.SUPABASE_ANON_KEY);

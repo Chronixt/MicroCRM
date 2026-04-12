@@ -8,7 +8,13 @@
   var SUPABASE_URL = window.SUPABASE_URL || '';
   var SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
   var productConfig = window.ProductConfig || {};
-  var schema = window.SUPABASE_SCHEMA || productConfig.supabaseSchema || 'public';
+  var activeProduct = String(window.ACTIVE_PRODUCT || window.PRODUCT_PROFILE || productConfig.activeProduct || '').toLowerCase();
+  var schema =
+    window.SUPABASE_SCHEMA ||
+    (activeProduct === 'hairdresser' ? 'hairdresser' : '') ||
+    (activeProduct === 'tradie' ? 'tradie' : '') ||
+    productConfig.supabaseSchema ||
+    'public';
 
   if (typeof supabase === 'undefined') {
     console.warn('Supabase JS not loaded. Add the Supabase script before supabaseClient.js.');

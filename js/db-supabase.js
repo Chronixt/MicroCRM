@@ -186,6 +186,18 @@
   async function claimUnownedData() {
     const supabase = getClient();
     const res = await supabase.rpc('claim_unowned_data');
+    if (res && res.error) {
+      const msg = String(res.error.message || '');
+      const code = String(res.error.code || '');
+      const isMissingRpc =
+        code === 'PGRST202' ||
+        msg.indexOf('Could not find the function') !== -1 ||
+        msg.indexOf('claim_unowned_data') !== -1;
+      if (isMissingRpc) {
+        console.warn('[Supabase] Optional RPC claim_unowned_data is unavailable; continuing.');
+        return null;
+      }
+    }
     throwIfError(res);
     return res.data;
   }
