@@ -612,14 +612,16 @@
   }
 
   async function attachAddressAutocomplete(form) {
-    if (!isTradie()) return;
+    const supportsAddressAutocomplete = isTradie() || productConfig.activeProduct === 'hairdresser';
+    if (!supportsAddressAutocomplete) return;
     if (window.ADDRESS_LOOKUP_ENABLED === false) return;
     if ((window.ADDRESS_LOOKUP_PROVIDER || 'google') !== 'google') return;
 
     const line1Input = form?.querySelector('input[name="addressLine1"]');
     const suburbInput = form?.querySelector('input[name="suburb"]');
-    const stateInput = form?.querySelector('select[name="state"]');
+    const stateInput = form?.querySelector('select[name="state"], input[name="state"]');
     const postcodeInput = form?.querySelector('input[name="postcode"]');
+    const countryInput = form?.querySelector('input[name="country"]');
     if (!line1Input || line1Input.dataset.autocompleteBound === 'true') return;
 
     const loaded = await loadGooglePlacesApi();
@@ -676,7 +678,11 @@
       const state = getAddressComponent(components, 'administrative_area_level_1', 'short_name');
       if (stateInput && state) {
         const upper = state.toUpperCase();
-        if (Array.from(stateInput.options).some(opt => opt.value === upper)) {
+        if (stateInput.tagName === 'SELECT') {
+          if (Array.from(stateInput.options).some(opt => opt.value === upper)) {
+            stateInput.value = upper;
+          }
+        } else {
           stateInput.value = upper;
         }
       }
@@ -684,6 +690,11 @@
       const postcode = getAddressComponent(components, 'postal_code');
       if (postcodeInput && postcode) {
         postcodeInput.value = postcode;
+      }
+
+      const country = getAddressComponent(components, 'country');
+      if (countryInput && country) {
+        countryInput.value = country;
       }
     });
 
@@ -803,6 +814,7 @@
       goHome: 'Go Home', notFound: 'Not found',
         newCustomer: 'New Customer', newAppointment: 'New Appointment', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
       firstName: 'First Name', lastName: 'Last Name', contactNumber: 'Contact Number', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'Social Media Name', socialMediaNamePlaceholder: 'Enter social media username',
+      address: 'Address', addressLookupPlaceholder: 'Search address', addressLine1: 'Address line 1', addressLine2: 'Address line 2', suburb: 'Suburb', state: 'State', postcode: 'Postcode', country: 'Country',
       referralType: 'Referral Type', referralNotes: 'Referral notes', referralNotesPlaceholder: 'Details related to referral', notes: 'Notes', attachImages: 'Attach Images',
       save: 'Save', saveChanges: 'Save Changes', cancel: 'Cancel', open: 'Open', select: 'Select',
       walkIn: 'Walk in', friend: 'Friend', instagram: 'Instagram', website: 'Website', googleMaps: 'Google Maps', other: 'Other',
@@ -829,6 +841,7 @@
       goHome: 'ホームへ', notFound: '見つかりません',
         newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
       firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
+      address: '住所', addressLookupPlaceholder: '住所検索', addressLine1: '住所1', addressLine2: '住所2', suburb: '市区町村', state: '都道府県', postcode: '郵便番号', country: '国',
       referralType: '紹介区分', referralNotes: '紹介メモ', referralNotesPlaceholder: '紹介に関する詳細', notes: 'ノート', attachImages: '画像を追加',
       save: '保存', saveChanges: '変更を保存', cancel: 'キャンセル', open: '開く', select: '選択',
       walkIn: '飛び込み', friend: '友人', instagram: 'インスタ', website: 'ウェブサイト', googleMaps: 'Googleマップ', other: 'その他',
@@ -1240,6 +1253,15 @@
               <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
+          ${!isTradie() ? `
+          <div>
+            <label>${t('socialMediaName')}</label>
+            <div class="input-with-button">
+              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
+            </div>
+          </div>
+          ` : ''}
           ${isTradie() ? `
           <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
             <strong style="font-size: 14px;">📍 Address</strong>
@@ -1274,15 +1296,55 @@
               </div>
             </div>
           </div>
-          ` : `
+          ` : ''}
+          ${productConfig.activeProduct === 'hairdresser' ? `
           <div>
-            <label>${t('socialMediaName')}</label>
+            <label>${t('address')}</label>
             <div class="input-with-button">
-              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
+              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Edit">⌨️</button>
             </div>
           </div>
-          `}
+          <div>
+            <label>${t('addressLine2')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Edit">⌨️</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('suburb')}</label>
+              <div class="input-with-button">
+                <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="suburb" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('state')}</label>
+              <div class="input-with-button">
+                <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="state" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('postcode')}</label>
+              <div class="input-with-button">
+                <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="postcode" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('country')}</label>
+              <div class="input-with-button">
+                <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="country" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          ` : ''}
           <div>
             <label>Referral</label>
             <div class="input-with-button">
@@ -1340,10 +1402,15 @@
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
       const socialMediaName = isTradie() ? '' : (form.querySelector('input[name="socialMediaName"]')?.value?.trim() || '');
-      const addressLine1 = isTradie() ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
-      const suburb = isTradie() ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
-      const state = isTradie() ? (form.querySelector('select[name="state"]')?.value || '') : '';
-      const postcode = isTradie() ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
+      const isHairdresser = productConfig.activeProduct === 'hairdresser';
+      const addressLine1 = (isTradie() || isHairdresser) ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
+      const addressLine2 = isHairdresser ? (form.querySelector('input[name="addressLine2"]')?.value?.trim() || '') : '';
+      const suburb = (isTradie() || isHairdresser) ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
+      const state = isTradie()
+        ? (form.querySelector('select[name="state"]')?.value || '')
+        : (isHairdresser ? (form.querySelector('input[name="state"]')?.value?.trim() || '') : '');
+      const postcode = (isTradie() || isHairdresser) ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
+      const country = isHairdresser ? (form.querySelector('input[name="country"]')?.value?.trim() || '') : '';
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
@@ -1364,6 +1431,13 @@
         customer.suburb = suburb;
         customer.state = state;
         customer.postcode = postcode;
+      } else if (isHairdresser) {
+        customer.addressLine1 = addressLine1;
+        customer.addressLine2 = addressLine2;
+        customer.suburb = suburb;
+        customer.state = state;
+        customer.postcode = postcode;
+        customer.country = country;
       }
 
       const newId = await CrmDB.createCustomer(customer);
@@ -2231,6 +2305,54 @@
             </select>
           </div>
           ` : ''}
+          ${productConfig.activeProduct === 'hairdresser' ? `
+          <div>
+            <label>${t('address')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" />
+              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Edit">⌨️</button>
+            </div>
+          </div>
+          <div>
+            <label>${t('addressLine2')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" />
+              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Edit">⌨️</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('suburb')}</label>
+              <div class="input-with-button">
+                <input type="text" name="suburb" placeholder="${t('suburb')}" />
+                <button type="button" class="input-icon-btn" data-field="suburb" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('state')}</label>
+              <div class="input-with-button">
+                <input type="text" name="state" placeholder="${t('state')}" />
+                <button type="button" class="input-icon-btn" data-field="state" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('postcode')}</label>
+              <div class="input-with-button">
+                <input type="text" name="postcode" placeholder="${t('postcode')}" />
+                <button type="button" class="input-icon-btn" data-field="postcode" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('country')}</label>
+              <div class="input-with-button">
+                <input type="text" name="country" placeholder="${t('country')}" />
+                <button type="button" class="input-icon-btn" data-field="country" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          ` : ''}
           
           <div>
             <label>Notes</label>
@@ -2265,7 +2387,7 @@
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
     
-    // Set tradie-specific fields
+    // Set address fields by product
     if (isTradie()) {
       setInputValue(form, 'addressLine1', customer.addressLine1 || '');
       setInputValue(form, 'suburb', customer.suburb || '');
@@ -2280,6 +2402,13 @@
       if (contactMethodSelect && customer.preferredContactMethod) {
         contactMethodSelect.value = customer.preferredContactMethod;
       }
+    } else if (productConfig.activeProduct === 'hairdresser') {
+      setInputValue(form, 'addressLine1', customer.addressLine1 || '');
+      setInputValue(form, 'addressLine2', customer.addressLine2 || '');
+      setInputValue(form, 'suburb', customer.suburb || '');
+      setInputValue(form, 'state', customer.state || '');
+      setInputValue(form, 'postcode', customer.postcode || '');
+      setInputValue(form, 'country', customer.country || '');
     }
 
     // Initialize add note button functionality
@@ -2462,13 +2591,20 @@
         updatedAt: new Date().toISOString(),
       };
       
-      // Add tradie-specific address fields
+      // Add product-specific address fields
       if (isTradie()) {
         updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
         updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
         updated.state = form.querySelector('select[name="state"]')?.value || '';
         updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
         updated.preferredContactMethod = form.querySelector('select[name="preferredContactMethod"]')?.value || '';
+      } else if (productConfig.activeProduct === 'hairdresser') {
+        updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
+        updated.addressLine2 = getInputValue(form, 'addressLine2')?.trim() || '';
+        updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
+        updated.state = getInputValue(form, 'state')?.trim() || '';
+        updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
+        updated.country = getInputValue(form, 'country')?.trim() || '';
       }
       
       try {
