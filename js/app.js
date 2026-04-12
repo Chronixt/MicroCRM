@@ -140,7 +140,7 @@
       const existing = await api.getSession();
       if (existing) {
         RUNTIME_INFO.email = existing?.user?.email || null;
-        if (typeof api.claimUnownedData === 'function') {
+        if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === true && typeof api.claimUnownedData === 'function') {
           try { await api.claimUnownedData(); } catch (e) {}
         }
         return true;
@@ -156,7 +156,7 @@
         const session = await api.signInWithPassword(email.trim(), password);
         if (session) {
           RUNTIME_INFO.email = session?.user?.email || email.trim();
-          if (typeof api.claimUnownedData === 'function') {
+          if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === true && typeof api.claimUnownedData === 'function') {
             try { await api.claimUnownedData(); } catch (e) {}
           }
           return true;
@@ -5436,6 +5436,7 @@
     const includeApptsEl = document.getElementById('include-appts');
     const includeImagesEl = document.getElementById('include-images');
     const importSelectedBtn = document.getElementById('import-selected');
+    const destructiveWipeAllowed = window.ALLOW_DESTRUCTIVE_WIPE === true;
 
     let lastExportBlobUrl = null;
     let lastExportFileName = null;
@@ -5468,6 +5469,11 @@
         if (el) el.disabled = true;
       });
       return;
+    }
+
+    if (wipeBtn && !destructiveWipeAllowed) {
+      wipeBtn.disabled = true;
+      wipeBtn.title = 'Disabled in this environment';
     }
 
     exportBtn.addEventListener('click', async () => {
@@ -5653,6 +5659,10 @@
       const includeAppointments = includeApptsEl.checked;
       const includeImages = includeImagesEl.checked;
       const mode = (document.querySelector('input[name="mode"]:checked') || {}).value || 'merge';
+      if (mode === 'replace' && !destructiveWipeAllowed) {
+        alert('Replace import (wipe + import) is disabled in this environment for safety.');
+        return;
+      }
 
       const customers = (loadedBackup.customers || []).filter((c) => selectedIds.includes(c.id));
       const appointments = includeAppointments ? (loadedBackup.appointments || []).filter((a) => selectedIds.includes(a.customerId)) : [];
@@ -5723,8 +5733,17 @@
     });
 
     wipeBtn.addEventListener('click', async () => {
+      if (!destructiveWipeAllowed) {
+        alert('Wipe All Data is disabled in this environment for safety.');
+        return;
+      }
       const wipeScope = productConfig.useSupabase ? 'all cloud data in Supabase for this profile' : 'all local data on this device';
       if (!confirm(`This will permanently delete ${wipeScope}. Continue?`)) return;
+      const phrase = window.prompt('Type DELETE to confirm destructive wipe:');
+      if (phrase !== 'DELETE') {
+        alert('Wipe cancelled.');
+        return;
+      }
       await db.clearAllStores();
       alert(productConfig.useSupabase ? 'All Supabase data deleted' : 'All local data deleted');
     });

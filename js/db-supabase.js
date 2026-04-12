@@ -696,6 +696,9 @@
   }
 
   async function clearAllStores() {
+    if (window.ALLOW_DESTRUCTIVE_WIPE !== true) {
+      throw new Error('Destructive wipe is disabled in this environment.');
+    }
     const supabase = getClient();
     // Preferred path: fast server-side TRUNCATE function (if migration is applied).
     const truncateResult = await supabase.rpc('truncate_all_data');

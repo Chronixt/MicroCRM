@@ -681,6 +681,9 @@
     }
   }
   async function clearAllStores() {
+    if (window.ALLOW_DESTRUCTIVE_WIPE !== true) {
+      throw new Error('Destructive wipe is disabled in this environment.');
+    }
     await supabase.from('job_events').delete().gte('id', 0).then(check);
     await supabase.from('reminders').delete().gte('id', 0).then(check);
     await supabase.from('note_versions').delete().gte('id', 0).then(check);

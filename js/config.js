@@ -5,6 +5,8 @@
  */
 (function () {
   var host = String(window.location.hostname || '').toLowerCase();
+  var isLocal = host === 'localhost' || host === '127.0.0.1';
+  var isProdLike = !isLocal;
   if (!window.ACTIVE_PRODUCT && !window.PRODUCT_PROFILE) {
     if (host.indexOf('beautician') !== -1 || host.indexOf('hairdresser') !== -1 || host.indexOf('chikas') !== -1) {
       window.ACTIVE_PRODUCT = 'hairdresser';
@@ -33,4 +35,18 @@
   window.ADDRESS_LOOKUP_DEBOUNCE_MS = window.ADDRESS_LOOKUP_DEBOUNCE_MS || 450;
   window.ADDRESS_LOOKUP_COUNTRY_CODES = window.ADDRESS_LOOKUP_COUNTRY_CODES || '';
   window.GOOGLE_PLACES_API_KEY = window.GOOGLE_PLACES_API_KEY || '';
+
+  // Safety defaults: production should be conservative unless explicitly enabled.
+  if (window.SHOW_ENV_BANNER === undefined) {
+    window.SHOW_ENV_BANNER = isLocal;
+  }
+  if (!window.APP_ENV_LABEL) {
+    window.APP_ENV_LABEL = isLocal ? 'LOCAL DEV' : 'PRODUCTION';
+  }
+  if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === undefined) {
+    window.ENABLE_AUTO_CLAIM_UNOWNED_DATA = false;
+  }
+  if (window.ALLOW_DESTRUCTIVE_WIPE === undefined) {
+    window.ALLOW_DESTRUCTIVE_WIPE = false;
+  }
 })();
