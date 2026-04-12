@@ -5078,6 +5078,11 @@
           <div class="row">
             <button id="wipe-btn" class="button danger">${productConfig.useSupabase ? t('deleteMyData') : t('wipeAllData')}</button>
           </div>
+          ${productConfig.useSupabase ? `
+          <div class="row" style="margin-top: 8px;">
+            <button id="signout-btn" class="button secondary">Sign Out</button>
+          </div>
+          ` : ''}
           
           <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
           
@@ -5431,6 +5436,7 @@
     const loadBtn = document.getElementById('load-backup');
     const importFile = document.getElementById('import-file');
     const wipeBtn = document.getElementById('wipe-btn');
+    const signOutBtn = document.getElementById('signout-btn');
     const statusEl = document.getElementById('backup-status');
     const preview = document.getElementById('backup-preview');
     const summary = document.getElementById('summary');
@@ -5769,6 +5775,12 @@
       }
       await db.clearAllStores();
       alert('All local data deleted');
+    });
+
+    signOutBtn?.addEventListener('click', async () => {
+      const ok = confirm('Sign out of Supabase now?');
+      if (!ok) return;
+      await signOutCurrentUser();
     });
 
     // Add event listener for refresh app button
