@@ -155,6 +155,25 @@
     return res;
   }
 
+  async function fetchImagesForExportSafe() {
+    try {
+      const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
+      const imagesSerialized = images.map((row) => ({
+        id: row.id,
+        customerId: row.customer_id,
+        name: row.name,
+        type: row.type,
+        createdAt: row.created_at,
+        dataUrl: row.data_url
+      }));
+      return { imagesSerialized, warning: null };
+    } catch (error) {
+      const warning = `Images export skipped: ${error.message || error}`;
+      console.warn('[Backup]', warning);
+      return { imagesSerialized: [], warning };
+    }
+  }
+
   async function getSession() {
     const supabase = getClient();
     const res = await supabase.auth.getSession();
@@ -629,17 +648,14 @@
       if (!customerNotes[cid]) customerNotes[cid] = [];
       customerNotes[cid].push(n);
     });
-    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-    const imagesSerialized = images.map((row) => ({
-      id: row.id,
-      customerId: row.customer_id,
-      name: row.name,
-      type: row.type,
-      createdAt: row.created_at,
-      dataUrl: row.data_url
-    }));
+    const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     return {
-      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString() },
+      __meta: {
+        app: 'chikas-db',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        warnings: warning ? [warning] : []
+      },
       customers,
       appointments,
       customerNotes,
@@ -661,19 +677,16 @@
       customerNotes[cid].push(n);
     });
     if (progressCallback) progressCallback('Exported notes', 25);
-    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-    const imagesSerialized = images.map((row) => ({
-      id: row.id,
-      customerId: row.customer_id,
-      name: row.name,
-      type: row.type,
-      createdAt: row.created_at,
-      dataUrl: row.data_url
-    }));
+    const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     if (progressCallback) progressCallback('Backup complete!', 100);
     return {
       blob: new Blob([JSON.stringify({
-        __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString() },
+        __meta: {
+          app: 'chikas-db',
+          version: 3,
+          exportedAt: new Date().toISOString(),
+          warnings: warning ? [warning] : []
+        },
         customers,
         appointments,
         customerNotes,
@@ -709,18 +722,16 @@
 
   async function exportImagesOnly(progressCallback = null) {
     if (progressCallback) progressCallback('Starting images-only export...', 0);
-    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-    const imagesSerialized = images.map((row) => ({
-      id: row.id,
-      customerId: row.customer_id,
-      name: row.name,
-      type: row.type,
-      createdAt: row.created_at,
-      dataUrl: row.data_url
-    }));
+    const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     if (progressCallback) progressCallback('Creating images export file...', 85);
     const blob = new Blob([JSON.stringify({
-      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      __meta: {
+        app: 'chikas-db',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        backupType: 'images-only',
+        warnings: warning ? [warning] : []
+      },
       images: imagesSerialized
     }, null, 2)], { type: 'application/json' });
     if (progressCallback) progressCallback('Images-only export complete!', 100);

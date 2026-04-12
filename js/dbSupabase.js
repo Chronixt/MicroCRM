@@ -71,6 +71,17 @@
     return res;
   }
 
+  async function fetchImagesForExportSafe() {
+    try {
+      var imgRes = check(await supabase.from('images').select('*'));
+      return { images: (imgRes.data || []).map(toCamel), warning: null };
+    } catch (error) {
+      var warning = 'Images export skipped: ' + (error && error.message ? error.message : String(error));
+      console.warn('[Backup]', warning);
+      return { images: [], warning: warning };
+    }
+  }
+
   async function getSession() {
     var res = await supabase.auth.getSession();
     check(res);
@@ -569,12 +580,18 @@
     var customers = await getAllCustomers();
     var appointments = await getAllAppointments();
     var notes = await getAllNotes();
-    var imgRes = await supabase.from('images').select('*');
-    var images = (imgRes.data || []).map(toCamel);
+    var imageResult = await fetchImagesForExportSafe();
+    var images = imageResult.images;
+    var imageWarning = imageResult.warning;
     var reminders = await getAllReminders();
     var jobEvents = await getAllJobEvents();
     return {
-      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString() },
+      __meta: {
+        app: APP_SLUG,
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        warnings: imageWarning ? [imageWarning] : []
+      },
       customers: customers,
       appointments: appointments,
       customerNotes: notes,
@@ -591,13 +608,19 @@
     if (progressCallback) progressCallback('Exported ' + appointments.length + ' appointments', 30);
     var notes = await getAllNotes();
     if (progressCallback) progressCallback('Exported ' + notes.length + ' notes', 45);
-    var imgRes = await supabase.from('images').select('*');
-    var images = (imgRes.data || []).map(toCamel);
+    var imageResult = await fetchImagesForExportSafe();
+    var images = imageResult.images;
+    var imageWarning = imageResult.warning;
     if (progressCallback) progressCallback('Exported ' + images.length + ' images', 75);
     var reminders = await getAllReminders();
     var jobEvents = await getAllJobEvents();
     var payload = {
-      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString() },
+      __meta: {
+        app: APP_SLUG,
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        warnings: imageWarning ? [imageWarning] : []
+      },
       customers: customers,
       appointments: appointments,
       customerNotes: notes,
@@ -629,11 +652,18 @@
   }
   async function exportImagesOnly(progressCallback) {
     if (progressCallback) progressCallback('Starting images-only export...', 0);
-    var imgRes = await supabase.from('images').select('*');
-    var images = (imgRes.data || []).map(toCamel);
+    var imageResult = await fetchImagesForExportSafe();
+    var images = imageResult.images;
+    var imageWarning = imageResult.warning;
     if (progressCallback) progressCallback('Exported ' + images.length + ' images', 70);
     var payload = {
-      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      __meta: {
+        app: APP_SLUG,
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        backupType: 'images-only',
+        warnings: imageWarning ? [imageWarning] : []
+      },
       images: images
     };
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
