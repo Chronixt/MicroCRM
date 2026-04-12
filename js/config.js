@@ -4,6 +4,26 @@
  * If config.local.js is missing or empty, the app uses IndexedDB.
  */
 (function () {
+  var host = String(window.location.hostname || '').toLowerCase();
+  var isLocal = host === 'localhost' || host === '127.0.0.1';
+  var isProdLike = !isLocal;
+  if (!window.ACTIVE_PRODUCT && !window.PRODUCT_PROFILE) {
+    if (host.indexOf('beautician') !== -1 || host.indexOf('hairdresser') !== -1 || host.indexOf('chikas') !== -1) {
+      window.ACTIVE_PRODUCT = 'hairdresser';
+    } else if (host.indexOf('tradie') !== -1) {
+      window.ACTIVE_PRODUCT = 'tradie';
+    }
+  }
+
+  if (!window.SUPABASE_SCHEMA) {
+    var activeProduct = String(window.ACTIVE_PRODUCT || window.PRODUCT_PROFILE || '').toLowerCase();
+    if (activeProduct === 'hairdresser') {
+      window.SUPABASE_SCHEMA = 'hairdresser';
+    } else if (activeProduct === 'tradie') {
+      window.SUPABASE_SCHEMA = 'tradie';
+    }
+  }
+
   window.SUPABASE_URL = window.SUPABASE_URL || '';
   window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
   var hasCredentials = !!(window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
@@ -15,4 +35,18 @@
   window.ADDRESS_LOOKUP_DEBOUNCE_MS = window.ADDRESS_LOOKUP_DEBOUNCE_MS || 450;
   window.ADDRESS_LOOKUP_COUNTRY_CODES = window.ADDRESS_LOOKUP_COUNTRY_CODES || '';
   window.GOOGLE_PLACES_API_KEY = window.GOOGLE_PLACES_API_KEY || '';
+
+  // Safety defaults: production should be conservative unless explicitly enabled.
+  if (window.SHOW_ENV_BANNER === undefined) {
+    window.SHOW_ENV_BANNER = isLocal;
+  }
+  if (!window.APP_ENV_LABEL) {
+    window.APP_ENV_LABEL = isLocal ? 'LOCAL DEV' : 'PRODUCTION';
+  }
+  if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === undefined) {
+    window.ENABLE_AUTO_CLAIM_UNOWNED_DATA = false;
+  }
+  if (window.ALLOW_DESTRUCTIVE_WIPE === undefined) {
+    window.ALLOW_DESTRUCTIVE_WIPE = false;
+  }
 })();

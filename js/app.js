@@ -50,6 +50,21 @@
     if (body) body.setAttribute('data-product', productConfig.activeProduct || 'core');
   }
 
+  function applyProductMetadata() {
+    var appName = productConfig.appName || APP_NAME || 'CRM';
+    var themeColor = productConfig.themeColor || '#0f172a';
+    document.title = appName;
+
+    var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (appleTitle) appleTitle.setAttribute('content', appName);
+    var appNameMeta = document.querySelector('meta[name="application-name"]');
+    if (appNameMeta) appNameMeta.setAttribute('content', appName);
+    var themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) themeMeta.setAttribute('content', themeColor);
+    var tileMeta = document.querySelector('meta[name="msapplication-TileColor"]');
+    if (tileMeta) tileMeta.setAttribute('content', themeColor);
+  }
+
   function getNativeDriverMode() {
     const mode = localStorage.getItem(NATIVE_DRIVER_MODE_KEY) || 'adapter';
     return mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
@@ -125,7 +140,7 @@
       const existing = await api.getSession();
       if (existing) {
         RUNTIME_INFO.email = existing?.user?.email || null;
-        if (typeof api.claimUnownedData === 'function') {
+        if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === true && typeof api.claimUnownedData === 'function') {
           try { await api.claimUnownedData(); } catch (e) {}
         }
         return true;
@@ -141,7 +156,7 @@
         const session = await api.signInWithPassword(email.trim(), password);
         if (session) {
           RUNTIME_INFO.email = session?.user?.email || email.trim();
-          if (typeof api.claimUnownedData === 'function') {
+          if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === true && typeof api.claimUnownedData === 'function') {
             try { await api.claimUnownedData(); } catch (e) {}
           }
           return true;
@@ -212,6 +227,8 @@
     const backend = productConfig.useSupabase ? 'SUPABASE' : 'INDEXEDDB';
     const schema = productConfig.supabaseSchema || 'public';
     const user = RUNTIME_INFO.email || 'not signed in';
+    const productLabel = (productConfig.activeProduct || 'core').toUpperCase();
+    const appLabel = productConfig.appName || APP_NAME || 'CRM';
     const isTestUser = /test/i.test(user);
     const toneBg = isTestUser ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)';
     const toneBorder = isTestUser ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)';
@@ -221,7 +238,7 @@
       : '';
     return `
       <div class="runtime-banner" style="margin: 0 0 10px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid ${toneBorder}; background: ${toneBg}; color: ${toneText}; font-size: 12px; line-height: 1.35;">
-        <strong>${env}</strong> | ${APP_NAME} | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
+        <strong>${env}</strong> | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
       </div>
     `;
   }
@@ -561,8 +578,10 @@
   }
 
   let googlePlacesLoadPromise = null;
+  let placesLibraryLoadPromise = null;
+
   async function loadGooglePlacesApi() {
-    if (window.google?.maps?.places?.Autocomplete) return true;
+    if (window.google?.maps) return true;
     if (googlePlacesLoadPromise) return googlePlacesLoadPromise;
 
     const apiKey = window.GOOGLE_PLACES_API_KEY;
@@ -571,17 +590,17 @@
     googlePlacesLoadPromise = new Promise((resolve) => {
       const existing = document.querySelector('script[data-google-places="true"]');
       if (existing) {
-        existing.addEventListener('load', () => resolve(!!window.google?.maps?.places?.Autocomplete), { once: true });
+        existing.addEventListener('load', () => resolve(!!window.google?.maps), { once: true });
         existing.addEventListener('error', () => resolve(false), { once: true });
         return;
       }
 
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&v=weekly&loading=async`;
       script.async = true;
       script.defer = true;
       script.dataset.googlePlaces = 'true';
-      script.onload = () => resolve(!!window.google?.maps?.places?.Autocomplete);
+      script.onload = () => resolve(!!window.google?.maps);
       script.onerror = () => resolve(false);
       document.head.appendChild(script);
     });
@@ -589,88 +608,228 @@
     return googlePlacesLoadPromise;
   }
 
-  function getAddressComponent(components, type, key = 'long_name') {
+  async function loadPlacesLibrary() {
+    if (placesLibraryLoadPromise) return placesLibraryLoadPromise;
+
+    placesLibraryLoadPromise = (async () => {
+      const loaded = await loadGooglePlacesApi();
+      if (!loaded || !window.google?.maps) return null;
+      for (let i = 0; i < 10; i++) {
+        if (typeof window.google.maps.importLibrary === 'function') {
+          try {
+            const lib = await window.google.maps.importLibrary('places');
+            if (lib) return lib;
+          } catch (error) {
+            console.warn('[AddressLookup] Failed to import Places library:', error);
+            return null;
+          }
+        }
+        if (window.google.maps.places) {
+          return window.google.maps.places;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return null;
+    })();
+    const result = await placesLibraryLoadPromise;
+    // Do not cache null forever; allow retry once Maps finishes bootstrapping.
+    if (!result) {
+      placesLibraryLoadPromise = null;
+    }
+    return result;
+  }
+
+  function getAddressComponent(components, type, useShortText = false) {
     const comp = (components || []).find(c => Array.isArray(c.types) && c.types.includes(type));
-    return comp ? (comp[key] || '') : '';
+    if (!comp) return '';
+    if (useShortText) {
+      return comp.shortText || comp.short_name || comp.longText || comp.long_name || '';
+    }
+    return comp.longText || comp.long_name || comp.shortText || comp.short_name || '';
+  }
+
+  function applyAddressComponentsToForm(fields, place) {
+    const components = place?.addressComponents || place?.address_components || [];
+    if (!components.length) return;
+
+    const subpremise = getAddressComponent(components, 'subpremise');
+    const premise = getAddressComponent(components, 'premise');
+    const streetNumber = getAddressComponent(components, 'street_number');
+    const route = getAddressComponent(components, 'route');
+
+    let streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim();
+    if (subpremise) {
+      streetAddress = streetAddress ? `${subpremise}/${streetAddress}` : subpremise;
+    } else if (!streetAddress && premise) {
+      streetAddress = premise;
+    }
+
+    if (!streetAddress) {
+      const formatted = (place?.formattedAddress || place?.formatted_address || '').split(',')[0].trim();
+      streetAddress = formatted || (place?.displayName || place?.name || '').trim();
+    }
+
+    if (fields.line1Input && streetAddress) {
+      fields.line1Input.value = streetAddress;
+    }
+
+    const suburb =
+      getAddressComponent(components, 'locality') ||
+      getAddressComponent(components, 'postal_town') ||
+      getAddressComponent(components, 'sublocality_level_1') ||
+      getAddressComponent(components, 'administrative_area_level_2');
+    if (fields.suburbInput && suburb) {
+      fields.suburbInput.value = suburb;
+    }
+
+    const state = getAddressComponent(components, 'administrative_area_level_1', true);
+    if (fields.stateInput && state) {
+      const upper = String(state).toUpperCase();
+      if (fields.stateInput.tagName === 'SELECT') {
+        if (Array.from(fields.stateInput.options).some(opt => opt.value === upper)) {
+          fields.stateInput.value = upper;
+        }
+      } else {
+        fields.stateInput.value = upper;
+      }
+    }
+
+    const postcode = getAddressComponent(components, 'postal_code');
+    if (fields.postcodeInput && postcode) {
+      fields.postcodeInput.value = postcode;
+    }
+
+    const country = getAddressComponent(components, 'country');
+    if (fields.countryInput && country) {
+      fields.countryInput.value = country;
+    }
+  }
+
+  function attachLegacyAutocomplete(fields, countryCodes) {
+    try {
+      if (!window.google?.maps?.places?.Autocomplete || !fields.line1Input) return false;
+      if (fields.line1Input.dataset.autocompleteBound === 'true') return true;
+
+      const options = {
+        fields: ['address_components', 'formatted_address', 'name'],
+      };
+      if (countryCodes.length > 0) {
+        options.componentRestrictions = { country: countryCodes };
+      }
+
+      const autocomplete = new window.google.maps.places.Autocomplete(fields.line1Input, options);
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        applyAddressComponentsToForm(fields, place);
+      });
+
+      fields.line1Input.dataset.autocompleteBound = 'true';
+      return true;
+    } catch (error) {
+      console.warn('[AddressLookup] Legacy autocomplete setup failed:', error);
+      return false;
+    }
+  }
+
+  function createAddressLookupWidget(form, line1Input, countryCodes) {
+    if (form.querySelector('[data-address-lookup-widget="true"]')) return form.querySelector('[data-address-lookup-widget="true"]');
+
+    const wrapper = document.createElement('div');
+    wrapper.dataset.addressLookupWidget = 'true';
+    wrapper.style.marginBottom = '10px';
+
+    const label = document.createElement('label');
+    label.textContent = t('addressLookupPlaceholder');
+    wrapper.appendChild(label);
+
+    const host = document.createElement('div');
+    host.style.marginTop = '4px';
+    wrapper.appendChild(host);
+
+    const reference = line1Input.closest('.input-with-button') || line1Input;
+    const parent = reference.parentElement;
+    if (parent) {
+      parent.parentElement?.insertBefore(wrapper, parent);
+    }
+
+    return host;
   }
 
   async function attachAddressAutocomplete(form) {
-    if (!isTradie()) return;
+    const supportsAddressAutocomplete = isTradie() || productConfig.activeProduct === 'hairdresser';
+    if (!supportsAddressAutocomplete) return;
     if (window.ADDRESS_LOOKUP_ENABLED === false) return;
     if ((window.ADDRESS_LOOKUP_PROVIDER || 'google') !== 'google') return;
 
     const line1Input = form?.querySelector('input[name="addressLine1"]');
     const suburbInput = form?.querySelector('input[name="suburb"]');
-    const stateInput = form?.querySelector('select[name="state"]');
+    const stateInput = form?.querySelector('select[name="state"], input[name="state"]');
     const postcodeInput = form?.querySelector('input[name="postcode"]');
+    const countryInput = form?.querySelector('input[name="country"]');
     if (!line1Input || line1Input.dataset.autocompleteBound === 'true') return;
-
-    const loaded = await loadGooglePlacesApi();
-    if (!loaded || !window.google?.maps?.places?.Autocomplete) return;
 
     const countryCodes = String(window.ADDRESS_LOOKUP_COUNTRY_CODES || 'au')
       .split(',')
       .map(s => s.trim().toLowerCase())
       .filter(Boolean);
 
-    const options = {
-      fields: ['address_components', 'formatted_address', 'name'],
-    };
-    if (countryCodes.length > 0) {
-      options.componentRestrictions = { country: countryCodes };
+    const placesLib = await loadPlacesLibrary();
+    let PlaceAutocompleteElement = placesLib?.PlaceAutocompleteElement || window.google?.maps?.places?.PlaceAutocompleteElement;
+    if (!PlaceAutocompleteElement) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      PlaceAutocompleteElement = window.google?.maps?.places?.PlaceAutocompleteElement || null;
     }
 
-    const autocomplete = new window.google.maps.places.Autocomplete(line1Input, options);
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      const components = place?.address_components || [];
-      if (!components.length) return;
-
-      const subpremise = getAddressComponent(components, 'subpremise');
-      const premise = getAddressComponent(components, 'premise');
-      const streetNumber = getAddressComponent(components, 'street_number');
-      const route = getAddressComponent(components, 'route');
-
-      let streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim();
-      if (subpremise) {
-        streetAddress = streetAddress ? `${subpremise}/${streetAddress}` : subpremise;
-      } else if (!streetAddress && premise) {
-        streetAddress = premise;
+    const fields = { line1Input, suburbInput, stateInput, postcodeInput, countryInput };
+    if (!PlaceAutocompleteElement) {
+      const legacyAttached = attachLegacyAutocomplete(fields, countryCodes);
+      if (!legacyAttached) {
+        console.warn('[AddressLookup] PlaceAutocompleteElement and legacy Autocomplete are unavailable. Using manual address entry.');
       }
+      return;
+    }
 
-      if (!streetAddress) {
-        const formatted = (place?.formatted_address || '').split(',')[0].trim();
-        streetAddress = formatted || (place?.name || '').trim();
+    const host = createAddressLookupWidget(form, line1Input, countryCodes);
+    if (!host) return;
+
+    try {
+      const widget = new PlaceAutocompleteElement();
+      widget.setAttribute('placeholder', t('addressLookupPlaceholder'));
+      if (countryCodes.length > 0) {
+        widget.setAttribute('included-region-codes', countryCodes.join(','));
+        widget.includedRegionCodes = countryCodes;
       }
+      widget.style.width = '100%';
+      widget.style.display = 'block';
+      host.replaceChildren(widget);
 
-      if (streetAddress) {
-        line1Input.value = streetAddress;
-      }
+      const handleSelection = async (event) => {
+        try {
+          const prediction =
+            event?.placePrediction ||
+            event?.detail?.placePrediction ||
+            event?.detail?.prediction ||
+            null;
 
-      const suburb =
-        getAddressComponent(components, 'locality') ||
-        getAddressComponent(components, 'postal_town') ||
-        getAddressComponent(components, 'sublocality_level_1') ||
-        getAddressComponent(components, 'administrative_area_level_2');
-      if (suburbInput && suburb) {
-        suburbInput.value = suburb;
-      }
+          if (!prediction || typeof prediction.toPlace !== 'function') return;
+          const place = prediction.toPlace();
+          if (!place || typeof place.fetchFields !== 'function') return;
 
-      const state = getAddressComponent(components, 'administrative_area_level_1', 'short_name');
-      if (stateInput && state) {
-        const upper = state.toUpperCase();
-        if (Array.from(stateInput.options).some(opt => opt.value === upper)) {
-          stateInput.value = upper;
+          await place.fetchFields({
+            fields: ['displayName', 'formattedAddress', 'addressComponents']
+          });
+          applyAddressComponentsToForm(fields, place);
+        } catch (error) {
+          console.warn('[AddressLookup] Could not apply selected address:', error);
         }
-      }
+      };
 
-      const postcode = getAddressComponent(components, 'postal_code');
-      if (postcodeInput && postcode) {
-        postcodeInput.value = postcode;
-      }
-    });
-
-    line1Input.dataset.autocompleteBound = 'true';
+      widget.addEventListener('gmp-select', handleSelection);
+      widget.addEventListener('gmp-placeselect', handleSelection);
+      line1Input.dataset.autocompleteBound = 'true';
+    } catch (error) {
+      console.warn('[AddressLookup] Failed to initialize PlaceAutocompleteElement:', error);
+    }
   }
 
   async function performDailyBackup() {
@@ -733,6 +892,9 @@
   // Register Service Worker for PWA functionality
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+      const host = window.location.hostname;
+      const isLocalDev = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      if (isLocalDev) return;
       navigator.serviceWorker.register('/sw.js?v=1.0.2')
         .then((registration) => {
           
@@ -780,9 +942,11 @@
       export: 'Export', download: 'Download', load: 'Load', preview: 'Preview',
       selectAll: 'Select All', selectNone: 'Select None', includeAppointments: 'Include appointments', includeImages: 'Include images',
       mergeAppendUpdate: 'Merge (append/update)', replaceWipeThenImport: 'Replace (wipe then import)', importSelected: 'Import Selected', wipeAllData: 'Wipe All Data',
+      deleteMyData: 'Delete My Data',
       goHome: 'Go Home', notFound: 'Not found',
         newCustomer: 'New Customer', newAppointment: 'New Appointment', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
       firstName: 'First Name', lastName: 'Last Name', contactNumber: 'Contact Number', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'Social Media Name', socialMediaNamePlaceholder: 'Enter social media username',
+      address: 'Address', addressLookupPlaceholder: 'Search address', addressLine1: 'Address line 1', addressLine2: 'Address line 2', suburb: 'Suburb', state: 'State', postcode: 'Postcode', country: 'Country',
       referralType: 'Referral Type', referralNotes: 'Referral notes', referralNotesPlaceholder: 'Details related to referral', notes: 'Notes', attachImages: 'Attach Images',
       save: 'Save', saveChanges: 'Save Changes', cancel: 'Cancel', open: 'Open', select: 'Select',
       walkIn: 'Walk in', friend: 'Friend', instagram: 'Instagram', website: 'Website', googleMaps: 'Google Maps', other: 'Other',
@@ -806,9 +970,11 @@
       export: 'エクスポート', download: 'ダウンロード', load: '読み込み', preview: 'プレビュー',
       selectAll: '全選択', selectNone: '全解除', includeAppointments: '予約を含む', includeImages: '画像を含む',
       mergeAppendUpdate: 'マージ（追加/更新）', replaceWipeThenImport: '置換（削除して取り込み）', importSelected: '選択を取り込み', wipeAllData: '全データを削除',
+      deleteMyData: '自分のデータを削除',
       goHome: 'ホームへ', notFound: '見つかりません',
         newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
       firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
+      address: '住所', addressLookupPlaceholder: '住所検索', addressLine1: '住所1', addressLine2: '住所2', suburb: '市区町村', state: '都道府県', postcode: '郵便番号', country: '国',
       referralType: '紹介区分', referralNotes: '紹介メモ', referralNotesPlaceholder: '紹介に関する詳細', notes: 'ノート', attachImages: '画像を追加',
       save: '保存', saveChanges: '変更を保存', cancel: 'キャンセル', open: '開く', select: '選択',
       walkIn: '飛び込み', friend: '友人', instagram: 'インスタ', website: 'ウェブサイト', googleMaps: 'Googleマップ', other: 'その他',
@@ -1189,6 +1355,7 @@
     // Clear global customer variables to prevent notes from being assigned to wrong customer
     window.currentCustomerId = null;
     window.currentCustomer = null;
+    clearTempNewCustomerDraft();
     
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
@@ -1219,6 +1386,15 @@
               <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
+          ${!isTradie() ? `
+          <div>
+            <label>${t('socialMediaName')}</label>
+            <div class="input-with-button">
+              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
+            </div>
+          </div>
+          ` : ''}
           ${isTradie() ? `
           <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
             <strong style="font-size: 14px;">📍 Address</strong>
@@ -1253,15 +1429,55 @@
               </div>
             </div>
           </div>
-          ` : `
+          ` : ''}
+          ${productConfig.activeProduct === 'hairdresser' ? `
           <div>
-            <label>${t('socialMediaName')}</label>
+            <label>${t('address')}</label>
             <div class="input-with-button">
-              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
+              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Edit">⌨️</button>
             </div>
           </div>
-          `}
+          <div>
+            <label>${t('addressLine2')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
+              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Edit">⌨️</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('suburb')}</label>
+              <div class="input-with-button">
+                <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="suburb" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('state')}</label>
+              <div class="input-with-button">
+                <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="state" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('postcode')}</label>
+              <div class="input-with-button">
+                <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="postcode" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('country')}</label>
+              <div class="input-with-button">
+                <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
+                <button type="button" class="input-icon-btn" data-field="country" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          ` : ''}
           <div>
             <label>Referral</label>
             <div class="input-with-button">
@@ -1289,7 +1505,11 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      textNotesOverlay.show('temp-new-customer');
+      if (productConfig.activeProduct === 'hairdresser') {
+        fullscreenNotesCanvas.show();
+      } else {
+        textNotesOverlay.show('temp-new-customer');
+      }
     });
     
     // Load any existing temporary notes for new customer
@@ -1315,10 +1535,15 @@
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
       const socialMediaName = isTradie() ? '' : (form.querySelector('input[name="socialMediaName"]')?.value?.trim() || '');
-      const addressLine1 = isTradie() ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
-      const suburb = isTradie() ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
-      const state = isTradie() ? (form.querySelector('select[name="state"]')?.value || '') : '';
-      const postcode = isTradie() ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
+      const isHairdresser = productConfig.activeProduct === 'hairdresser';
+      const addressLine1 = (isTradie() || isHairdresser) ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
+      const addressLine2 = isHairdresser ? (form.querySelector('input[name="addressLine2"]')?.value?.trim() || '') : '';
+      const suburb = (isTradie() || isHairdresser) ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
+      const state = isTradie()
+        ? (form.querySelector('select[name="state"]')?.value || '')
+        : (isHairdresser ? (form.querySelector('input[name="state"]')?.value?.trim() || '') : '');
+      const postcode = (isTradie() || isHairdresser) ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
+      const country = isHairdresser ? (form.querySelector('input[name="country"]')?.value?.trim() || '') : '';
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
@@ -1339,6 +1564,13 @@
         customer.suburb = suburb;
         customer.state = state;
         customer.postcode = postcode;
+      } else if (isHairdresser) {
+        customer.addressLine1 = addressLine1;
+        customer.addressLine2 = addressLine2;
+        customer.suburb = suburb;
+        customer.state = state;
+        customer.postcode = postcode;
+        customer.country = country;
       }
 
       const newId = await CrmDB.createCustomer(customer);
@@ -1362,6 +1594,9 @@
         delete existingNotes['temp-new-customer'];
         localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
       }
+
+      // Always clear temp draft notes once customer save is complete
+      clearTempNewCustomerDraft();
 
       if (imageFiles && imageFiles.length > 0) {
         const canUpload = await confirmImageStorageCapacity(imageFiles, 'customer photos');
@@ -1907,7 +2142,11 @@
     
     // Add note button event listener
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      textNotesOverlay.show(id);
+      if (productConfig.activeProduct === 'hairdresser') {
+        fullscreenNotesCanvas.show();
+      } else {
+        textNotesOverlay.show(id);
+      }
     });
 
     // Load next appointment
@@ -2199,6 +2438,54 @@
             </select>
           </div>
           ` : ''}
+          ${productConfig.activeProduct === 'hairdresser' ? `
+          <div>
+            <label>${t('address')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" />
+              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Edit">⌨️</button>
+            </div>
+          </div>
+          <div>
+            <label>${t('addressLine2')}</label>
+            <div class="input-with-button">
+              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" />
+              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Edit">⌨️</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('suburb')}</label>
+              <div class="input-with-button">
+                <input type="text" name="suburb" placeholder="${t('suburb')}" />
+                <button type="button" class="input-icon-btn" data-field="suburb" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('state')}</label>
+              <div class="input-with-button">
+                <input type="text" name="state" placeholder="${t('state')}" />
+                <button type="button" class="input-icon-btn" data-field="state" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <label>${t('postcode')}</label>
+              <div class="input-with-button">
+                <input type="text" name="postcode" placeholder="${t('postcode')}" />
+                <button type="button" class="input-icon-btn" data-field="postcode" title="Edit">⌨️</button>
+              </div>
+            </div>
+            <div>
+              <label>${t('country')}</label>
+              <div class="input-with-button">
+                <input type="text" name="country" placeholder="${t('country')}" />
+                <button type="button" class="input-icon-btn" data-field="country" title="Edit">⌨️</button>
+              </div>
+            </div>
+          </div>
+          ` : ''}
           
           <div>
             <label>Notes</label>
@@ -2233,7 +2520,7 @@
     setInputValue(form, 'socialMediaName', customer.socialMediaName || '');
     setInputValue(form, 'referralNotes', customer.referralNotes || '');
     
-    // Set tradie-specific fields
+    // Set address fields by product
     if (isTradie()) {
       setInputValue(form, 'addressLine1', customer.addressLine1 || '');
       setInputValue(form, 'suburb', customer.suburb || '');
@@ -2248,11 +2535,22 @@
       if (contactMethodSelect && customer.preferredContactMethod) {
         contactMethodSelect.value = customer.preferredContactMethod;
       }
+    } else if (productConfig.activeProduct === 'hairdresser') {
+      setInputValue(form, 'addressLine1', customer.addressLine1 || '');
+      setInputValue(form, 'addressLine2', customer.addressLine2 || '');
+      setInputValue(form, 'suburb', customer.suburb || '');
+      setInputValue(form, 'state', customer.state || '');
+      setInputValue(form, 'postcode', customer.postcode || '');
+      setInputValue(form, 'country', customer.country || '');
     }
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      textNotesOverlay.show(customer.id);
+      if (productConfig.activeProduct === 'hairdresser') {
+        fullscreenNotesCanvas.show();
+      } else {
+        textNotesOverlay.show(customer.id);
+      }
     });
     
     // Load existing notes
@@ -2426,13 +2724,20 @@
         updatedAt: new Date().toISOString(),
       };
       
-      // Add tradie-specific address fields
+      // Add product-specific address fields
       if (isTradie()) {
         updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
         updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
         updated.state = form.querySelector('select[name="state"]')?.value || '';
         updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
         updated.preferredContactMethod = form.querySelector('select[name="preferredContactMethod"]')?.value || '';
+      } else if (productConfig.activeProduct === 'hairdresser') {
+        updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
+        updated.addressLine2 = getInputValue(form, 'addressLine2')?.trim() || '';
+        updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
+        updated.state = getInputValue(form, 'state')?.trim() || '';
+        updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
+        updated.country = getInputValue(form, 'country')?.trim() || '';
       }
       
       try {
@@ -4757,7 +5062,9 @@
             </div>
             <div class="row" style="margin-top: 8px;">
               <label><input type="radio" name="mode" value="merge" checked /> ${t('mergeAppendUpdate')}</label>
-              <label><input type="radio" name="mode" value="replace" /> ${t('replaceWipeThenImport')}</label>
+              ${(window.ALLOW_DESTRUCTIVE_WIPE === true || !productConfig.useSupabase)
+                ? `<label><input type="radio" name="mode" value="replace" /> ${t('replaceWipeThenImport')}</label>`
+                : ''}
             </div>
             <div class="row" style="margin-top: 8px;">
               <button id="import-selected" class="button">${t('importSelected')}</button>
@@ -4769,8 +5076,13 @@
       <div class="card">
         <div class="form">
           <div class="row">
-            <button id="wipe-btn" class="button danger">${t('wipeAllData')}</button>
+            <button id="wipe-btn" class="button danger">${productConfig.useSupabase ? t('deleteMyData') : t('wipeAllData')}</button>
           </div>
+          ${productConfig.useSupabase ? `
+          <div class="row" style="margin-top: 8px;">
+            <button id="signout-btn" class="button secondary">Sign Out</button>
+          </div>
+          ` : ''}
           
           <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
           
@@ -5124,6 +5436,7 @@
     const loadBtn = document.getElementById('load-backup');
     const importFile = document.getElementById('import-file');
     const wipeBtn = document.getElementById('wipe-btn');
+    const signOutBtn = document.getElementById('signout-btn');
     const statusEl = document.getElementById('backup-status');
     const preview = document.getElementById('backup-preview');
     const summary = document.getElementById('summary');
@@ -5133,6 +5446,7 @@
     const includeApptsEl = document.getElementById('include-appts');
     const includeImagesEl = document.getElementById('include-images');
     const importSelectedBtn = document.getElementById('import-selected');
+    const destructiveWipeAllowed = window.ALLOW_DESTRUCTIVE_WIPE === true;
 
     let lastExportBlobUrl = null;
     let lastExportFileName = null;
@@ -5165,6 +5479,11 @@
         if (el) el.disabled = true;
       });
       return;
+    }
+
+    if (wipeBtn && !productConfig.useSupabase && !destructiveWipeAllowed) {
+      wipeBtn.disabled = true;
+      wipeBtn.title = 'Disabled in this environment';
     }
 
     exportBtn.addEventListener('click', async () => {
@@ -5350,6 +5669,10 @@
       const includeAppointments = includeApptsEl.checked;
       const includeImages = includeImagesEl.checked;
       const mode = (document.querySelector('input[name="mode"]:checked') || {}).value || 'merge';
+      if (mode === 'replace' && !destructiveWipeAllowed) {
+        alert('Replace import (wipe + import) is disabled in this environment for safety.');
+        return;
+      }
 
       const customers = (loadedBackup.customers || []).filter((c) => selectedIds.includes(c.id));
       const appointments = includeAppointments ? (loadedBackup.appointments || []).filter((a) => selectedIds.includes(a.customerId)) : [];
@@ -5420,10 +5743,44 @@
     });
 
     wipeBtn.addEventListener('click', async () => {
-      const wipeScope = productConfig.useSupabase ? 'all cloud data in Supabase for this profile' : 'all local data on this device';
+      if (productConfig.useSupabase) {
+        if (typeof db.deleteMyData !== 'function') {
+          alert('Delete My Data is not available yet. Please apply the latest migration and redeploy.');
+          return;
+        }
+        const warning = 'This will permanently delete ONLY your own cloud data in this product profile.';
+        if (!confirm(`${warning}\n\nContinue?`)) return;
+        const phrase = window.prompt('Type DELETE MY DATA to confirm:');
+        if (phrase !== 'DELETE MY DATA') {
+          alert('Deletion cancelled.');
+          return;
+        }
+        await db.deleteMyData();
+        alert('Your profile data has been deleted.');
+        window.location.hash = '#/find';
+        window.location.reload();
+        return;
+      }
+
+      if (!destructiveWipeAllowed) {
+        alert('Wipe All Data is disabled in this environment for safety.');
+        return;
+      }
+      const wipeScope = 'all local data on this device';
       if (!confirm(`This will permanently delete ${wipeScope}. Continue?`)) return;
+      const phrase = window.prompt('Type DELETE to confirm destructive wipe:');
+      if (phrase !== 'DELETE') {
+        alert('Wipe cancelled.');
+        return;
+      }
       await db.clearAllStores();
-      alert(productConfig.useSupabase ? 'All Supabase data deleted' : 'All local data deleted');
+      alert('All local data deleted');
+    });
+
+    signOutBtn?.addEventListener('click', async () => {
+      const ok = confirm('Sign out of Supabase now?');
+      if (!ok) return;
+      await signOutCurrentUser();
     });
 
     // Add event listener for refresh app button
@@ -6846,6 +7203,7 @@
 
   window.addEventListener('hashchange', render);
   window.addEventListener('load', async () => {
+    applyProductMetadata();
     applyProductTheme();
     await initializeStorageDriverLayer();
     const authReady = await ensureSupabaseAuthSession();
@@ -6878,19 +7236,28 @@
     migrateOldNotes();
   });
 
+  function getDefaultHandwritingSettings() {
+    const isHairdresser = productConfig.activeProduct === 'hairdresser';
+    return {
+      digitizationMode: isHairdresser ? 'vector' : 'auto', // hairdresser defaults to canvas/vector
+      vectorFormat: 'svg',
+      autoResize: true,
+      lineHeight: 24
+    };
+  }
+
   // Handwriting digitization settings and functionality
   let handwritingSettings = {
-    digitizationMode: 'auto', // 'auto' or 'vector'
-    vectorFormat: 'svg', // 'svg' or 'png'
-    autoResize: true,
-    lineHeight: 24 // pixels
+    ...getDefaultHandwritingSettings()
   };
 
   // Load settings from localStorage
   function loadHandwritingSettings() {
     const saved = localStorage.getItem('handwritingSettings');
     if (saved) {
-      handwritingSettings = { ...handwritingSettings, ...JSON.parse(saved) };
+      handwritingSettings = { ...getDefaultHandwritingSettings(), ...JSON.parse(saved) };
+    } else {
+      handwritingSettings = { ...getDefaultHandwritingSettings() };
     }
   }
 
@@ -10550,6 +10917,26 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         noteData.noteNumber = index + 1;
         fullscreenNotesCanvas.addNoteToUI(noteData);
       });
+    }
+  }
+
+  function clearTempNewCustomerDraft() {
+    try {
+      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      if (existingNotes['temp-new-customer']) {
+        delete existingNotes['temp-new-customer'];
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+      }
+    } catch (error) {
+      console.warn('Failed clearing temp-new-customer notes draft:', error);
+    }
+
+    try {
+      if (fullscreenNotesCanvas && typeof fullscreenNotesCanvas.clear === 'function') {
+        fullscreenNotesCanvas.clear();
+      }
+    } catch (error) {
+      // Non-blocking cleanup
     }
   }
 

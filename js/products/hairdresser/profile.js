@@ -5,12 +5,12 @@
 
   window.ProductProfiles.hairdresser = {
     config: {
-      appName: 'Chikas DB',
+      appName: 'CRMicro',
       appSlug: 'chikas-db',
       themeColor: '#22d3ee',
       logoLight: '/assets/CRMicro_logo_beautician_light.png',
       logoAlt: 'CRMicro Hairdresser logo',
-      lockTitle: 'Chikas DB Locked',
+      lockTitle: 'CRMicro Locked',
       dbName: 'chikas-db',
       dbVersion: 6,
       storagePrefix: 'chikas_',

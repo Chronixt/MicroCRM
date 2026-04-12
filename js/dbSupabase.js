@@ -13,11 +13,14 @@
   var supabase = null;
 
   function initSupabaseClient() {
+    if (window.SupabaseClient) return window.SupabaseClient;
     if (window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY) {
       try {
-        return window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
+        var client = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
           db: { schema: SUPABASE_SCHEMA }
         });
+        window.SupabaseClient = client;
+        return client;
       } catch (e) {
         console.warn('[dbSupabase] Failed to create schema-aware client, falling back to default client:', e && e.message ? e.message : e);
       }
@@ -68,6 +71,36 @@
     return res;
   }
 
+  async function fetchImagesForExportSafe() {
+    try {
+      var pageSize = 5; // Keep pages small because data_url rows can be very large.
+      var images = [];
+      var from = 0;
+
+      while (true) {
+        var to = from + pageSize - 1;
+        var imgRes = check(
+          await supabase
+            .from('images')
+            .select('id,customer_id,name,type,data_url,created_at')
+            .order('id', { ascending: true })
+            .range(from, to)
+        );
+        var page = imgRes.data || [];
+        if (page.length === 0) break;
+        images = images.concat(page.map(toCamel));
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      return { images: images, warning: null };
+    } catch (error) {
+      var warning = 'Images export skipped: ' + (error && error.message ? error.message : String(error));
+      console.warn('[Backup]', warning);
+      return { images: [], warning: warning };
+    }
+  }
+
   async function getSession() {
     var res = await supabase.auth.getSession();
     check(res);
@@ -96,6 +129,34 @@
     var res = await supabase.rpc('claim_unowned_data');
     check(res);
     return res.data;
+  }
+
+  async function deleteMyData() {
+    var rpcRes = await supabase.rpc('delete_my_data');
+    if (!rpcRes.error) return rpcRes.data;
+
+    var msg = String(rpcRes.error.message || '');
+    var code = String(rpcRes.error.code || '');
+    var isMissingRpc =
+      code === 'PGRST202' ||
+      msg.indexOf('Could not find the function') !== -1 ||
+      msg.indexOf('delete_my_data') !== -1;
+    if (!isMissingRpc) check(rpcRes);
+
+    // Fallback for environments where migration has not run yet.
+    var session = await getSession();
+    var uid = session && session.user ? session.user.id : null;
+    if (!uid) throw new Error('Not authenticated');
+
+    var deleted = { customers: 0, appointments: 0, images: 0, notes: 0, noteVersions: 0, reminders: 0, jobEvents: 0, fallback: true };
+    var delNoteVersions = await supabase.from('note_versions').delete().eq('owner_user_id', uid).select('id'); check(delNoteVersions); deleted.noteVersions = (delNoteVersions.data || []).length;
+    var delNotes = await supabase.from('notes').delete().eq('owner_user_id', uid).select('id'); check(delNotes); deleted.notes = (delNotes.data || []).length;
+    var delImages = await supabase.from('images').delete().eq('owner_user_id', uid).select('id'); check(delImages); deleted.images = (delImages.data || []).length;
+    var delReminders = await supabase.from('reminders').delete().eq('owner_user_id', uid).select('id'); check(delReminders); deleted.reminders = (delReminders.data || []).length;
+    var delJobEvents = await supabase.from('job_events').delete().eq('owner_user_id', uid).select('id'); check(delJobEvents); deleted.jobEvents = (delJobEvents.data || []).length;
+    var delAppointments = await supabase.from('appointments').delete().eq('owner_user_id', uid).select('id'); check(delAppointments); deleted.appointments = (delAppointments.data || []).length;
+    var delCustomers = await supabase.from('customers').delete().eq('owner_user_id', uid).select('id'); check(delCustomers); deleted.customers = (delCustomers.data || []).length;
+    return deleted;
   }
 
   // ---- Helpers (same as db.js for addImage) ----
@@ -538,12 +599,18 @@
     var customers = await getAllCustomers();
     var appointments = await getAllAppointments();
     var notes = await getAllNotes();
-    var imgRes = await supabase.from('images').select('*');
-    var images = (imgRes.data || []).map(toCamel);
+    var imageResult = await fetchImagesForExportSafe();
+    var images = imageResult.images;
+    var imageWarning = imageResult.warning;
     var reminders = await getAllReminders();
     var jobEvents = await getAllJobEvents();
     return {
-      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString() },
+      __meta: {
+        app: APP_SLUG,
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        warnings: imageWarning ? [imageWarning] : []
+      },
       customers: customers,
       appointments: appointments,
       customerNotes: notes,
@@ -560,13 +627,19 @@
     if (progressCallback) progressCallback('Exported ' + appointments.length + ' appointments', 30);
     var notes = await getAllNotes();
     if (progressCallback) progressCallback('Exported ' + notes.length + ' notes', 45);
-    var imgRes = await supabase.from('images').select('*');
-    var images = (imgRes.data || []).map(toCamel);
+    var imageResult = await fetchImagesForExportSafe();
+    var images = imageResult.images;
+    var imageWarning = imageResult.warning;
     if (progressCallback) progressCallback('Exported ' + images.length + ' images', 75);
     var reminders = await getAllReminders();
     var jobEvents = await getAllJobEvents();
     var payload = {
-      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString() },
+      __meta: {
+        app: APP_SLUG,
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        warnings: imageWarning ? [imageWarning] : []
+      },
       customers: customers,
       appointments: appointments,
       customerNotes: notes,
@@ -598,11 +671,18 @@
   }
   async function exportImagesOnly(progressCallback) {
     if (progressCallback) progressCallback('Starting images-only export...', 0);
-    var imgRes = await supabase.from('images').select('*');
-    var images = (imgRes.data || []).map(toCamel);
+    var imageResult = await fetchImagesForExportSafe();
+    var images = imageResult.images;
+    var imageWarning = imageResult.warning;
     if (progressCallback) progressCallback('Exported ' + images.length + ' images', 70);
     var payload = {
-      __meta: { app: APP_SLUG, version: 4, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      __meta: {
+        app: APP_SLUG,
+        version: 4,
+        exportedAt: new Date().toISOString(),
+        backupType: 'images-only',
+        warnings: imageWarning ? [imageWarning] : []
+      },
       images: images
     };
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -678,6 +758,9 @@
     }
   }
   async function clearAllStores() {
+    if (window.ALLOW_DESTRUCTIVE_WIPE !== true) {
+      throw new Error('Destructive wipe is disabled in this environment.');
+    }
     await supabase.from('job_events').delete().gte('id', 0).then(check);
     await supabase.from('reminders').delete().gte('id', 0).then(check);
     await supabase.from('note_versions').delete().gte('id', 0).then(check);
@@ -741,6 +824,7 @@
     signOut: signOut,
     onAuthStateChange: onAuthStateChange,
     claimUnownedData: claimUnownedData,
+    deleteMyData: deleteMyData,
     dbName: config.dbName || 'tradie-crm-db',
     storagePrefix: STORAGE_PREFIX,
     createCustomer: createCustomer,

@@ -4,7 +4,7 @@
   window.ProductProfiles = window.ProductProfiles || {};
 
   window.ProductCore = {
-    defaultProduct: 'tradie',
+    defaultProduct: 'hairdresser',
     defaultConfig: {
       appName: 'CRM',
       appSlug: 'crm',

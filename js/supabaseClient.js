@@ -1,12 +1,20 @@
 /**
- * Supabase client for TradieCRM
- * Uses Project URL + anon key (safe for browser; protect data with RLS in Supabase).
+ * Supabase client bootstrap (schema-aware singleton).
+ * Uses runtime credentials from config.local.js / runtime config.
  */
 (function () {
   'use strict';
 
-  var SUPABASE_URL = 'https://vmztgfahkqbbdoajeaxu.supabase.co';
-  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtenRnZmFoa3FiYmRvYWplYXh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NzE0MDAsImV4cCI6MjA4NTU0NzQwMH0.qEWGQnJRtdYut33FzUrFvpgTk1s9KF2qZqIuqCt9u0U';
+  var SUPABASE_URL = window.SUPABASE_URL || '';
+  var SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+  var productConfig = window.ProductConfig || {};
+  var activeProduct = String(window.ACTIVE_PRODUCT || window.PRODUCT_PROFILE || productConfig.activeProduct || '').toLowerCase();
+  var schema =
+    window.SUPABASE_SCHEMA ||
+    (activeProduct === 'hairdresser' ? 'hairdresser' : '') ||
+    (activeProduct === 'tradie' ? 'tradie' : '') ||
+    productConfig.supabaseSchema ||
+    'public';
 
   if (typeof supabase === 'undefined') {
     console.warn('Supabase JS not loaded. Add the Supabase script before supabaseClient.js.');
@@ -14,9 +22,25 @@
     return;
   }
 
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.warn('Supabase credentials missing. Set SUPABASE_URL and SUPABASE_ANON_KEY.');
+    window.SupabaseClient = null;
+    return;
+  }
+
+  if (window.SupabaseClient &&
+      window.__SUPABASE_CLIENT_URL === SUPABASE_URL &&
+      window.__SUPABASE_CLIENT_SCHEMA === schema) {
+    return;
+  }
+
   try {
-    window.SupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log('Supabase client initialized');
+    window.SupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      db: { schema: schema }
+    });
+    window.__SUPABASE_CLIENT_URL = SUPABASE_URL;
+    window.__SUPABASE_CLIENT_SCHEMA = schema;
+    console.log('Supabase client initialized (schema: ' + schema + ')');
   } catch (e) {
     console.error('Failed to create Supabase client:', e);
     window.SupabaseClient = null;

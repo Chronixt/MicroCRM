@@ -1,15 +1,20 @@
-/* Supabase backend for Chikas DB (hairdresser schema). Same API as db.js. */
+/* Supabase backend for CRMicro (hairdresser schema). Same API as db.js. */
 (function () {
-  const SCHEMA = 'hairdresser';
+  const SCHEMA = window.SUPABASE_SCHEMA || 'hairdresser';
   var cachedClient = null;
 
   function getClient() {
     if (cachedClient) return cachedClient;
+    if (window.SupabaseClient) {
+      cachedClient = window.SupabaseClient;
+      return cachedClient;
+    }
     const url = window.SUPABASE_URL || '';
     const key = window.SUPABASE_ANON_KEY || '';
     if (!url || !key) throw new Error('Supabase: SUPABASE_URL and SUPABASE_ANON_KEY must be set when USE_SUPABASE is true.');
     if (typeof supabase === 'undefined') throw new Error('Supabase: supabase-js not loaded.');
     cachedClient = supabase.createClient(url, key, { db: { schema: SCHEMA } });
+    window.SupabaseClient = cachedClient;
     return cachedClient;
   }
 
@@ -150,6 +155,47 @@
     return res;
   }
 
+  async function fetchImagesForExportSafe() {
+    try {
+      const supabase = getClient();
+      const pageSize = 5; // Keep pages small because data_url rows can be very large.
+      const imagesSerialized = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + pageSize - 1;
+        const pageRes = await supabase
+          .from('images')
+          .select('id,customer_id,name,type,data_url,created_at')
+          .order('id', { ascending: true })
+          .range(from, to);
+        throwIfError(pageRes);
+        const page = pageRes.data || [];
+        if (page.length === 0) break;
+
+        page.forEach((row) => {
+          imagesSerialized.push({
+            id: row.id,
+            customerId: row.customer_id,
+            name: row.name,
+            type: row.type,
+            createdAt: row.created_at,
+            dataUrl: row.data_url
+          });
+        });
+
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      return { imagesSerialized, warning: null };
+    } catch (error) {
+      const warning = `Images export skipped: ${error.message || error}`;
+      console.warn('[Backup]', warning);
+      return { imagesSerialized: [], warning };
+    }
+  }
+
   async function getSession() {
     const supabase = getClient();
     const res = await supabase.auth.getSession();
@@ -181,8 +227,52 @@
   async function claimUnownedData() {
     const supabase = getClient();
     const res = await supabase.rpc('claim_unowned_data');
+    if (res && res.error) {
+      const msg = String(res.error.message || '');
+      const code = String(res.error.code || '');
+      const isMissingRpc =
+        code === 'PGRST202' ||
+        msg.indexOf('Could not find the function') !== -1 ||
+        msg.indexOf('claim_unowned_data') !== -1;
+      if (isMissingRpc) {
+        console.warn('[Supabase] Optional RPC claim_unowned_data is unavailable; continuing.');
+        return null;
+      }
+    }
     throwIfError(res);
     return res.data;
+  }
+
+  async function deleteMyData() {
+    const supabase = getClient();
+    const rpcRes = await supabase.rpc('delete_my_data');
+    if (!rpcRes.error) return rpcRes.data;
+
+    const msg = String(rpcRes.error.message || '');
+    const code = String(rpcRes.error.code || '');
+    const isMissingRpc =
+      code === 'PGRST202' ||
+      msg.indexOf('Could not find the function') !== -1 ||
+      msg.indexOf('delete_my_data') !== -1;
+    if (!isMissingRpc) throwIfError(rpcRes);
+
+    // Fallback path for environments where migration has not been applied yet.
+    const session = await getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Not authenticated');
+
+    let deleted = { customers: 0, appointments: 0, images: 0, notes: 0, noteVersions: 0, fallback: true };
+    const delNoteVersions = await supabase.from('note_versions').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delNoteVersions); deleted.noteVersions = (delNoteVersions.data || []).length;
+    const delNotes = await supabase.from('notes').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delNotes); deleted.notes = (delNotes.data || []).length;
+    const delImages = await supabase.from('images').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delImages); deleted.images = (delImages.data || []).length;
+    const delAppointments = await supabase.from('appointments').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delAppointments); deleted.appointments = (delAppointments.data || []).length;
+    const delCustomers = await supabase.from('customers').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delCustomers); deleted.customers = (delCustomers.data || []).length;
+    return deleted;
   }
 
   function extractAppointmentCustomerId(appointment) {
@@ -580,17 +670,14 @@
       if (!customerNotes[cid]) customerNotes[cid] = [];
       customerNotes[cid].push(n);
     });
-    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-    const imagesSerialized = images.map((row) => ({
-      id: row.id,
-      customerId: row.customer_id,
-      name: row.name,
-      type: row.type,
-      createdAt: row.created_at,
-      dataUrl: row.data_url
-    }));
+    const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     return {
-      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString() },
+      __meta: {
+        app: 'chikas-db',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        warnings: warning ? [warning] : []
+      },
       customers,
       appointments,
       customerNotes,
@@ -612,19 +699,16 @@
       customerNotes[cid].push(n);
     });
     if (progressCallback) progressCallback('Exported notes', 25);
-    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-    const imagesSerialized = images.map((row) => ({
-      id: row.id,
-      customerId: row.customer_id,
-      name: row.name,
-      type: row.type,
-      createdAt: row.created_at,
-      dataUrl: row.data_url
-    }));
+    const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     if (progressCallback) progressCallback('Backup complete!', 100);
     return {
       blob: new Blob([JSON.stringify({
-        __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString() },
+        __meta: {
+          app: 'chikas-db',
+          version: 3,
+          exportedAt: new Date().toISOString(),
+          warnings: warning ? [warning] : []
+        },
         customers,
         appointments,
         customerNotes,
@@ -660,18 +744,16 @@
 
   async function exportImagesOnly(progressCallback = null) {
     if (progressCallback) progressCallback('Starting images-only export...', 0);
-    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-    const imagesSerialized = images.map((row) => ({
-      id: row.id,
-      customerId: row.customer_id,
-      name: row.name,
-      type: row.type,
-      createdAt: row.created_at,
-      dataUrl: row.data_url
-    }));
+    const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     if (progressCallback) progressCallback('Creating images export file...', 85);
     const blob = new Blob([JSON.stringify({
-      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      __meta: {
+        app: 'chikas-db',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        backupType: 'images-only',
+        warnings: warning ? [warning] : []
+      },
       images: imagesSerialized
     }, null, 2)], { type: 'application/json' });
     if (progressCallback) progressCallback('Images-only export complete!', 100);
@@ -679,6 +761,9 @@
   }
 
   async function clearAllStores() {
+    if (window.ALLOW_DESTRUCTIVE_WIPE !== true) {
+      throw new Error('Destructive wipe is disabled in this environment.');
+    }
     const supabase = getClient();
     // Preferred path: fast server-side TRUNCATE function (if migration is applied).
     const truncateResult = await supabase.rpc('truncate_all_data');
@@ -912,6 +997,7 @@
     signOut,
     onAuthStateChange,
     claimUnownedData,
+    deleteMyData,
     createCustomer,
     updateCustomer,
     getCustomerById,
