@@ -101,6 +101,34 @@
     return res.data;
   }
 
+  async function deleteMyData() {
+    var rpcRes = await supabase.rpc('delete_my_data');
+    if (!rpcRes.error) return rpcRes.data;
+
+    var msg = String(rpcRes.error.message || '');
+    var code = String(rpcRes.error.code || '');
+    var isMissingRpc =
+      code === 'PGRST202' ||
+      msg.indexOf('Could not find the function') !== -1 ||
+      msg.indexOf('delete_my_data') !== -1;
+    if (!isMissingRpc) check(rpcRes);
+
+    // Fallback for environments where migration has not run yet.
+    var session = await getSession();
+    var uid = session && session.user ? session.user.id : null;
+    if (!uid) throw new Error('Not authenticated');
+
+    var deleted = { customers: 0, appointments: 0, images: 0, notes: 0, noteVersions: 0, reminders: 0, jobEvents: 0, fallback: true };
+    var delNoteVersions = await supabase.from('note_versions').delete().eq('owner_user_id', uid).select('id'); check(delNoteVersions); deleted.noteVersions = (delNoteVersions.data || []).length;
+    var delNotes = await supabase.from('notes').delete().eq('owner_user_id', uid).select('id'); check(delNotes); deleted.notes = (delNotes.data || []).length;
+    var delImages = await supabase.from('images').delete().eq('owner_user_id', uid).select('id'); check(delImages); deleted.images = (delImages.data || []).length;
+    var delReminders = await supabase.from('reminders').delete().eq('owner_user_id', uid).select('id'); check(delReminders); deleted.reminders = (delReminders.data || []).length;
+    var delJobEvents = await supabase.from('job_events').delete().eq('owner_user_id', uid).select('id'); check(delJobEvents); deleted.jobEvents = (delJobEvents.data || []).length;
+    var delAppointments = await supabase.from('appointments').delete().eq('owner_user_id', uid).select('id'); check(delAppointments); deleted.appointments = (delAppointments.data || []).length;
+    var delCustomers = await supabase.from('customers').delete().eq('owner_user_id', uid).select('id'); check(delCustomers); deleted.customers = (delCustomers.data || []).length;
+    return deleted;
+  }
+
   // ---- Helpers (same as db.js for addImage) ----
   function blobToDataURL(blob) {
     return new Promise(function (resolve, reject) {
@@ -747,6 +775,7 @@
     signOut: signOut,
     onAuthStateChange: onAuthStateChange,
     claimUnownedData: claimUnownedData,
+    deleteMyData: deleteMyData,
     dbName: config.dbName || 'tradie-crm-db',
     storagePrefix: STORAGE_PREFIX,
     createCustomer: createCustomer,

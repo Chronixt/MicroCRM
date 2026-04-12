@@ -942,6 +942,7 @@
       export: 'Export', download: 'Download', load: 'Load', preview: 'Preview',
       selectAll: 'Select All', selectNone: 'Select None', includeAppointments: 'Include appointments', includeImages: 'Include images',
       mergeAppendUpdate: 'Merge (append/update)', replaceWipeThenImport: 'Replace (wipe then import)', importSelected: 'Import Selected', wipeAllData: 'Wipe All Data',
+      deleteMyData: 'Delete My Data',
       goHome: 'Go Home', notFound: 'Not found',
         newCustomer: 'New Customer', newAppointment: 'New Appointment', findCustomer: 'Find Customer', backupRestore: 'Backup / Restore',
       firstName: 'First Name', lastName: 'Last Name', contactNumber: 'Contact Number', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'Social Media Name', socialMediaNamePlaceholder: 'Enter social media username',
@@ -969,6 +970,7 @@
       export: 'エクスポート', download: 'ダウンロード', load: '読み込み', preview: 'プレビュー',
       selectAll: '全選択', selectNone: '全解除', includeAppointments: '予約を含む', includeImages: '画像を含む',
       mergeAppendUpdate: 'マージ（追加/更新）', replaceWipeThenImport: '置換（削除して取り込み）', importSelected: '選択を取り込み', wipeAllData: '全データを削除',
+      deleteMyData: '自分のデータを削除',
       goHome: 'ホームへ', notFound: '見つかりません',
         newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
       firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
@@ -5060,7 +5062,9 @@
             </div>
             <div class="row" style="margin-top: 8px;">
               <label><input type="radio" name="mode" value="merge" checked /> ${t('mergeAppendUpdate')}</label>
-              <label><input type="radio" name="mode" value="replace" /> ${t('replaceWipeThenImport')}</label>
+              ${(window.ALLOW_DESTRUCTIVE_WIPE === true || !productConfig.useSupabase)
+                ? `<label><input type="radio" name="mode" value="replace" /> ${t('replaceWipeThenImport')}</label>`
+                : ''}
             </div>
             <div class="row" style="margin-top: 8px;">
               <button id="import-selected" class="button">${t('importSelected')}</button>
@@ -5072,7 +5076,7 @@
       <div class="card">
         <div class="form">
           <div class="row">
-            <button id="wipe-btn" class="button danger">${t('wipeAllData')}</button>
+            <button id="wipe-btn" class="button danger">${productConfig.useSupabase ? t('deleteMyData') : t('wipeAllData')}</button>
           </div>
           
           <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
@@ -5471,7 +5475,7 @@
       return;
     }
 
-    if (wipeBtn && !destructiveWipeAllowed) {
+    if (wipeBtn && !productConfig.useSupabase && !destructiveWipeAllowed) {
       wipeBtn.disabled = true;
       wipeBtn.title = 'Disabled in this environment';
     }
@@ -5733,11 +5737,30 @@
     });
 
     wipeBtn.addEventListener('click', async () => {
+      if (productConfig.useSupabase) {
+        if (typeof db.deleteMyData !== 'function') {
+          alert('Delete My Data is not available yet. Please apply the latest migration and redeploy.');
+          return;
+        }
+        const warning = 'This will permanently delete ONLY your own cloud data in this product profile.';
+        if (!confirm(`${warning}\n\nContinue?`)) return;
+        const phrase = window.prompt('Type DELETE MY DATA to confirm:');
+        if (phrase !== 'DELETE MY DATA') {
+          alert('Deletion cancelled.');
+          return;
+        }
+        await db.deleteMyData();
+        alert('Your profile data has been deleted.');
+        window.location.hash = '#/find';
+        window.location.reload();
+        return;
+      }
+
       if (!destructiveWipeAllowed) {
         alert('Wipe All Data is disabled in this environment for safety.');
         return;
       }
-      const wipeScope = productConfig.useSupabase ? 'all cloud data in Supabase for this profile' : 'all local data on this device';
+      const wipeScope = 'all local data on this device';
       if (!confirm(`This will permanently delete ${wipeScope}. Continue?`)) return;
       const phrase = window.prompt('Type DELETE to confirm destructive wipe:');
       if (phrase !== 'DELETE') {
@@ -5745,7 +5768,7 @@
         return;
       }
       await db.clearAllStores();
-      alert(productConfig.useSupabase ? 'All Supabase data deleted' : 'All local data deleted');
+      alert('All local data deleted');
     });
 
     // Add event listener for refresh app button

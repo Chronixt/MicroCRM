@@ -202,6 +202,38 @@
     return res.data;
   }
 
+  async function deleteMyData() {
+    const supabase = getClient();
+    const rpcRes = await supabase.rpc('delete_my_data');
+    if (!rpcRes.error) return rpcRes.data;
+
+    const msg = String(rpcRes.error.message || '');
+    const code = String(rpcRes.error.code || '');
+    const isMissingRpc =
+      code === 'PGRST202' ||
+      msg.indexOf('Could not find the function') !== -1 ||
+      msg.indexOf('delete_my_data') !== -1;
+    if (!isMissingRpc) throwIfError(rpcRes);
+
+    // Fallback path for environments where migration has not been applied yet.
+    const session = await getSession();
+    const uid = session?.user?.id;
+    if (!uid) throw new Error('Not authenticated');
+
+    let deleted = { customers: 0, appointments: 0, images: 0, notes: 0, noteVersions: 0, fallback: true };
+    const delNoteVersions = await supabase.from('note_versions').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delNoteVersions); deleted.noteVersions = (delNoteVersions.data || []).length;
+    const delNotes = await supabase.from('notes').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delNotes); deleted.notes = (delNotes.data || []).length;
+    const delImages = await supabase.from('images').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delImages); deleted.images = (delImages.data || []).length;
+    const delAppointments = await supabase.from('appointments').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delAppointments); deleted.appointments = (delAppointments.data || []).length;
+    const delCustomers = await supabase.from('customers').delete().eq('owner_user_id', uid).select('id');
+    throwIfError(delCustomers); deleted.customers = (delCustomers.data || []).length;
+    return deleted;
+  }
+
   function extractAppointmentCustomerId(appointment) {
     if (!appointment || typeof appointment !== 'object') return null;
     return appointment.customerId ?? (appointment.extendedProps && appointment.extendedProps.customerId) ?? null;
@@ -932,6 +964,7 @@
     signOut,
     onAuthStateChange,
     claimUnownedData,
+    deleteMyData,
     createCustomer,
     updateCustomer,
     getCustomerById,
