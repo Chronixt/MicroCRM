@@ -12,7 +12,7 @@ Open your browser's Developer Console (F12) and run:
 
 ```javascript
 // Scan for corrupted notes (this won't change anything)
-const scanResults = await ChikasDB.scanForCorruptedNotes();
+const scanResults = await CrmDB.scanForCorruptedNotes();
 console.log('Corrupted notes:', scanResults.corrupted.length);
 console.log('Healthy notes:', scanResults.healthy.length);
 console.log('Notes only in localStorage:', scanResults.localStorageOnly.length);
@@ -29,7 +29,7 @@ See what would be recovered without actually doing it:
 
 ```javascript
 // Preview what will be recovered
-const preview = await ChikasDB.recoverCorruptedNotes(true); // dryRun = true
+const preview = await CrmDB.recoverCorruptedNotes(true); // dryRun = true
 console.log('Notes that can be recovered:', preview.canRecover);
 console.log('Recovery actions:', preview.actions);
 console.log('Summary:', preview.summary);
@@ -41,7 +41,7 @@ If the preview looks good, run the actual recovery:
 
 ```javascript
 // Actually recover the notes
-const recovery = await ChikasDB.recoverCorruptedNotes(false); // dryRun = false
+const recovery = await CrmDB.recoverCorruptedNotes(false); // dryRun = false
 console.log('Recovered:', recovery.recovered, 'notes');
 console.log('Failed:', recovery.failed, 'notes');
 console.log('Details:', recovery.details);
@@ -66,7 +66,7 @@ In the browser console:
 // You'll need to load it via the file input, then access it
 
 // After loading, restore notes (merge mode - only replaces corrupted notes)
-const restoreResult = await ChikasDB.restoreNotesFromBackup(loadedBackupData, {
+const restoreResult = await CrmDB.restoreNotesFromBackup(loadedBackupData, {
   mode: 'merge' // Options: 'merge' (smart) or 'replace' (force replace all)
 });
 
@@ -82,7 +82,7 @@ If you only want to restore notes for one customer:
 
 ```javascript
 // Replace 123 with your customer ID
-const restoreResult = await ChikasDB.restoreNotesFromBackup(loadedBackupData, {
+const restoreResult = await CrmDB.restoreNotesFromBackup(loadedBackupData, {
   mode: 'merge',
   customerId: 123
 });
@@ -105,11 +105,11 @@ console.log('Notes for customer 123:', customerNotes['123']);
 ### View Notes in IndexedDB
 
 ```javascript
-const allNotes = await ChikasDB.getAllNotes();
+const allNotes = await CrmDB.getAllNotes();
 console.log('All notes in IndexedDB:', allNotes);
 
 // Find notes for a specific customer
-const customerNotes = await ChikasDB.getNotesByCustomerId(123);
+const customerNotes = await CrmDB.getNotesByCustomerId(123);
 console.log('Notes for customer 123:', customerNotes);
 ```
 
@@ -126,7 +126,7 @@ const goodNote = {
 };
 
 // Restore it
-await ChikasDB.updateNote(goodNote);
+await CrmDB.updateNote(goodNote);
 console.log('Note restored!');
 ```
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Backup Options - Chikas DB</title>
+    <title>Backup Options - CRMicro</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -157,7 +157,7 @@
                 lightweightBtn.textContent = 'Backing up...';
                 progressContainer.style.display = 'block';
                 
-                const result = await ChikasDB.exportDataWithoutImages((message, progress) => {
+                const result = await CrmDB.exportDataWithoutImages((message, progress) => {
                     updateStatus(message, progress);
                 });
                 
@@ -196,7 +196,7 @@
                 fullBtn.textContent = 'Backing up...';
                 progressContainer.style.display = 'block';
                 
-                const result = await ChikasDB.safeExportAllData((message, progress) => {
+                const result = await CrmDB.safeExportAllData((message, progress) => {
                     updateStatus(message, progress);
                 });
                 

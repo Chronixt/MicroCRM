@@ -1,6 +1,13 @@
 /Scans/*
 *.pdf
 *.json
+node_modules/
+www/
 
-# Local Supabase credentials (copy from js/config.local.example.js)
+# Keep core project JSON config tracked
+!/package.json
+!/package-lock.json
+!/manifest.json
+
+# Local API keys and environment overrides (never commit)
 js/config.local.js

@@ -14,6 +14,7 @@
   window.SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
   window.SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
   window.REQUIRE_LOGIN = true;
+  window.ACTIVE_PRODUCT = 'tradie'; // 'tradie' or 'hairdresser'
 
   // Optional address lookup configuration
   // Set to true to enable address lookup in customer forms.

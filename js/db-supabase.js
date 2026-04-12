@@ -1,15 +1,20 @@
-/* Supabase backend for Chikas DB (hairdresser schema). Same API as db.js. */
+/* Supabase backend for CRMicro (hairdresser schema). Same API as db.js. */
 (function () {
-  const SCHEMA = 'hairdresser';
+  const SCHEMA = window.SUPABASE_SCHEMA || 'hairdresser';
   var cachedClient = null;
 
   function getClient() {
     if (cachedClient) return cachedClient;
+    if (window.SupabaseClient) {
+      cachedClient = window.SupabaseClient;
+      return cachedClient;
+    }
     const url = window.SUPABASE_URL || '';
     const key = window.SUPABASE_ANON_KEY || '';
     if (!url || !key) throw new Error('Supabase: SUPABASE_URL and SUPABASE_ANON_KEY must be set when USE_SUPABASE is true.');
     if (typeof supabase === 'undefined') throw new Error('Supabase: supabase-js not loaded.');
     cachedClient = supabase.createClient(url, key, { db: { schema: SCHEMA } });
+    window.SupabaseClient = cachedClient;
     return cachedClient;
   }
 
@@ -658,6 +663,26 @@
     return { blob, customers, appointments, imageCount: 0 };
   }
 
+  async function exportImagesOnly(progressCallback = null) {
+    if (progressCallback) progressCallback('Starting images-only export...', 0);
+    const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
+    const imagesSerialized = images.map((row) => ({
+      id: row.id,
+      customerId: row.customer_id,
+      name: row.name,
+      type: row.type,
+      createdAt: row.created_at,
+      dataUrl: row.data_url
+    }));
+    if (progressCallback) progressCallback('Creating images export file...', 85);
+    const blob = new Blob([JSON.stringify({
+      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString(), backupType: 'images-only' },
+      images: imagesSerialized
+    }, null, 2)], { type: 'application/json' });
+    if (progressCallback) progressCallback('Images-only export complete!', 100);
+    return { blob, imageCount: imagesSerialized.length };
+  }
+
   async function clearAllStores() {
     const supabase = getClient();
     // Preferred path: fast server-side TRUNCATE function (if migration is applied).
@@ -886,7 +911,7 @@
     }
   }
 
-  window.ChikasDBSupabase = {
+  const dbAPI = {
     getSession,
     signInWithPassword,
     signOut,
@@ -916,6 +941,7 @@
     exportAllData,
     safeExportAllData,
     exportDataWithoutImages,
+    exportImagesOnly,
     importAllData,
     clearAllStores,
     createNote,
@@ -929,4 +955,6 @@
     getNotePreviousVersion,
     restoreNoteToPreviousVersion
   };
+  window.ChikasDBSupabase = dbAPI;
+  window.CrmDB = dbAPI;
 })();

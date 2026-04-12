@@ -1,7 +1,13 @@
-/* IndexedDB wrapper for Chikas DB */
+/* IndexedDB wrapper - Configurable for different product editions */
 (function () {
-  const DB_NAME = 'chikas-db';
-  const DB_VERSION = 7; // 7: ensure noteVersions store exists for DBs that had 6 with only 4 stores
+  // Use ProductConfig if available, otherwise fall back to defaults
+  const config = window.ProductConfig || {};
+  const DB_NAME = config.dbName || 'chikas-db';
+  const DB_VERSION = config.dbVersion || 6;
+  const STORAGE_PREFIX = config.storagePrefix || 'chikas_';
+  const APP_SLUG = config.appSlug || 'chikas-db';
+  
+  console.log(`[DB] Using database: ${DB_NAME} v${DB_VERSION}`);
 
   /** @type {IDBDatabase | null} */
   let database = null;
@@ -130,52 +136,12 @@
         console.log(`Upgrading database from version ${oldVersion} to ${DB_VERSION}`);
         console.log('Current stores:', Array.from(db.objectStoreNames));
         
-        // Handle upgrade from version 3 to 4 (add notes store)
-        if (oldVersion < 4) {
-          // For version 4, we need to add the notes store
-          if (!db.objectStoreNames.contains('notes')) {
-            console.log('Creating notes store...');
-            const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
-            notesStore.createIndex('customerId', 'customerId', { unique: false });
-            notesStore.createIndex('createdAt', 'createdAt', { unique: false });
-          }
-        }
-        
-        // Handle upgrade from version 4 to 5, 5 to 6, or 6 to 7 (add noteVersions store if missing)
-        if (oldVersion < 5 || !db.objectStoreNames.contains('noteVersions')) {
-          if (!db.objectStoreNames.contains('noteVersions')) {
-            console.log('Creating noteVersions store...');
-            try {
-              const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
-              noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
-              noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
-              console.log('noteVersions store created successfully');
-            } catch (createError) {
-              console.error('Failed to create noteVersions store:', createError);
-            }
-          }
-        }
-        
-        // For version 3 and below, recreate all stores (existing logic)
-        if (oldVersion < 3) {
-          console.log('Performing full database recreation for version < 3');
-          
-          // Delete existing stores if they exist (for clean upgrade)
-          if (db.objectStoreNames.contains('customers')) {
-            db.deleteObjectStore('customers');
-          }
-          if (db.objectStoreNames.contains('appointments')) {
-            db.deleteObjectStore('appointments');
-          }
-          if (db.objectStoreNames.contains('images')) {
-            db.deleteObjectStore('images');
-          }
-          if (db.objectStoreNames.contains('notes')) {
-            db.deleteObjectStore('notes');
-          }
-          if (db.objectStoreNames.contains('noteVersions')) {
-            db.deleteObjectStore('noteVersions');
-          }
+        // =====================================================================
+        // FRESH DATABASE CREATION (oldVersion = 0)
+        // Creates all stores from scratch with all indexes
+        // =====================================================================
+        if (oldVersion === 0) {
+          console.log('Creating fresh database with all stores...');
           
           // Create customers store with all indexes
           const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
@@ -184,24 +150,147 @@
           customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
           customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
           
-          // Create appointments store with all indexes
+          // Create appointments store with all indexes (including status for pipeline)
           const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
           appointmentStore.createIndex('customerId', 'customerId', { unique: false });
           appointmentStore.createIndex('start', 'start', { unique: false });
           appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
+          appointmentStore.createIndex('status', 'status', { unique: false });
           
           // Create images store with indexes
           const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
           imagesStore.createIndex('customerId', 'customerId', { unique: false });
+          imagesStore.createIndex('appointmentId', 'appointmentId', { unique: false });
           
-          // Create notes store for localStorage fallback
+          // Create notes store
           const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
           notesStore.createIndex('customerId', 'customerId', { unique: false });
           notesStore.createIndex('createdAt', 'createdAt', { unique: false });
-          // Create noteVersions store so we always have 5 stores after full recreation
+          
+          // Create noteVersions store for version history
           const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
           noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
           noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
+          
+          // Create reminders store for follow-ups
+          const remindersStore = db.createObjectStore('reminders', { keyPath: 'id', autoIncrement: true });
+          remindersStore.createIndex('customerId', 'customerId', { unique: false });
+          remindersStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+          remindersStore.createIndex('dueAt', 'dueAt', { unique: false });
+          remindersStore.createIndex('status', 'status', { unique: false });
+          
+          // Create jobEvents store for activity timeline
+          const jobEventsStore = db.createObjectStore('jobEvents', { keyPath: 'id', autoIncrement: true });
+          jobEventsStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+          jobEventsStore.createIndex('customerId', 'customerId', { unique: false });
+          jobEventsStore.createIndex('createdAt', 'createdAt', { unique: false });
+          
+          console.log('Fresh database created successfully');
+        } 
+        // =====================================================================
+        // INCREMENTAL UPGRADES (for existing databases)
+        // =====================================================================
+        else {
+          // Upgrade from version 1 or 2 to 3+ (legacy restructure)
+          if (oldVersion < 3) {
+            console.log('Performing database restructure for version < 3');
+            
+            // Delete existing stores if they exist (for clean upgrade)
+            if (db.objectStoreNames.contains('customers')) {
+              db.deleteObjectStore('customers');
+            }
+            if (db.objectStoreNames.contains('appointments')) {
+              db.deleteObjectStore('appointments');
+            }
+            if (db.objectStoreNames.contains('images')) {
+              db.deleteObjectStore('images');
+            }
+            
+            // Create customers store with all indexes
+            const customerStore = db.createObjectStore('customers', { keyPath: 'id', autoIncrement: true });
+            customerStore.createIndex('lastName', 'lastName', { unique: false });
+            customerStore.createIndex('firstName', 'firstName', { unique: false });
+            customerStore.createIndex('contactNumber', 'contactNumber', { unique: false });
+            customerStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            
+            // Create appointments store with all indexes
+            const appointmentStore = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
+            appointmentStore.createIndex('customerId', 'customerId', { unique: false });
+            appointmentStore.createIndex('start', 'start', { unique: false });
+            appointmentStore.createIndex('customerId_start', ['customerId', 'start'], { unique: false });
+            appointmentStore.createIndex('status', 'status', { unique: false });
+            
+            // Create images store with indexes
+            const imagesStore = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+            imagesStore.createIndex('customerId', 'customerId', { unique: false });
+          }
+          
+          // Upgrade to version 4+ (add notes store)
+          if (oldVersion < 4 && !db.objectStoreNames.contains('notes')) {
+            console.log('Creating notes store...');
+            const notesStore = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+            notesStore.createIndex('customerId', 'customerId', { unique: false });
+            notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+          }
+          
+          // Upgrade to version 5+ (add noteVersions store)
+          if (oldVersion < 5 && !db.objectStoreNames.contains('noteVersions')) {
+            console.log('Creating noteVersions store...');
+            const noteVersionsStore = db.createObjectStore('noteVersions', { keyPath: 'id', autoIncrement: true });
+            noteVersionsStore.createIndex('noteId', 'noteId', { unique: false });
+            noteVersionsStore.createIndex('savedAt', 'savedAt', { unique: false });
+          }
+          
+          // Add status index if upgrading from version without it
+          if (oldVersion >= 1 && oldVersion < 2 && db.objectStoreNames.contains('appointments')) {
+            console.log('Adding status index to appointments store...');
+            try {
+              const transaction = event.target.transaction;
+              const appointmentStore = transaction.objectStore('appointments');
+              if (!appointmentStore.indexNames.contains('status')) {
+                appointmentStore.createIndex('status', 'status', { unique: false });
+                console.log('Status index created successfully');
+              }
+            } catch (statusIndexError) {
+              console.error('Failed to create status index:', statusIndexError);
+            }
+          }
+          
+          // Upgrade to version 3+ (add reminders store)
+          if (oldVersion < 3 && !db.objectStoreNames.contains('reminders')) {
+            console.log('Creating reminders store...');
+            const remindersStore = db.createObjectStore('reminders', { keyPath: 'id', autoIncrement: true });
+            remindersStore.createIndex('customerId', 'customerId', { unique: false });
+            remindersStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+            remindersStore.createIndex('dueAt', 'dueAt', { unique: false });
+            remindersStore.createIndex('status', 'status', { unique: false });
+            console.log('Reminders store created successfully');
+          }
+          
+          // Upgrade to version 5+ (add jobEvents store)
+          if (oldVersion < 5 && !db.objectStoreNames.contains('jobEvents')) {
+            console.log('Creating jobEvents store...');
+            const jobEventsStore = db.createObjectStore('jobEvents', { keyPath: 'id', autoIncrement: true });
+            jobEventsStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+            jobEventsStore.createIndex('customerId', 'customerId', { unique: false });
+            jobEventsStore.createIndex('createdAt', 'createdAt', { unique: false });
+            console.log('JobEvents store created successfully');
+          }
+          
+          // Upgrade to version 6+ (add appointmentId index on images)
+          if (oldVersion < 6 && db.objectStoreNames.contains('images')) {
+            try {
+              console.log('Adding appointmentId index to images store...');
+              const transaction = event.target.transaction;
+              const imagesStore = transaction.objectStore('images');
+              if (!imagesStore.indexNames.contains('appointmentId')) {
+                imagesStore.createIndex('appointmentId', 'appointmentId', { unique: false });
+                console.log('appointmentId index created successfully');
+              }
+            } catch (indexError) {
+              console.error('Failed to create appointmentId index:', indexError);
+            }
+          }
         }
       };
 
@@ -274,7 +363,18 @@
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
           if (cursor) {
             const value = cursor.value;
-            const hay = [value.firstName, value.lastName, value.contactNumber, value.socialMediaName].filter(Boolean).join(' ').toLowerCase();
+            const hay = [
+              value.firstName,
+              value.lastName,
+              value.contactNumber,
+              value.socialMediaName,
+              value.addressLine1,
+              value.suburb,
+              value.state,
+              value.postcode,
+              value.email,
+              value.preferredContactMethod
+            ].filter(Boolean).join(' ').toLowerCase();
             if (hay.includes(q)) results.push(value);
             cursor.continue();
           } else {
@@ -353,49 +453,89 @@
     ));
   }
 
-  // Images - Compress outside transaction, then add in one transaction (avoids TransactionInactiveError)
-  async function addImages(customerId, fileEntries) {
-    const toStoreList = await Promise.all(fileEntries.map(async (entry) => {
-      const compressedBlob = await compressImage(entry.blob, entry.type);
-      const dataUrl = await blobToDataURL(compressedBlob);
-      return {
-        customerId,
-        name: entry.name,
-        type: entry.type,
-        dataUrl: dataUrl,
-        createdAt: new Date().toISOString(),
-      };
-    }));
+  async function persistImagePayload(blob, filename) {
+    const fs = window.FileSystemDriver;
+    if (!fs || typeof fs.saveImage !== 'function') {
+      const dataUrl = await blobToDataURL(blob);
+      return { dataUrl, filePath: null, storageType: 'inline' };
+    }
+
+    const saved = await fs.saveImage(blob, filename);
+    if (typeof saved === 'string' && saved.startsWith('data:')) {
+      return { dataUrl: saved, filePath: null, storageType: 'inline' };
+    }
+    return { dataUrl: null, filePath: saved || null, storageType: saved ? 'filesystem' : 'inline' };
+  }
+
+  async function hydrateImageRecord(imageData) {
+    if (!imageData) return null;
+    let dataUrl = imageData.dataUrl || null;
+
+    if (!dataUrl && imageData.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+      try {
+        dataUrl = await window.FileSystemDriver.loadImage(imageData.filePath);
+      } catch (error) {
+        dataUrl = null;
+      }
+    }
+
+    if (!dataUrl) return null;
+    const blob = dataURLToBlob(dataUrl, imageData.type);
+    if (!blob || blob.size === 0) return null;
+    return {
+      ...imageData,
+      dataUrl,
+      blob
+    };
+  }
+
+  // Images - Optimized approach with compression for iPad
+  function addImages(customerId, fileEntries) {
     return runTransaction(['images'], 'readwrite', (images) => (
-      new Promise((resolve, reject) => {
-        const ids = [];
-        let done = 0;
-        if (toStoreList.length === 0) return resolve(ids);
-        toStoreList.forEach((toStore) => {
+      Promise.all(fileEntries.map((entry) => new Promise(async (resolve, reject) => {
+        try {
+          // Compress image before storing
+          const compressedBlob = await compressImage(entry.blob, entry.type);
+          const payload = await persistImagePayload(compressedBlob, entry.name);
+          
+          const toStore = {
+            customerId,
+            name: entry.name,
+            type: entry.type,
+            dataUrl: payload.dataUrl,
+            filePath: payload.filePath,
+            storageType: payload.storageType,
+            createdAt: new Date().toISOString(),
+          };
+          
           const req = images.add(toStore);
           req.onsuccess = () => {
-            ids.push(req.result);
-            done++;
-            if (done === toStoreList.length) resolve(ids);
+            resolve(req.result);
           };
           req.onerror = () => reject(req.error);
-        });
-      })
+        } catch (error) {
+          reject(error);
+        }
+      })))
     ));
   }
 
   // Add a single image - avoids transaction timeout issues
-  async function addImage(customerId, entry) {
+  // appointmentId is optional - if provided, links to a specific job
+  async function addImage(customerId, entry, appointmentId = null) {
     try {
       // Process image outside of transaction
       const compressedBlob = await compressImage(entry.blob, entry.type);
-      const dataUrl = await blobToDataURL(compressedBlob);
+      const payload = await persistImagePayload(compressedBlob, entry.name);
       
       const toStore = {
         customerId,
+        appointmentId: appointmentId ? parseInt(appointmentId) : null,
         name: entry.name,
         type: entry.type,
-        dataUrl: dataUrl,
+        dataUrl: payload.dataUrl,
+        filePath: payload.filePath,
+        storageType: payload.storageType,
         createdAt: new Date().toISOString(),
       };
       
@@ -411,17 +551,31 @@
       throw error;
     }
   }
+
+  // Get images for a specific job
+  async function getImagesByAppointmentId(appointmentId) {
+    const raw = await runTransaction(['images'], 'readonly', (images) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = images.index('appointmentId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(appointmentId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else resolve(results);
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+    const hydrated = await Promise.all(raw.map((img) => hydrateImageRecord(img)));
+    return hydrated.filter(Boolean);
+  }
   
   // Image compression function for iPad memory optimization
   async function compressImage(blob, type) {
     return new Promise((resolve, reject) => {
       try {
-        // Check if image is already small enough
-        if (blob.size <= 500 * 1024) { // 500KB limit
-          resolve(blob);
-          return;
-        }
-        
+        // Always compress to save storage space
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const img = new Image();
@@ -444,14 +598,14 @@
             // Draw compressed image
             ctx.drawImage(img, 0, 0, width, height);
             
-            // Convert to blob with quality compression
+            // Convert to blob with quality compression (0.7 = 70% quality for better storage efficiency)
             canvas.toBlob((compressedBlob) => {
               if (compressedBlob && compressedBlob.size < blob.size) {
                 resolve(compressedBlob);
               } else {
                 resolve(blob); // Use original if compression didn't help
               }
-            }, type || 'image/jpeg', 0.8); // 80% quality
+            }, type || 'image/jpeg', 0.7); // 70% quality for storage efficiency
           } catch (error) {
             console.error('Error during image compression:', error);
             resolve(blob); // Fallback to original
@@ -471,8 +625,8 @@
     });
   }
 
-  function getImagesByCustomerId(customerId) {
-    return runTransaction(['images'], 'readonly', (images) => (
+  async function getImagesByCustomerId(customerId) {
+    const raw = await runTransaction(['images'], 'readonly', (images) => (
       new Promise((resolve, reject) => {
         const results = [];
         const index = images.index('customerId');
@@ -480,25 +634,9 @@
         const req = index.openCursor(range);
         req.onsuccess = (e) => {
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
-          if (cursor) { 
-            const imageData = cursor.value;
-            // Convert dataURL back to blob for display
-            if (imageData.dataUrl) {
-              try {
-                const blob = dataURLToBlob(imageData.dataUrl, imageData.type);
-                if (blob && blob.size > 0) {
-                  results.push({
-                    ...imageData,
-                    blob: blob,
-                    dataUrl: imageData.dataUrl // Keep dataUrl for iPad Safari fallback
-                  });
-                } else {
-                }
-              } catch (error) {
-              }
-            } else {
-            }
-            cursor.continue(); 
+          if (cursor) {
+            results.push(cursor.value);
+            cursor.continue();
           } else {
             resolve(results);
           }
@@ -506,6 +644,8 @@
         req.onerror = () => reject(req.error);
       })
     ));
+    const hydrated = await Promise.all(raw.map((img) => hydrateImageRecord(img)));
+    return hydrated.filter(Boolean);
   }
 
   // Appointments
@@ -603,6 +743,101 @@
     ));
   }
 
+  // Get appointments by status (for pipeline views)
+  function getAppointmentsByStatus(status) {
+    return runTransaction(['appointments'], 'readonly', (appointments) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        // Try to use status index if available, otherwise filter manually
+        try {
+          const index = appointments.index('status');
+          const req = index.openCursor(IDBKeyRange.only(status));
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              results.push(cursor.value);
+              cursor.continue();
+            } else {
+              // Sort by start date
+              results.sort((a, b) => new Date(a.start) - new Date(b.start));
+              resolve(results);
+            }
+          };
+          req.onerror = () => reject(req.error);
+        } catch (indexError) {
+          // Fallback: scan all appointments and filter
+          console.warn('Status index not available, using fallback');
+          const req = appointments.openCursor();
+          req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              const apt = cursor.value;
+              if ((apt.status || 'scheduled') === status) {
+                results.push(apt);
+              }
+              cursor.continue();
+            } else {
+              results.sort((a, b) => new Date(a.start) - new Date(b.start));
+              resolve(results);
+            }
+          };
+          req.onerror = () => reject(req.error);
+        }
+      })
+    ));
+  }
+
+  // Get all appointments grouped by status (for pipeline views)
+  async function getAppointmentsGroupedByStatus() {
+    const all = await getAllAppointments();
+    const grouped = {};
+    all.forEach(apt => {
+      const status = apt.status || 'scheduled';
+      if (!grouped[status]) grouped[status] = [];
+      grouped[status].push(apt);
+    });
+    // Sort each group by start date
+    Object.keys(grouped).forEach(status => {
+      grouped[status].sort((a, b) => new Date(a.start) - new Date(b.start));
+    });
+    return grouped;
+  }
+
+  // Get unpaid jobs (invoiced but not fully paid)
+  async function getUnpaidJobs() {
+    const all = await getAllAppointments();
+    return all.filter(apt => {
+      const invoiced = apt.invoiceAmount || 0;
+      const paid = apt.paidAmount || 0;
+      return invoiced > 0 && paid < invoiced;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
+
+  // Get jobs that need invoicing (completed but not invoiced)
+  async function getNeedsInvoiceJobs() {
+    const all = await getAllAppointments();
+    const completedStatuses = ['completed', 'invoiced', 'paid'];
+    return all.filter(apt => {
+      const status = apt.status || 'scheduled';
+      const isCompleted = completedStatuses.includes(status) || status === 'completed';
+      const invoiced = apt.invoiceAmount || 0;
+      return isCompleted && invoiced === 0;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
+
+  // Helper to compute payment status from amounts
+  function computePaymentStatus(apt) {
+    const quoted = apt.quotedAmount || 0;
+    const invoiced = apt.invoiceAmount || 0;
+    const paid = apt.paidAmount || 0;
+
+    if (paid > 0 && paid >= invoiced && invoiced > 0) return 'paid';
+    if (paid > 0 && paid < invoiced) return 'part_paid';
+    if (invoiced > 0) return 'invoiced';
+    if (quoted > 0) return 'quoted';
+    return 'not_quoted';
+  }
+
   function updateAppointment(updated) {
     return runTransaction(['appointments'], 'readwrite', (appointments) => (
       new Promise((resolve, reject) => {
@@ -629,10 +864,19 @@
     ));
   }
 
-  function deleteImage(imageId) {
-    return runTransaction(['images'], 'readwrite', (images) => (
+  async function deleteImage(imageId) {
+    const id = parseInt(imageId);
+    const imageRecord = await runTransaction(['images'], 'readonly', (images) => (
       new Promise((resolve, reject) => {
-        const req = images.delete(parseInt(imageId));
+        const req = images.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+
+    const result = await runTransaction(['images'], 'readwrite', (images) => (
+      new Promise((resolve, reject) => {
+        const req = images.delete(id);
         req.onsuccess = () => {
           // Also remove from localStorage
           clearImageFromLocalStorage(imageId);
@@ -641,6 +885,16 @@
         req.onerror = () => reject(req.error);
       })
     ));
+
+    if (imageRecord && imageRecord.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.deleteImage === 'function') {
+      try {
+        await window.FileSystemDriver.deleteImage(imageRecord.filePath);
+      } catch (error) {
+        // Ignore filesystem cleanup issues after DB record is deleted.
+      }
+    }
+
+    return result;
   }
 
   function deleteCustomer(id) {
@@ -715,6 +969,40 @@
       reader.onerror = () => reject(reader.error);
       reader.readAsDataURL(blob);
     });
+  }
+
+  // Calculate storage usage for images
+  async function getStorageStats() {
+    const images = await runTransaction(['images'], 'readonly', (store) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else resolve(items);
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+    
+    let totalBytes = 0;
+    for (const img of images) {
+      if (img.dataUrl) {
+        // Estimate base64 size (base64 is ~33% larger than binary)
+        const base64Length = img.dataUrl.length - (img.dataUrl.indexOf(',') + 1);
+        totalBytes += (base64Length * 0.75); // Convert from base64 to approximate binary size
+      }
+    }
+    
+    return {
+      imageCount: images.length,
+      totalBytes: totalBytes,
+      totalMB: (totalBytes / (1024 * 1024)).toFixed(2),
+      usagePercent: Math.min(100, (totalBytes / (50 * 1024 * 1024) * 100)).toFixed(1), // Assume 50MB limit
+      isWarning: totalBytes > (40 * 1024 * 1024), // >40MB
+      isCritical: totalBytes > (45 * 1024 * 1024) // >45MB
+    };
   }
 
   async function exportAllData() {
@@ -817,7 +1105,7 @@
     
     return {
       __meta: {
-        app: 'chikas-db',
+        app: APP_SLUG,
         version: 3,
         exportedAt: new Date().toISOString(),
       },
@@ -850,15 +1138,11 @@
   }
 
   function getNotesByCustomerId(customerId) {
-    const numId = typeof customerId === 'number' ? customerId : parseInt(customerId, 10);
-    if (customerId == null || customerId === '' || customerId === 'temp-new-customer' || (typeof numId === 'number' && isNaN(numId))) {
-      return Promise.resolve([]);
-    }
     return runTransaction(['notes'], 'readonly', (notes) => (
       new Promise((resolve, reject) => {
         const results = [];
         const index = notes.index('customerId');
-        const range = IDBKeyRange.only(numId);
+        const range = IDBKeyRange.only(parseInt(customerId));
         const req = index.openCursor(range);
         req.onsuccess = (e) => {
           const cursor = e.target.result;
@@ -1098,6 +1382,285 @@
         req.onerror = () => reject(req.error);
       })
     ));
+  }
+
+  // ============================================================================
+  // REMINDERS / FOLLOW-UPS OPERATIONS
+  // ============================================================================
+
+  function createReminder(reminder) {
+    const now = new Date().toISOString();
+    const reminderData = {
+      ...reminder,
+      status: reminder.status || 'pending',
+      createdAt: now,
+      updatedAt: now
+    };
+    return runTransaction(['reminders'], 'readwrite', (reminders) => (
+      new Promise((resolve, reject) => {
+        const req = reminders.add(reminderData);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getReminderById(id) {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const req = reminders.get(parseInt(id));
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getRemindersForCustomer(customerId) {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = reminders.index('customerId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(customerId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            results.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getRemindersForAppointment(appointmentId) {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = reminders.index('appointmentId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(appointmentId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            results.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getAllReminders() {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = reminders.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else {
+            items.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(items);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getPendingReminders() {
+    return runTransaction(['reminders'], 'readonly', (reminders) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = reminders.index('status');
+        const req = index.openCursor(IDBKeyRange.only('pending'));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { 
+            results.push(cursor.value); 
+            cursor.continue(); 
+          } else {
+            results.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  async function getOverdueReminders() {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    return pending.filter(r => new Date(r.dueAt) < now);
+  }
+
+  async function getTodayReminders() {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    return pending.filter(r => {
+      const dueAt = new Date(r.dueAt);
+      return dueAt >= startOfDay && dueAt < endOfDay;
+    });
+  }
+
+  async function getUpcomingReminders(days = 7) {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days + 1);
+    return pending.filter(r => {
+      const dueAt = new Date(r.dueAt);
+      return dueAt >= startOfTomorrow && dueAt < endDate;
+    });
+  }
+
+  function updateReminder(updated) {
+    return runTransaction(['reminders'], 'readwrite', (reminders) => (
+      new Promise((resolve, reject) => {
+        const reminderToUpdate = {
+          ...updated,
+          id: parseInt(updated.id),
+          updatedAt: new Date().toISOString()
+        };
+        const req = reminders.put(reminderToUpdate);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function deleteReminder(id) {
+    return runTransaction(['reminders'], 'readwrite', (reminders) => (
+      new Promise((resolve, reject) => {
+        const req = reminders.delete(parseInt(id));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  // ============================================================================
+  // JOB EVENTS / TIMELINE OPERATIONS
+  // ============================================================================
+
+  const JOB_EVENT_TYPES = ['call', 'sms', 'email', 'site_visit', 'quote_sent', 'invoice_sent', 'payment_received', 'note', 'other'];
+
+  function createJobEvent(event) {
+    const now = new Date().toISOString();
+    const eventData = {
+      appointmentId: event.appointmentId ? parseInt(event.appointmentId) : null,
+      customerId: event.customerId ? parseInt(event.customerId) : null,
+      type: event.type || 'other',
+      note: event.note || null,
+      createdAt: now
+    };
+    return runTransaction(['jobEvents'], 'readwrite', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const req = jobEvents.add(eventData);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getJobEventById(id) {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const req = jobEvents.get(parseInt(id));
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getEventsForAppointment(appointmentId) {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = jobEvents.index('appointmentId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(appointmentId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            // Sort by createdAt descending (newest first)
+            results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function getEventsForCustomer(customerId) {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const results = [];
+        const index = jobEvents.index('customerId');
+        const req = index.openCursor(IDBKeyRange.only(parseInt(customerId)));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { results.push(cursor.value); cursor.continue(); }
+          else {
+            // Sort by createdAt descending (newest first)
+            results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(results);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  async function getRecentEventsForCustomer(customerId, limit = 5) {
+    const allEvents = await getEventsForCustomer(customerId);
+    return allEvents.slice(0, limit);
+  }
+
+  function getAllJobEvents() {
+    return runTransaction(['jobEvents'], 'readonly', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const items = [];
+        const req = jobEvents.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { items.push(cursor.value); cursor.continue(); }
+          else {
+            items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            resolve(items);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  function deleteJobEvent(id) {
+    return runTransaction(['jobEvents'], 'readwrite', (jobEvents) => (
+      new Promise((resolve, reject) => {
+        const req = jobEvents.delete(parseInt(id));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      })
+    ));
+  }
+
+  // Helper to get last contact time for a customer
+  async function getLastContactTime(customerId) {
+    const events = await getEventsForCustomer(customerId);
+    const contactTypes = ['call', 'sms', 'email'];
+    const contactEvents = events.filter(e => contactTypes.includes(e.type));
+    if (contactEvents.length > 0) {
+      return new Date(contactEvents[0].createdAt);
+    }
+    return null;
   }
 
   // Recovery function: Scan and identify potentially corrupted notes
@@ -1533,8 +2096,9 @@
   function importAllData(payload, options = { mode: 'replace' }) {
     const mode = options.mode || 'replace';
     const { customers = [], appointments = [], images = [], customerNotes = {}, __meta = {} } = payload || {};
-    if (!__meta || __meta.app !== 'chikas-db') {
-      // Allow import anyway, but basic validation failed
+    // Accept imports from any known app version (chikas-db or tradie-crm)
+    if (!__meta || (!__meta.app.includes('chikas') && !__meta.app.includes('tradie'))) {
+      console.warn('[DB] Import: Unknown app format, proceeding anyway');
     }
     const perform = async () => {
       if (mode === 'replace') await clearAllStores();
@@ -1637,9 +2201,12 @@
             const imageData = { 
               id: img.id, 
               customerId: img.customerId, 
+              appointmentId: img.appointmentId || null,
               name: img.name, 
               type: img.type, 
-              dataUrl: img.dataUrl, 
+              dataUrl: img.dataUrl || null,
+              filePath: img.filePath || null,
+              storageType: img.storageType || (img.filePath ? 'filesystem' : 'inline'),
               createdAt: img.createdAt 
             };
             imagesStore.put(imageData);
@@ -1685,7 +2252,7 @@
   // localStorage backup functions for iOS Safari IndexedDB issues
   async function storeImageReferenceInLocalStorage(imageId, imageData) {
     try {
-      const key = `chikas_image_${imageId}`;
+      const key = `${STORAGE_PREFIX}image_${imageId}`;
       const dataToStore = {
         id: imageData.id,
         customerId: imageData.customerId,
@@ -1706,7 +2273,7 @@
       const images = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('chikas_image_')) {
+        if (key && key.startsWith(`${STORAGE_PREFIX}image_`)) {
           const data = JSON.parse(localStorage.getItem(key));
           if (data.customerId === customerId) {
             // Try to recreate blob from fileUrl or use thumbnail
@@ -1762,7 +2329,7 @@
 
   function clearImageFromLocalStorage(imageId) {
     try {
-      localStorage.removeItem(`chikas_image_${imageId}`);
+      localStorage.removeItem(`${STORAGE_PREFIX}image_${imageId}`);
     } catch (error) {
     }
   }
@@ -1879,7 +2446,7 @@
       
       const result = {
         __meta: {
-          app: 'chikas-db',
+          app: APP_SLUG,
           version: 3,
           exportedAt: new Date().toISOString(),
           backupType: 'lightweight-no-images'
@@ -1905,6 +2472,55 @@
       
     } catch (error) {
       if (progressCallback) progressCallback(`Backup failed: ${error.message}`, 0);
+      throw error;
+    }
+  }
+
+  // Images-only backup function for separate attachment export
+  async function exportImagesOnly(progressCallback = null) {
+    try {
+      if (progressCallback) progressCallback('Starting images-only export...', 0);
+
+      const images = await getAllImages();
+      if (progressCallback) progressCallback(`Loaded ${images.length} images`, 35);
+
+      const exportableImages = [];
+      for (const img of images) {
+        let dataUrl = img.dataUrl || null;
+        if (!dataUrl && img.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+          try {
+            dataUrl = await window.FileSystemDriver.loadImage(img.filePath);
+          } catch (error) {
+            dataUrl = null;
+          }
+        }
+        exportableImages.push({
+          ...img,
+          dataUrl: dataUrl || null
+        });
+      }
+
+      const result = {
+        __meta: {
+          app: APP_SLUG,
+          version: 3,
+          exportedAt: new Date().toISOString(),
+          backupType: 'images-only'
+        },
+        images: exportableImages
+      };
+
+      if (progressCallback) progressCallback('Creating images export file...', 85);
+      const jsonString = JSON.stringify(result, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      if (progressCallback) progressCallback('Images-only export complete!', 100);
+
+      return {
+        blob,
+        imageCount: exportableImages.length
+      };
+    } catch (error) {
+      if (progressCallback) progressCallback(`Images-only export failed: ${error.message}`, 0);
       throw error;
     }
   }
@@ -1992,7 +2608,7 @@
       // Start JSON structure
       jsonParts.push('{\n');
       jsonParts.push('  "__meta": {\n');
-      jsonParts.push('    "app": "chikas-db",\n');
+      jsonParts.push(`    "app": "${APP_SLUG}",\n`);
       jsonParts.push('    "version": 3,\n');
       jsonParts.push(`    "exportedAt": "${new Date().toISOString()}"\n`);
       jsonParts.push('  },\n');
@@ -2038,11 +2654,22 @@
             const imageData = {
               id: img.id,
               customerId: img.customerId,
+              appointmentId: img.appointmentId || null,
               name: img.name,
               type: img.type,
               createdAt: img.createdAt,
+              filePath: img.filePath || null,
+              storageType: img.storageType || (img.filePath ? 'filesystem' : 'inline'),
               dataUrl: img.dataUrl,
             };
+
+            if (!imageData.dataUrl && imageData.filePath && window.FileSystemDriver && typeof window.FileSystemDriver.loadImage === 'function') {
+              try {
+                imageData.dataUrl = await window.FileSystemDriver.loadImage(imageData.filePath);
+              } catch (error) {
+                imageData.dataUrl = null;
+              }
+            }
             
             jsonParts.push('    ');
             jsonParts.push(JSON.stringify(imageData, null, 4));
@@ -2095,48 +2722,98 @@
     }
   }
 
-  // Expose API
-  window.ChikasDB = {
+  // Expose API - use generic name CrmDB, also expose as CrmDB for backward compatibility
+  const dbAPI = {
+    // Config info
+    dbName: DB_NAME,
+    storagePrefix: STORAGE_PREFIX,
+    
+    // Customer operations
     createCustomer,
     updateCustomer,
     getCustomerById,
     getAllCustomers,
-    getRecentCustomers, // NEW
-    getAllAppointments,
+    getRecentCustomers,
     searchCustomers,
-    addImages,
-    addImage,
-    getImagesByCustomerId,
-    deleteImage,
+    deleteCustomer,
+    
+    // Appointment/Job operations
     createAppointment,
     updateAppointment,
     deleteAppointment,
-    deleteCustomer,
+    getAllAppointments,
     getAppointmentsBetween,
-    getAppointmentsForDate, // NEW
-    getFutureAppointmentsForCustomer, // NEW
+    getAppointmentsForDate,
+    getFutureAppointmentsForCustomer,
     getAppointmentsForCustomer,
     getAppointmentById,
+    getAppointmentsByStatus,
+    getAppointmentsGroupedByStatus,
+    getUnpaidJobs,
+    getNeedsInvoiceJobs,
+    computePaymentStatus,
+    
+    // Image/Photo operations
+    addImages,
+    addImage,
+    getImagesByCustomerId,
+    getImagesByAppointmentId,
+    deleteImage,
     fileListToEntries,
-    exportAllData,
-    safeExportAllData, // NEW - safer backup function
-    exportDataWithoutImages, // NEW - lightweight backup (no images)
-    importAllData,
-    clearAllStores,
-    // Notes functions for localStorage fallback
+    
+    // Notes operations
     createNote,
     getNotesByCustomerId,
     updateNote,
     deleteNote,
     getAllNotes,
+    
+    // Reminders/Follow-ups operations
+    createReminder,
+    getReminderById,
+    getRemindersForCustomer,
+    getRemindersForAppointment,
+    getAllReminders,
+    getPendingReminders,
+    getOverdueReminders,
+    getTodayReminders,
+    getUpcomingReminders,
+    updateReminder,
+    deleteReminder,
+    
+    // Job Events / Timeline operations
+    createJobEvent,
+    getJobEventById,
+    getEventsForAppointment,
+    getEventsForCustomer,
+    getRecentEventsForCustomer,
+    getAllJobEvents,
+    deleteJobEvent,
+    getLastContactTime,
+    JOB_EVENT_TYPES,
+    
+    // Backup/Restore operations
+    exportAllData,
+    safeExportAllData,
+    exportDataWithoutImages,
+    exportImagesOnly,
+    importAllData,
+    clearAllStores,
+    getStorageStats,
+    
     // Recovery functions
     scanForCorruptedNotes,
     recoverCorruptedNotes,
     restoreNotesFromBackup,
+    
     // Version history functions
     getNotePreviousVersion,
     restoreNoteToPreviousVersion,
   };
+  
+  // Expose under generic name
+  window.CrmDB = dbAPI;
+  
 })();
 
 
