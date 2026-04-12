@@ -6,10 +6,10 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="TradieCRM" />
-    <meta name="application-name" content="TradieCRM" />
-    <meta name="theme-color" content="#f59e0b" />
-    <meta name="msapplication-TileColor" content="#f59e0b" />
+    <meta name="apple-mobile-web-app-title" content="CRMicro Beautician" />
+    <meta name="application-name" content="CRMicro Beautician" />
+    <meta name="theme-color" content="#22d3ee" />
+    <meta name="msapplication-TileColor" content="#22d3ee" />
     <meta name="msapplication-config" content="/browserconfig.xml" />
     
     <!-- PWA Manifest -->
@@ -21,7 +21,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/icon-192.png" />
     <link rel="apple-touch-icon" sizes="167x167" href="/assets/icon-192.png" />
     
-    <title>TradieCRM</title>
+    <title>CRMicro Beautician</title>
 
     <!-- FullCalendar (v5 global build for simplicity) -->
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet" />
@@ -39,7 +39,18 @@
     <!-- Simple modal container for generic prompts -->
     <div id="modal-root" class="modal-root" aria-hidden="true"></div>
 
-    <script src="js/config.local.js?v=1.0.0"></script>
+    <script src="/.netlify/functions/runtime-config"></script>
+    <script>
+      (function () {
+        var host = window.location.hostname;
+        var isLocal = host === 'localhost' || host === '127.0.0.1';
+        if (!isLocal) return;
+        var localConfig = document.createElement('script');
+        localConfig.src = 'js/config.local.js?v=1.0.0';
+        document.head.appendChild(localConfig);
+      })();
+    </script>
+    <script src="js/config.js"></script>
     <script src="js/products/core/base.js?v=1.0.0"></script>
     <script src="js/products/hairdresser/profile.js?v=1.0.0"></script>
     <script src="js/products/tradie/profile.js?v=1.0.0"></script>

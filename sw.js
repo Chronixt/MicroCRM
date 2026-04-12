@@ -1,5 +1,5 @@
-// TradieCRM Service Worker
-const CACHE_NAME = 'tradie-crm-v1.0.0';
+// CRMicro Service Worker
+const CACHE_NAME = 'crmicro-v1.0.1';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -7,7 +7,7 @@ const urlsToCache = [
   '/js/productConfig.js',
   '/js/app.js',
   '/js/db.js',
-  '/assets/bg.jpg'
+  '/assets/beautician-bg.png'
 ];
 
 // Install event - cache resources
@@ -15,7 +15,13 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        return cache.addAll(urlsToCache);
+        return Promise.all(
+          urlsToCache.map((url) =>
+            cache.add(url).catch((error) => {
+              console.warn('[SW] Failed to cache', url, error);
+            })
+          )
+        );
       })
       .then(() => {
         return self.skipWaiting();
