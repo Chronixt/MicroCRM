@@ -157,15 +157,37 @@
 
   async function fetchImagesForExportSafe() {
     try {
-      const images = await getClient().from('images').select('*').then((r) => { throwIfError(r); return r.data || []; });
-      const imagesSerialized = images.map((row) => ({
-        id: row.id,
-        customerId: row.customer_id,
-        name: row.name,
-        type: row.type,
-        createdAt: row.created_at,
-        dataUrl: row.data_url
-      }));
+      const supabase = getClient();
+      const pageSize = 5; // Keep pages small because data_url rows can be very large.
+      const imagesSerialized = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + pageSize - 1;
+        const pageRes = await supabase
+          .from('images')
+          .select('id,customer_id,name,type,data_url,created_at')
+          .order('id', { ascending: true })
+          .range(from, to);
+        throwIfError(pageRes);
+        const page = pageRes.data || [];
+        if (page.length === 0) break;
+
+        page.forEach((row) => {
+          imagesSerialized.push({
+            id: row.id,
+            customerId: row.customer_id,
+            name: row.name,
+            type: row.type,
+            createdAt: row.created_at,
+            dataUrl: row.data_url
+          });
+        });
+
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
       return { imagesSerialized, warning: null };
     } catch (error) {
       const warning = `Images export skipped: ${error.message || error}`;

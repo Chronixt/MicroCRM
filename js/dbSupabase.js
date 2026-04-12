@@ -73,8 +73,27 @@
 
   async function fetchImagesForExportSafe() {
     try {
-      var imgRes = check(await supabase.from('images').select('*'));
-      return { images: (imgRes.data || []).map(toCamel), warning: null };
+      var pageSize = 5; // Keep pages small because data_url rows can be very large.
+      var images = [];
+      var from = 0;
+
+      while (true) {
+        var to = from + pageSize - 1;
+        var imgRes = check(
+          await supabase
+            .from('images')
+            .select('id,customer_id,name,type,data_url,created_at')
+            .order('id', { ascending: true })
+            .range(from, to)
+        );
+        var page = imgRes.data || [];
+        if (page.length === 0) break;
+        images = images.concat(page.map(toCamel));
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      return { images: images, warning: null };
     } catch (error) {
       var warning = 'Images export skipped: ' + (error && error.message ? error.message : String(error));
       console.warn('[Backup]', warning);
