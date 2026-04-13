@@ -1024,8 +1024,8 @@
 
   function getWelcomeMenuMessage() {
     const template = String(t('welcomeMenuMessage') || 'Welcome back {firstName}, ready for today?');
-    // Placeholder until user profile data is available.
-    return template.replace('{firstName}', '{firstName}');
+    const firstNameOrEmail = RUNTIME_INFO.email || '{firstName}';
+    return escapeHtml(template.replace('{firstName}', firstNameOrEmail));
   }
   function formatReferralType(value) {
     switch (value) {
