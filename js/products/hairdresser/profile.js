@@ -5,7 +5,7 @@
 
   window.ProductProfiles.hairdresser = {
     config: {
-      appName: 'CRMicro',
+      appName: 'CRMicro Beautician',
       appSlug: 'chikas-db',
       themeColor: '#22d3ee',
       logoLight: '/assets/CRMicro_logo_beautician_light.png',
@@ -77,8 +77,12 @@
       }
     },
     translations: {
-      en: {},
-      ja: {}
+      en: {
+        welcomeMenuMessage: 'Welcome back {firstName}, who are we making beautiful today?'
+      },
+      ja: {
+        welcomeMenuMessage: 'おかえりなさい {firstName} さん、今日は誰をもっと素敵にしましょうか？'
+      }
     }
   };
 })();

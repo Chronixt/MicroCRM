@@ -5,7 +5,7 @@
 
   window.ProductProfiles.tradie = {
     config: {
-      appName: 'TradieCRM',
+      appName: 'CRMicro Tradie',
       appSlug: 'tradie-crm',
       themeColor: '#f59e0b',
       logoLight: '/assets/CRMicro_logo_tradie_light.png',
@@ -100,7 +100,8 @@
         jobType: 'Job Type',
         quoteAmount: 'Quote Amount',
         photos: 'Photos',
-        beforeAfter: 'Before/After Photos'
+        beforeAfter: 'Before/After Photos',
+        welcomeMenuMessage: 'Welcome back {firstName}, what jobs are we tackling today?'
       },
       ja: {
         bookAppointment: 'ジョブ予約',
