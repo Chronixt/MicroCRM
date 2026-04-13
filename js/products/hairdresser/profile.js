@@ -5,7 +5,7 @@
 
   window.ProductProfiles.hairdresser = {
     config: {
-      appName: 'CRMicro',
+      appName: 'CRMicro Beautician',
       appSlug: 'chikas-db',
       themeColor: '#22d3ee',
       logoLight: '/assets/CRMicro_logo_beautician_light.png',

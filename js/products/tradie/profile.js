@@ -5,7 +5,7 @@
 
   window.ProductProfiles.tradie = {
     config: {
-      appName: 'TradieCRM',
+      appName: 'CRMicro Tradie',
       appSlug: 'tradie-crm',
       themeColor: '#f59e0b',
       logoLight: '/assets/CRMicro_logo_tradie_light.png',
