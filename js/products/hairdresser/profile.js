@@ -51,6 +51,12 @@
         lastName: { enabled: true, required: false, label: 'Last Name', labelJa: '姓' },
         contactNumber: { enabled: true, required: false, label: 'Contact Number', labelJa: '電話番号', placeholder: '0400 123 456' },
         socialMediaName: { enabled: true, required: false, label: 'Social Media Name', labelJa: 'SNS名', placeholder: 'Enter social media username' },
+        addressLine1: { enabled: true, required: false, label: 'Address line 1', labelJa: '住所1' },
+        addressLine2: { enabled: true, required: false, label: 'Address line 2', labelJa: '住所2' },
+        suburb: { enabled: true, required: false, label: 'Suburb', labelJa: '市区町村' },
+        state: { enabled: true, required: false, label: 'State', labelJa: '都道府県' },
+        postcode: { enabled: true, required: false, label: 'Postcode', labelJa: '郵便番号' },
+        country: { enabled: true, required: false, label: 'Country', labelJa: '国' },
         referralType: { enabled: true, required: false, label: 'Referral Type', labelJa: '紹介区分' },
         referralNotes: { enabled: true, required: false, label: 'Referral Notes', labelJa: '紹介メモ' }
       },
