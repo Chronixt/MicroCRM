@@ -1204,10 +1204,12 @@
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
+            ${usesJobPipeline() ? `
             <a class="menu-tile" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
               <div class="tile-label">Follow-ups</div>
             </a>
+            ` : ''}
             <a class="menu-tile" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
@@ -1349,10 +1351,12 @@
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
+            ${usesJobPipeline() ? `
             <a class="menu-tile small" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
               <div class="tile-label">Follow-ups</div>
             </a>
+            ` : ''}
             <a class="menu-tile small" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
@@ -4028,6 +4032,16 @@
   // ============================================================================
 
   async function renderFollowUps() {
+    if (!usesJobPipeline()) {
+      appRoot.innerHTML = wrapWithSidebar(`
+        <div class="card" style="text-align: center; padding: 40px;">
+          <h3 style="margin: 0 0 8px 0;">Follow-ups Unavailable</h3>
+          <p class="muted" style="margin: 0;">This product does not enable reminders/follow-ups.</p>
+        </div>
+      `);
+      return;
+    }
+
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
         <h2>Follow-ups</h2>
