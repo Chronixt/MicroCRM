@@ -11,9 +11,16 @@
       logoLight: '/assets/CRMicro_logo_beautician_light.png',
       logoAlt: 'CRMicro Hairdresser logo',
       lockTitle: 'CRMicro Locked',
+      appLockSalt: 'tradie_salt',
       dbName: 'chikas-db',
       dbVersion: 6,
       storagePrefix: 'chikas_',
+      theme: {
+        backgroundImage: 'assets/beautician-bg.png',
+        haze1: 'rgba(34, 211, 238, 0.10)',
+        hazeTop: 'rgba(8, 47, 73, 0.50)',
+        hazeBottom: 'rgba(8, 47, 73, 0.88)'
+      },
       entities: {
         customer: { singular: 'Customer', plural: 'Customers' },
         appointment: { singular: 'Appointment', plural: 'Appointments' },

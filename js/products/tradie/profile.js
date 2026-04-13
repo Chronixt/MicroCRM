@@ -11,9 +11,16 @@
       logoLight: '/assets/CRMicro_logo_tradie_light.png',
       logoAlt: 'CRMicro Tradie logo',
       lockTitle: 'TradieCRM Locked',
+      appLockSalt: 'tradie_salt',
       dbName: 'tradie-crm-db',
       dbVersion: 6,
       storagePrefix: 'tradie_',
+      theme: {
+        backgroundImage: 'assets/tradie-bg.png',
+        haze1: 'rgba(255,255,255,0.06)',
+        hazeTop: 'rgba(2,6,23,0.45)',
+        hazeBottom: 'rgba(2,6,23,0.85)'
+      },
       useSupabase: true,
       supabaseSchema: 'tradie',
       entities: {
