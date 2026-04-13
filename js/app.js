@@ -960,6 +960,12 @@
       loading: 'Loading', nextAppointment: 'Next Appointment', noUpcomingAppointments: 'No upcoming appointments', errorLoadingAppointment: 'Error loading appointment',
       delete: 'Delete', confirmDelete: 'Are you sure you want to delete this appointment?', appointmentDetails: 'Appointment Details', pleaseSelectDateTime: 'Please select date and time',
       emergencyBackup: 'Emergency Backup', backupBeforeCacheClear: 'Backup Before Cache Clear', downloadBackupNow: 'Download Backup Now', cacheCleared: 'Cache Cleared - App Will Reload', clearCacheAndReload: 'Clear Cache & Reload App',
+      followUps: 'Follow-ups', newReminder: 'New Reminder', followUpsUnavailableTitle: 'Follow-ups Unavailable',
+      followUpsUnavailableMessage: 'This product does not enable reminders/follow-ups.',
+      noFollowUps: 'No Follow-ups', followUpsEmptyMessage: 'Create a reminder from a customer or appointment to track follow-ups.',
+      errorLoadingFollowUps: 'Error loading follow-ups', loadingJobs: 'Loading jobs...', errorLoadingJobs: 'Error loading jobs',
+      pipeline: 'Pipeline', needsInvoice: 'Needs Invoice', unpaid: 'Unpaid', noResultsFound: 'No results found', errorSearching: 'Error searching',
+      paymentTracking: 'Payment Tracking', jobPhotos: 'Job Photos', quickAddAppointment: 'Quick Add Appointment', all: 'All'
     },
     ja: {
               add: '新規顧客', find: '検索', customers: '顧客', calendar: 'カレンダー', backup: 'バックアップ',
@@ -988,6 +994,12 @@
       loading: '読み込み中', nextAppointment: '次の予約', noUpcomingAppointments: '予約はありません', errorLoadingAppointment: '予約の読み込みエラー',
               delete: '削除', confirmDelete: 'この予約を削除してもよろしいですか？', appointmentDetails: '予約詳細', pleaseSelectDateTime: '日時を選択してください',
       emergencyBackup: '緊急バックアップ', backupBeforeCacheClear: 'キャッシュクリア前のバックアップ', downloadBackupNow: '今すぐバックアップをダウンロード', cacheCleared: 'キャッシュクリア完了 - アプリが再読み込みされます', clearCacheAndReload: 'キャッシュクリア＆アプリ再読み込み',
+      followUps: 'フォローアップ', newReminder: '新規リマインダー', followUpsUnavailableTitle: 'フォローアップは利用できません',
+      followUpsUnavailableMessage: 'このプロダクトではリマインダー／フォローアップ機能は無効です。',
+      noFollowUps: 'フォローアップはありません', followUpsEmptyMessage: '顧客または予約からリマインダーを作成してフォローアップを管理してください。',
+      errorLoadingFollowUps: 'フォローアップの読み込みエラー', loadingJobs: 'ジョブ読み込み中...', errorLoadingJobs: 'ジョブの読み込みエラー',
+      pipeline: 'パイプライン', needsInvoice: '請求書未作成', unpaid: '未入金', noResultsFound: '結果が見つかりません', errorSearching: '検索エラー',
+      paymentTracking: '支払い管理', jobPhotos: 'ジョブ写真', quickAddAppointment: 'クイック追加', all: 'すべて'
     }
   };
 
@@ -1207,7 +1219,7 @@
             ${usesJobPipeline() ? `
             <a class="menu-tile" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
-              <div class="tile-label">Follow-ups</div>
+              <div class="tile-label">${t('followUps')}</div>
             </a>
             ` : ''}
             <a class="menu-tile" href="#/backup" aria-label="Options">
@@ -1354,7 +1366,7 @@
             ${usesJobPipeline() ? `
             <a class="menu-tile small" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
-              <div class="tile-label">Follow-ups</div>
+              <div class="tile-label">${t('followUps')}</div>
             </a>
             ` : ''}
             <a class="menu-tile small" href="#/backup" aria-label="Options">
@@ -2816,13 +2828,13 @@
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             ${usesJobPipeline() ? `
             <div class="view-toggle" style="display: flex; gap: 4px;">
-              <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">Calendar</button>
-              <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">Pipeline</button>
+              <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">${t('calendar')}</button>
+              <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">${t('pipeline')}</button>
             </div>
             <div class="payment-filters" style="display: flex; gap: 4px;">
-              <button id="filter-all-btn" class="button" style="padding: 6px 10px; font-size: 11px;">All</button>
-              <button id="filter-needs-invoice-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">📄 Needs Invoice</button>
-              <button id="filter-unpaid-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">💰 Unpaid</button>
+              <button id="filter-all-btn" class="button" style="padding: 6px 10px; font-size: 11px;">${t('all')}</button>
+              <button id="filter-needs-invoice-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">📄 ${t('needsInvoice')}</button>
+              <button id="filter-unpaid-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">💰 ${t('unpaid')}</button>
             </div>
             ` : ''}
             <button id="new-appointment-btn" style="
@@ -3076,7 +3088,7 @@
       const pipelineEl = document.getElementById('pipeline');
       if (!pipelineEl) return;
       
-      pipelineEl.innerHTML = '<div class="muted" style="text-align: center; padding: 20px;">Loading jobs...</div>';
+      pipelineEl.innerHTML = `<div class="muted" style="text-align: center; padding: 20px;">${t('loadingJobs')}</div>`;
       
       try {
         const statuses = productConfig.statuses || [];
@@ -3218,7 +3230,7 @@
         
       } catch (error) {
         console.error('Error rendering pipeline view:', error);
-        pipelineEl.innerHTML = '<div class="error" style="text-align: center; padding: 20px;">Error loading jobs</div>';
+        pipelineEl.innerHTML = `<div class="error" style="text-align: center; padding: 20px;">${t('errorLoadingJobs')}</div>`;
       }
     }
 
@@ -3496,7 +3508,7 @@
             </div>
 
             ${isTradie() ? `
-            <label>Job Status</label>
+            <label>${t('jobStatus')}</label>
             <div class="select-wrap">
               <select id="apt-status" class="job-status-select">
                 ${generateStatusOptions(event.extendedProps?.status || 'scheduled')}
@@ -3505,7 +3517,7 @@
             
             <div class="payment-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <strong style="font-size: 14px;">💰 Payment Tracking</strong>
+                <strong style="font-size: 14px;">💰 ${t('paymentTracking')}</strong>
                 <span id="payment-status-badge" class="job-status-badge" style="font-size: 11px;"></span>
               </div>
               <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
@@ -3543,7 +3555,7 @@
             
             <div class="job-photos-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <strong style="font-size: 14px;">📷 Job Photos</strong>
+                <strong style="font-size: 14px;">📷 ${t('jobPhotos')}</strong>
                 <label class="button secondary" style="font-size: 12px; padding: 6px 10px; cursor: pointer;">
                   + Add
                   <input type="file" id="job-photo-input" accept="image/*" multiple style="display: none;" />
@@ -4035,8 +4047,8 @@
     if (!usesJobPipeline()) {
       appRoot.innerHTML = wrapWithSidebar(`
         <div class="card" style="text-align: center; padding: 40px;">
-          <h3 style="margin: 0 0 8px 0;">Follow-ups Unavailable</h3>
-          <p class="muted" style="margin: 0;">This product does not enable reminders/follow-ups.</p>
+          <h3 style="margin: 0 0 8px 0;">${t('followUpsUnavailableTitle')}</h3>
+          <p class="muted" style="margin: 0;">${t('followUpsUnavailableMessage')}</p>
         </div>
       `);
       return;
@@ -4044,9 +4056,9 @@
 
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between" style="margin-bottom: 8px;">
-        <h2>Follow-ups</h2>
+        <h2>${t('followUps')}</h2>
         <button id="add-reminder-btn" class="button" style="padding: 8px 16px;">
-          + New Reminder
+          + ${t('newReminder')}
         </button>
       </div>
       <div id="follow-ups-container">
@@ -4112,8 +4124,8 @@
         html = `
           <div class="card" style="text-align: center; padding: 40px;">
             <div style="font-size: 48px; margin-bottom: 16px;">🔔</div>
-            <h3 style="margin: 0 0 8px 0;">No Follow-ups</h3>
-            <p class="muted" style="margin: 0;">Create a reminder from a job or customer to track follow-ups.</p>
+            <h3 style="margin: 0 0 8px 0;">${t('noFollowUps')}</h3>
+            <p class="muted" style="margin: 0;">${t('followUpsEmptyMessage')}</p>
           </div>
         `;
       }
@@ -4127,7 +4139,7 @@
       console.error('Error loading follow-ups:', error);
       container.innerHTML = `
         <div class="card" style="text-align: center; padding: 40px; color: #ef4444;">
-          <p>Error loading follow-ups: ${error.message}</p>
+          <p>${t('errorLoadingFollowUps')}: ${error.message}</p>
         </div>
       `;
     }
@@ -4635,7 +4647,7 @@
       }
       
       if (!html) {
-        html = '<div class="search-no-results">No results found</div>';
+        html = `<div class="search-no-results">${t('noResultsFound')}</div>`;
       }
       
       resultsContainer.innerHTML = html;
@@ -4663,7 +4675,7 @@
       
     } catch (error) {
       console.error('Search error:', error);
-      resultsContainer.innerHTML = '<div class="search-no-results">Error searching</div>';
+      resultsContainer.innerHTML = `<div class="search-no-results">${t('errorSearching')}</div>`;
       resultsContainer.style.display = 'block';
     }
   }
@@ -4682,8 +4694,8 @@
     const fab = document.createElement('button');
     fab.id = 'quick-add-fab';
     fab.innerHTML = '+';
-    fab.title = 'Quick Add Job';
-    fab.setAttribute('aria-label', 'Quick Add Job');
+    fab.title = t('quickAddAppointment');
+    fab.setAttribute('aria-label', t('quickAddAppointment'));
     const isCustomerScreen = currentRoute === '/customer' || currentRoute === '/customer-edit';
     const fabBottom = isCustomerScreen ? 'calc(96px + env(safe-area-inset-bottom, 0px))' : '24px';
 
@@ -4747,7 +4759,7 @@
     
     showModal(`
       <div class="modal" style="max-width: 400px;">
-        <h3 style="margin-top: 0;">Quick Add Job</h3>
+        <h3 style="margin-top: 0;">${t('quickAddAppointment')}</h3>
         <div class="form">
           <label>Customer</label>
           <div style="display: flex; gap: 8px;">
