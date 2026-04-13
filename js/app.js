@@ -1925,15 +1925,15 @@
         </div>
 
         <details id="appt-collapse" class="collapse">
-          <summary class="summary-button" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal; padding-right: 28px; position: relative;">Book Appointment</summary>
+          <summary class="summary-button" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal; padding-right: 28px; position: relative;">${t('bookAppointment')}</summary>
           <div class="collapse-body">
             <div class="grid-3">
               <div>
-                <label>Booking date</label>
+                <label>${t('bookingDate')}</label>
                 <input type="datetime-local" id="appt-start" step="900" />
               </div>
               <div>
-                <label>Duration</label>
+                <label>${t('duration')}</label>
                 <div class="select-wrap">
                   <select id="appt-duration">
                     <option value="30">30 minutes</option>
@@ -1958,7 +1958,7 @@
               </div>
             </div>
             <div class="row" style="margin-top:8px;">
-              <button class="button" id="book-btn" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal;">Book</button>
+              <button class="button" id="book-btn" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal;">${t('book')}</button>
             </div>
           </div>
         </details>
