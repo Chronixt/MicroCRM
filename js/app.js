@@ -1082,6 +1082,28 @@
     return productConfig.activeProduct === 'tradie';
   }
 
+  function usesJobPipeline() {
+    return typeof productConfig.isFeatureEnabled === 'function'
+      ? productConfig.isFeatureEnabled('jobPipeline')
+      : !!productConfig.features?.jobPipeline;
+  }
+
+  function appointmentEntitySingular() {
+    return typeof productConfig.getEntityName === 'function'
+      ? productConfig.getEntityName('appointment', false)
+      : 'Appointment';
+  }
+
+  function appointmentEntityPlural() {
+    return typeof productConfig.getEntityName === 'function'
+      ? productConfig.getEntityName('appointment', true)
+      : 'Appointments';
+  }
+
+  function appointmentTypeLabel() {
+    return usesJobPipeline() ? `${appointmentEntitySingular()} type` : t('bookingType');
+  }
+
   function isCustomerFieldEnabled(fieldName) {
     if (typeof productConfig.getCustomerField === 'function') {
       return productConfig.getCustomerField(fieldName)?.enabled === true;
@@ -1140,8 +1162,8 @@
     attachVerticalBackupHandler();
     attachRuntimeBannerHandlers();
     
-    // Show FAB on main pages (tradie edition only)
-    if (isTradie()) {
+    // Show FAB/search on products that enable the job pipeline.
+    if (usesJobPipeline()) {
       const fabPages = ['/', '/find', '/calendar', '/follow-ups', '/customer'];
       renderFAB(fabPages.includes(base), base);
       
@@ -1344,9 +1366,9 @@
         <section class="content">
           ${runtimeBannerHtml()}
           <div class="content-toolbar" style="display: flex; align-items: center; gap: 12px;">
-            ${isTradie() ? `
+            ${usesJobPipeline() ? `
             <div class="global-search-container" style="flex: 1; max-width: 300px; position: relative;">
-              <input type="text" id="global-search-input" placeholder="Search customers, jobs..." style="width: 100%; padding: 6px 32px 6px 12px; font-size: 13px; border-radius: 6px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text);" />
+              <input type="text" id="global-search-input" placeholder="Search customers, ${appointmentEntityPlural().toLowerCase()}..." style="width: 100%; padding: 6px 32px 6px 12px; font-size: 13px; border-radius: 6px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text);" />
               <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
               <div id="global-search-results" class="search-results-dropdown" style="display: none;"></div>
             </div>
@@ -1922,7 +1944,7 @@
                 </div>
               </div>
               <div>
-                <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : 'Booking type'}</label>
+                <label>${appointmentTypeLabel()}</label>
                 <div class="multi-select" id="appt-type-dropdown">
                   <div id="appt-type-display" class="multi-select-display" tabindex="0">${t('noneSelected')}</div>
                   <div class="dropdown-menu hidden" id="appt-type-menu">
@@ -2786,9 +2808,9 @@
     
     appRoot.innerHTML = wrapWithSidebar(`
         <div class="space-between" style="margin-bottom: 8px;">
-          <h2>${isTradie() ? 'Jobs' : t('calendar')}</h2>
+          <h2>${usesJobPipeline() ? appointmentEntityPlural() : t('calendar')}</h2>
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            ${isTradie() ? `
+            ${usesJobPipeline() ? `
             <div class="view-toggle" style="display: flex; gap: 4px;">
               <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">Calendar</button>
               <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">Pipeline</button>
@@ -2814,14 +2836,14 @@
               transition: all 0.2s ease;
             ">
               <span>+</span>
-              <span>${isTradie() ? 'New Job' : t('newAppointment')}</span>
+              <span>${usesJobPipeline() ? `New ${appointmentEntitySingular()}` : t('newAppointment')}</span>
             </button>
           </div>
         </div>
       <div class="card" id="calendar-container">
         <div id="calendar"></div>
       </div>
-      ${isTradie() ? `
+      ${usesJobPipeline() ? `
       <div class="card hidden" id="pipeline-container">
         <div id="pipeline" class="pipeline-view"></div>
       </div>
@@ -2863,7 +2885,7 @@
             const fallbackName = customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '';
             const mappedEvent = {
               id: String(e.id),
-              title: e.title || (isTradie() ? 'Job' : 'Appointment'),
+              title: e.title || appointmentEntitySingular(),
               start: e.start,
               end: e.end,
               extendedProps: { 
@@ -2904,7 +2926,7 @@
         const duration = durationMinutes > 0 ? `${durationMinutes}m` : '';
         
         // Get status badge HTML for tradie edition
-        const statusBadgeHtml = isTradie() ? getStatusBadge(status) : '';
+        const statusBadgeHtml = usesJobPipeline() ? getStatusBadge(status) : '';
 
         // Custom content only for list and month views. Week/day views use FullCalendar defaults.
         if (arg.view.type === 'listWeek' || arg.view.type === 'dayGridMonth') {
@@ -2951,7 +2973,7 @@
     let currentFilter = 'all';
     
     // Set up view toggle for tradie edition
-    if (isTradie()) {
+    if (usesJobPipeline()) {
       const calendarViewBtn = document.getElementById('calendar-view-btn');
       const pipelineViewBtn = document.getElementById('pipeline-view-btn');
       const calendarContainer = document.getElementById('calendar-container');
@@ -3149,7 +3171,7 @@
         if (totalVisibleJobs === 0) {
           pipelineEl.innerHTML = `
             <div class="pipeline-empty-state">
-              No jobs found. Tap the New Job button to add a job.
+              No ${appointmentEntityPlural().toLowerCase()} found. Tap the New ${appointmentEntitySingular()} button to add one.
             </div>
           `;
           adjustPipelineHeight();
@@ -3233,7 +3255,7 @@
             </div>
 
             <div>
-              <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : t('bookingType')}</label>
+              <label>${appointmentTypeLabel()}</label>
               <div class="multi-select" id="qb-type-dropdown">
                 <div id="qb-type-display" class="multi-select-display" tabindex="0">${t('noneSelected')}</div>
                 <div class="dropdown-menu hidden" id="qb-type-menu">
@@ -3459,7 +3481,7 @@
               </div>
             </div>
 
-            <label>${productConfig.activeProduct === 'tradie' ? 'Job type' : t('bookingType')}</label>
+            <label>${appointmentTypeLabel()}</label>
             <div class="select-wrap">
               <div class="multi-select" id="apt-type-dropdown">
                 <div class="multi-select-display" id="apt-type-display">${t('noneSelected')}</div>
@@ -4573,13 +4595,13 @@
       }
       
       if (matchingJobs.length > 0) {
-        html += '<div class="search-section"><div class="search-section-title">Jobs</div>';
+        html += '<div class="search-section"><div class="search-section-title">' + escapeHtml(appointmentEntityPlural()) + '</div>';
         for (const j of matchingJobs) {
           const customer = customerMap.get(j.customerId);
           const customerName = customer ? ((customer.firstName || '') + ' ' + (customer.lastName || '')).trim() : '';
           html += '<div class="search-result-item" data-type="job" data-id="' + j.id + '">';
           html += '<span class="search-icon">📋</span>';
-          html += '<span class="search-text">' + escapeHtml(j.title || 'Job') + '</span>';
+          html += '<span class="search-text">' + escapeHtml(j.title || appointmentEntitySingular()) + '</span>';
           if (customerName) html += '<span class="search-meta">' + escapeHtml(customerName) + '</span>';
           html += '</div>';
         }
