@@ -51,6 +51,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION hairdresser.delete_my_data() TO authenticated;
 REVOKE EXECUTE ON FUNCTION hairdresser.delete_my_data() FROM anon;
+REVOKE EXECUTE ON FUNCTION hairdresser.delete_my_data() FROM public;
 
 -- =========================
 -- Tradie schema
@@ -112,3 +113,4 @@ $$;
 
 GRANT EXECUTE ON FUNCTION tradie.delete_my_data() TO authenticated;
 REVOKE EXECUTE ON FUNCTION tradie.delete_my_data() FROM anon;
+REVOKE EXECUTE ON FUNCTION tradie.delete_my_data() FROM public;

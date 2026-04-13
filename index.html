@@ -39,15 +39,14 @@
     <!-- Simple modal container for generic prompts -->
     <div id="modal-root" class="modal-root" aria-hidden="true"></div>
 
-    <script src="/.netlify/functions/runtime-config"></script>
     <script>
       (function () {
-        var host = window.location.hostname;
-        var isLocal = host === 'localhost' || host === '127.0.0.1';
-        if (!isLocal) return;
-        var localConfig = document.createElement('script');
-        localConfig.src = 'js/config.local.js?v=1.0.0';
-        document.head.appendChild(localConfig);
+        var host = String(window.location.hostname || '').toLowerCase();
+        var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        var src = isLocal
+          ? 'js/config.local.js?v=1.0.0'
+          : '/.netlify/functions/runtime-config';
+        document.write('<script src="' + src + '"><\\/script>');
       })();
     </script>
     <script src="js/config.js"></script>
