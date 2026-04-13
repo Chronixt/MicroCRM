@@ -752,7 +752,7 @@
   }
 
   async function attachAddressAutocomplete(form) {
-    const supportsAddressAutocomplete = isTradie() || productConfig.activeProduct === 'hairdresser';
+    const supportsAddressAutocomplete = hasAddressFields();
     if (!supportsAddressAutocomplete) return;
     if (window.ADDRESS_LOOKUP_ENABLED === false) return;
     if ((window.ADDRESS_LOOKUP_PROVIDER || 'google') !== 'google') return;
@@ -1080,6 +1080,21 @@
   // Check if we're in tradie mode
   function isTradie() {
     return productConfig.activeProduct === 'tradie';
+  }
+
+  function isCustomerFieldEnabled(fieldName) {
+    if (typeof productConfig.getCustomerField === 'function') {
+      return productConfig.getCustomerField(fieldName)?.enabled === true;
+    }
+    return !!productConfig.customerFields?.[fieldName]?.enabled;
+  }
+
+  function hasAddressFields() {
+    return isCustomerFieldEnabled('addressLine1') || isCustomerFieldEnabled('suburb') || isCustomerFieldEnabled('state') || isCustomerFieldEnabled('postcode');
+  }
+
+  function usesExtendedAddressForm() {
+    return isCustomerFieldEnabled('addressLine2') || isCustomerFieldEnabled('country');
   }
 
   function navigate(path) {
@@ -1426,7 +1441,7 @@
             </div>
           </div>
           ` : ''}
-          ${productConfig.activeProduct === 'hairdresser' ? `
+          ${usesExtendedAddressForm() ? `
           <div>
             <label>${t('address')}</label>
             <div class="input-with-button">
@@ -1530,16 +1545,17 @@
       const lastName = form.querySelector('input[name="lastName"]').value.trim();
       const contactNumber = form.querySelector('input[name="contactNumber"]').value.trim();
       const referralNotes = form.querySelector('input[name="referralNotes"]').value.trim();
-      const socialMediaName = isTradie() ? '' : (form.querySelector('input[name="socialMediaName"]')?.value?.trim() || '');
-      const isHairdresser = productConfig.activeProduct === 'hairdresser';
-      const addressLine1 = (isTradie() || isHairdresser) ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
-      const addressLine2 = isHairdresser ? (form.querySelector('input[name="addressLine2"]')?.value?.trim() || '') : '';
-      const suburb = (isTradie() || isHairdresser) ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
-      const state = isTradie()
-        ? (form.querySelector('select[name="state"]')?.value || '')
-        : (isHairdresser ? (form.querySelector('input[name="state"]')?.value?.trim() || '') : '');
-      const postcode = (isTradie() || isHairdresser) ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
-      const country = isHairdresser ? (form.querySelector('input[name="country"]')?.value?.trim() || '') : '';
+      const socialMediaName = isCustomerFieldEnabled('socialMediaName')
+        ? (form.querySelector('input[name="socialMediaName"]')?.value?.trim() || '')
+        : '';
+      const addressLine1 = isCustomerFieldEnabled('addressLine1') ? (form.querySelector('input[name="addressLine1"]')?.value?.trim() || '') : '';
+      const addressLine2 = isCustomerFieldEnabled('addressLine2') ? (form.querySelector('input[name="addressLine2"]')?.value?.trim() || '') : '';
+      const suburb = isCustomerFieldEnabled('suburb') ? (form.querySelector('input[name="suburb"]')?.value?.trim() || '') : '';
+      const state = isCustomerFieldEnabled('state')
+        ? (form.querySelector('select[name="state"]')?.value || form.querySelector('input[name="state"]')?.value?.trim() || '')
+        : '';
+      const postcode = isCustomerFieldEnabled('postcode') ? (form.querySelector('input[name="postcode"]')?.value?.trim() || '') : '';
+      const country = isCustomerFieldEnabled('country') ? (form.querySelector('input[name="country"]')?.value?.trim() || '') : '';
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
@@ -1555,19 +1571,12 @@
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      if (isTradie()) {
-        customer.addressLine1 = addressLine1;
-        customer.suburb = suburb;
-        customer.state = state;
-        customer.postcode = postcode;
-      } else if (isHairdresser) {
-        customer.addressLine1 = addressLine1;
-        customer.addressLine2 = addressLine2;
-        customer.suburb = suburb;
-        customer.state = state;
-        customer.postcode = postcode;
-        customer.country = country;
-      }
+      if (isCustomerFieldEnabled('addressLine1')) customer.addressLine1 = addressLine1;
+      if (isCustomerFieldEnabled('addressLine2')) customer.addressLine2 = addressLine2;
+      if (isCustomerFieldEnabled('suburb')) customer.suburb = suburb;
+      if (isCustomerFieldEnabled('state')) customer.state = state;
+      if (isCustomerFieldEnabled('postcode')) customer.postcode = postcode;
+      if (isCustomerFieldEnabled('country')) customer.country = country;
 
       const newId = await CrmDB.createCustomer(customer);
 
@@ -2434,7 +2443,7 @@
             </select>
           </div>
           ` : ''}
-          ${productConfig.activeProduct === 'hairdresser' ? `
+          ${usesExtendedAddressForm() ? `
           <div>
             <label>${t('address')}</label>
             <div class="input-with-button">
@@ -2531,7 +2540,7 @@
       if (contactMethodSelect && customer.preferredContactMethod) {
         contactMethodSelect.value = customer.preferredContactMethod;
       }
-    } else if (productConfig.activeProduct === 'hairdresser') {
+    } else if (usesExtendedAddressForm()) {
       setInputValue(form, 'addressLine1', customer.addressLine1 || '');
       setInputValue(form, 'addressLine2', customer.addressLine2 || '');
       setInputValue(form, 'suburb', customer.suburb || '');
@@ -2721,19 +2730,16 @@
       };
       
       // Add product-specific address fields
+      if (isCustomerFieldEnabled('addressLine1')) updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
+      if (isCustomerFieldEnabled('addressLine2')) updated.addressLine2 = getInputValue(form, 'addressLine2')?.trim() || '';
+      if (isCustomerFieldEnabled('suburb')) updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
+      if (isCustomerFieldEnabled('state')) {
+        updated.state = form.querySelector('select[name="state"]')?.value || getInputValue(form, 'state')?.trim() || '';
+      }
+      if (isCustomerFieldEnabled('postcode')) updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
+      if (isCustomerFieldEnabled('country')) updated.country = getInputValue(form, 'country')?.trim() || '';
       if (isTradie()) {
-        updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
-        updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
-        updated.state = form.querySelector('select[name="state"]')?.value || '';
-        updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
         updated.preferredContactMethod = form.querySelector('select[name="preferredContactMethod"]')?.value || '';
-      } else if (productConfig.activeProduct === 'hairdresser') {
-        updated.addressLine1 = getInputValue(form, 'addressLine1')?.trim() || '';
-        updated.addressLine2 = getInputValue(form, 'addressLine2')?.trim() || '';
-        updated.suburb = getInputValue(form, 'suburb')?.trim() || '';
-        updated.state = getInputValue(form, 'state')?.trim() || '';
-        updated.postcode = getInputValue(form, 'postcode')?.trim() || '';
-        updated.country = getInputValue(form, 'country')?.trim() || '';
       }
       
       try {
