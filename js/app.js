@@ -6,6 +6,8 @@
   const BRAND_LOGO_LIGHT = productConfig.logoLight || '/assets/icon-192.png';
   const BRAND_LOGO_ALT = productConfig.logoAlt || `${APP_NAME} logo`;
   const LOCK_TITLE = productConfig.lockTitle || `${APP_NAME} Locked`;
+  const APP_LOCK_SALT = productConfig.config?.appLockSalt || 'tradie_salt';
+  const PRODUCT_THEME = productConfig.config?.theme || {};
   const NATIVE_DRIVER_MODE_KEY = `${STORAGE_PREFIX}native_driver_mode`;
   const RUNTIME_INFO = {
     email: null
@@ -36,17 +38,11 @@
     var pair = deriveBrandPair(productConfig.themeColor || '#f59e0b');
     root.style.setProperty('--brand', pair.brand);
     root.style.setProperty('--brand-2', pair.brand2);
-    if (productConfig.activeProduct === 'hairdresser') {
-      root.style.setProperty('--app-bg-image', 'url("assets/beautician-bg.png")');
-      root.style.setProperty('--app-haze-1', 'rgba(34, 211, 238, 0.10)');
-      root.style.setProperty('--app-haze-top', 'rgba(8, 47, 73, 0.50)');
-      root.style.setProperty('--app-haze-bottom', 'rgba(8, 47, 73, 0.88)');
-    } else {
-      root.style.setProperty('--app-bg-image', 'url("assets/tradie-bg.png")');
-      root.style.setProperty('--app-haze-1', 'rgba(255,255,255,0.06)');
-      root.style.setProperty('--app-haze-top', 'rgba(2,6,23,0.45)');
-      root.style.setProperty('--app-haze-bottom', 'rgba(2,6,23,0.85)');
-    }
+    var backgroundImage = PRODUCT_THEME.backgroundImage || 'assets/tradie-bg.png';
+    root.style.setProperty('--app-bg-image', 'url("' + backgroundImage + '")');
+    root.style.setProperty('--app-haze-1', PRODUCT_THEME.haze1 || 'rgba(255,255,255,0.06)');
+    root.style.setProperty('--app-haze-top', PRODUCT_THEME.hazeTop || 'rgba(2,6,23,0.45)');
+    root.style.setProperty('--app-haze-bottom', PRODUCT_THEME.hazeBottom || 'rgba(2,6,23,0.85)');
     if (body) body.setAttribute('data-product', productConfig.activeProduct || 'core');
   }
 
@@ -402,7 +398,7 @@
       
       const attemptUnlock = () => {
         const enteredPin = pinInput.value.trim();
-        const enteredHash = btoa(enteredPin + 'tradie_salt');
+        const enteredHash = btoa(enteredPin + APP_LOCK_SALT);
         
         if (enteredHash === hashedPin) {
           overlay.remove();
@@ -5858,7 +5854,7 @@
           }
           
           // Store hashed PIN (simple hash for demo - in production use proper hashing)
-          const hashedPin = btoa(pin + 'tradie_salt');
+          const hashedPin = btoa(pin + APP_LOCK_SALT);
           localStorage.setItem(`${STORAGE_PREFIX}app_lock_pin`, hashedPin);
           
           pinInput.value = '';

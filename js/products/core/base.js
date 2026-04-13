@@ -12,11 +12,19 @@
       logoLight: '/assets/icon-192.png',
       logoAlt: 'CRM logo',
       lockTitle: 'CRM Locked',
+      // Keep legacy default salt to avoid breaking existing stored app-lock PIN hashes.
+      appLockSalt: 'tradie_salt',
       dbName: 'crm-db',
       dbVersion: 1,
       storagePrefix: 'crm_',
       useSupabase: false,
       supabaseSchema: 'public',
+      theme: {
+        backgroundImage: 'assets/tradie-bg.png',
+        haze1: 'rgba(255,255,255,0.06)',
+        hazeTop: 'rgba(2,6,23,0.45)',
+        hazeBottom: 'rgba(2,6,23,0.85)'
+      },
       entities: {
         customer: { singular: 'Customer', plural: 'Customers' },
         appointment: { singular: 'Appointment', plural: 'Appointments' },
