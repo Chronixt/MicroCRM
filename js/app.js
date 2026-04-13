@@ -966,6 +966,7 @@
       errorLoadingFollowUps: 'Error loading follow-ups', loadingJobs: 'Loading jobs...', errorLoadingJobs: 'Error loading jobs',
       pipeline: 'Pipeline', needsInvoice: 'Needs Invoice', unpaid: 'Unpaid', noResultsFound: 'No results found', errorSearching: 'Error searching',
       paymentTracking: 'Payment Tracking', jobPhotos: 'Job Photos', quickAddAppointment: 'Quick Add Appointment', all: 'All'
+      , welcomeMenuMessage: 'Welcome back {firstName}, ready for today?'
     },
     ja: {
               add: '新規顧客', find: '検索', customers: '顧客', calendar: 'カレンダー', backup: 'バックアップ',
@@ -1000,6 +1001,7 @@
       errorLoadingFollowUps: 'フォローアップの読み込みエラー', loadingJobs: 'ジョブ読み込み中...', errorLoadingJobs: 'ジョブの読み込みエラー',
       pipeline: 'パイプライン', needsInvoice: '請求書未作成', unpaid: '未入金', noResultsFound: '結果が見つかりません', errorSearching: '検索エラー',
       paymentTracking: '支払い管理', jobPhotos: 'ジョブ写真', quickAddAppointment: 'クイック追加', all: 'すべて'
+      , welcomeMenuMessage: 'おかえりなさい {firstName} さん、今日の準備はいいですか？'
     }
   };
 
@@ -1018,6 +1020,12 @@
     }
     // Fall back to base translations
     return (translations[lang] && translations[lang][key]) || translations.en[key] || key;
+  }
+
+  function getWelcomeMenuMessage() {
+    const template = String(t('welcomeMenuMessage') || 'Welcome back {firstName}, ready for today?');
+    // Placeholder until user profile data is available.
+    return template.replace('{firstName}', '{firstName}');
   }
   function formatReferralType(value) {
     switch (value) {
@@ -1203,6 +1211,10 @@
         </div>
         <div class="menu-content">
           ${runtimeBannerHtml()}
+          <div class="card" style="margin-bottom: 14px;">
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">${getWelcomeMenuMessage()}</div>
+            <div class="muted" style="font-size: 12px;">${productConfig.appName || APP_NAME}</div>
+          </div>
           <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
               <div class="tile-icon" aria-hidden="true">➕</div>

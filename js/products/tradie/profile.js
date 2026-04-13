@@ -100,7 +100,8 @@
         jobType: 'Job Type',
         quoteAmount: 'Quote Amount',
         photos: 'Photos',
-        beforeAfter: 'Before/After Photos'
+        beforeAfter: 'Before/After Photos',
+        welcomeMenuMessage: 'Welcome back {firstName}, what jobs are we tackling today?'
       },
       ja: {
         bookAppointment: 'ジョブ予約',

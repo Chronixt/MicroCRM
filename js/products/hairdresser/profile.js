@@ -77,8 +77,12 @@
       }
     },
     translations: {
-      en: {},
-      ja: {}
+      en: {
+        welcomeMenuMessage: 'Welcome back {firstName}, who are we making beautiful today?'
+      },
+      ja: {
+        welcomeMenuMessage: 'おかえりなさい {firstName} さん、今日は誰をもっと素敵にしましょうか？'
+      }
     }
   };
 })();
