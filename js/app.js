@@ -1211,9 +1211,9 @@
         </div>
         <div class="menu-content">
           ${runtimeBannerHtml()}
-          <div class="card" style="margin-bottom: 14px;">
-            <div style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">${getWelcomeMenuMessage()}</div>
-            <div class="muted" style="font-size: 12px;">${productConfig.appName || APP_NAME}</div>
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: clamp(1.05rem, 2.4vw, 1.65rem); font-weight: 700; line-height: 1.25; letter-spacing: 0.01em;">${getWelcomeMenuMessage()}</div>
+            <div class="muted" style="font-size: clamp(0.72rem, 1.3vw, 0.9rem); margin-top: 4px;">${productConfig.appName || APP_NAME}</div>
           </div>
           <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
