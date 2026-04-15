@@ -290,7 +290,7 @@ body::after {
   padding: 0;
 }
 
-.menu-container { position: relative; min-height: 100vh; }
+.menu-container { position: relative; min-height: 100dvh; }
 .menu-toolbar { 
   position: absolute; 
   top: 0; 
@@ -304,10 +304,18 @@ body::after {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 100%;
-  gap: clamp(18px, 3.5vh, 34px);
+  min-height: 100dvh;
+  gap: var(--space-3);
   padding: clamp(64px, 10vh, 84px) var(--space-3) var(--space-3);
+}
+.menu-primary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  width: min(100%, 1080px);
+  gap: clamp(18px, 3.5vh, 34px);
 }
 
 .menu-welcome-block { margin-bottom: var(--space-2); width: min(100%, 860px); }
@@ -527,7 +535,7 @@ button.menu-tile {
 @media (max-width: 768px) {
   .layout { grid-template-columns: clamp(76px, 16vw, 92px) minmax(0, 1fr); gap: var(--space-2); }
   .layout.sidebar-collapsed { grid-template-columns: clamp(26px, 8vw, 34px) minmax(0, 1fr); }
-  .menu-content { justify-content: flex-start; padding-top: clamp(72px, 12vh, 94px); }
+  .menu-content { padding-top: clamp(72px, 12vh, 94px); }
   .menu-tiles { grid-template-columns: repeat(2, minmax(120px, 1fr)); width: 100%; }
   .global-search-container { order: 3; flex-basis: 100%; max-width: none; min-width: 0; }
   .lang-toolbar-group { margin-left: 0; margin-inline-start: auto; }

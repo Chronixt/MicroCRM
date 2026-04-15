@@ -1307,10 +1307,11 @@
           </div>
         </div>
         <div class="menu-content">
-          <div class="menu-welcome-block">
-            <div class="menu-welcome-title">${getWelcomeMenuMessage()}</div>
-          </div>
-          <nav class="menu-tiles" aria-label="Main menu">
+          <div class="menu-primary">
+            <div class="menu-welcome-block">
+              <div class="menu-welcome-title">${getWelcomeMenuMessage()}</div>
+            </div>
+            <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
               <div class="tile-icon" aria-hidden="true">➕</div>
               <div class="tile-label">${t('add')}</div>
@@ -1342,12 +1343,12 @@
               <div class="tile-icon" aria-hidden="true">📥</div>
               <div class="tile-label">1-tap Backup</div>
             </button>
-          </nav>
-          
-          <div class="todays-appointments">
-            <h3>${t('todaysAppointments')}</h3>
-            <div class="no-appointments">${t('noAppointmentsToday')}</div>
-            <button id="refresh-appointments" class="refresh-appointments-btn">Refresh</button>
+            </nav>
+            <div class="todays-appointments">
+              <h3>${t('todaysAppointments')}</h3>
+              <div class="no-appointments">${t('noAppointmentsToday')}</div>
+              <button id="refresh-appointments" class="refresh-appointments-btn">Refresh</button>
+            </div>
           </div>
         </div>
       </div>
@@ -11272,6 +11273,3 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
 
 })();
-
-
-
