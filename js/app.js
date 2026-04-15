@@ -1090,15 +1090,19 @@
   }
 
   function getWelcomeMenuMessage() {
-    const userLabel = RUNTIME_INFO.email || '{firstName}';
+    const firstNameOrEmail = RUNTIME_INFO.email || '{firstName}';
     const product = productConfig.activeProduct || 'core';
+    let defaultTemplate = 'Welcome back {firstName}, ready for today?';
     if (product === 'hairdresser') {
-      return `Welcome back ${userLabel}, who are we making beautiful today?`;
+      defaultTemplate = 'Welcome back {firstName}, who are we making beautiful today?';
+    } else if (product === 'tradie') {
+      defaultTemplate = 'Welcome back {firstName}, what job are we tackling today?';
     }
-    if (product === 'tradie') {
-      return `Welcome back ${userLabel}, what job are we tackling today?`;
-    }
-    return `Welcome back ${userLabel}, ready for today?`;
+    const translated = t('welcomeMenuMessage');
+    const template = String(
+      translated && translated !== 'welcomeMenuMessage' ? translated : defaultTemplate
+    );
+    return escapeHtml(template.replace('{firstName}', firstNameOrEmail));
   }
   function formatReferralType(value) {
     switch (value) {
@@ -1306,7 +1310,7 @@
             ${usesJobPipeline() ? `
             <a class="menu-tile" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
-              <div class="tile-label">Follow-ups</div>
+              <div class="tile-label">${t('followUps') !== 'followUps' ? t('followUps') : 'Follow-ups'}</div>
             </a>
             ` : ''}
             <a class="menu-tile" href="#/backup" aria-label="Options">
@@ -1463,7 +1467,7 @@
             ${usesJobPipeline() ? `
             <a class="menu-tile small" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
-              <div class="tile-label">Follow-ups</div>
+              <div class="tile-label">${t('followUps') !== 'followUps' ? t('followUps') : 'Follow-ups'}</div>
             </a>
             ` : ''}
             <a class="menu-tile small" href="#/backup" aria-label="Options">
@@ -4153,7 +4157,7 @@
 
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="space-between section-header">
-        <h2>Follow-ups</h2>
+        <h2>${t('followUps') !== 'followUps' ? t('followUps') : 'Follow-ups'}</h2>
         <button id="add-reminder-btn" class="button" style="padding: 8px 16px;">
           + New Reminder
         </button>
