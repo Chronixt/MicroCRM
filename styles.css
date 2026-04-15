@@ -317,6 +317,9 @@ body::after {
   line-height: 1.25;
   letter-spacing: 0.01em;
 }
+.menu-welcome-name {
+  color: #fbb817;
+}
 
 .runtime-banner {
   background: var(--rb-bg);

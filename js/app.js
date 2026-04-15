@@ -1116,7 +1116,9 @@
     const template = String(
       translated && translated !== 'welcomeMenuMessage' ? translated : defaultTemplate
     );
-    return escapeHtml(template.replace('{firstName}', firstNameOrEmail));
+    const safeTemplate = escapeHtml(template);
+    const safeName = escapeHtml(firstNameOrEmail);
+    return safeTemplate.replace('{firstName}', `<span class="menu-welcome-name">${safeName}</span>`);
   }
   function formatReferralType(value) {
     switch (value) {
