@@ -85,6 +85,10 @@
     return collapsed;
   }
 
+  function useSidebarMenuOnPortraitMobile() {
+    return window.matchMedia('(max-width: 768px) and (orientation: portrait)').matches;
+  }
+
   function getCachedSidebarTopOffset() {
     const raw = localStorage.getItem(SIDEBAR_TOP_OFFSET_KEY);
     if (!raw) return null;
@@ -1294,8 +1298,23 @@
   // Views
   function renderMenu() {
     const lang = getLang();
-    
-    appRoot.innerHTML = `
+    const homePanelHtml = `
+      <div class="menu-home-panel">
+        <div class="menu-welcome-block">
+          <div class="menu-welcome-title">${getWelcomeMenuMessage()}</div>
+        </div>
+        <div class="todays-appointments">
+          <h3>${t('todaysAppointments')}</h3>
+          <div class="no-appointments">${t('noAppointmentsToday')}</div>
+          <button id="refresh-appointments" class="refresh-appointments-btn">Refresh</button>
+        </div>
+      </div>
+    `;
+
+    if (useSidebarMenuOnPortraitMobile()) {
+      appRoot.innerHTML = wrapWithSidebar(homePanelHtml);
+    } else {
+      appRoot.innerHTML = `
       <div class="menu-container">
         <div class="menu-toolbar">
           <div class="toolbar-top-row">
@@ -1353,6 +1372,7 @@
         </div>
       </div>
     `;
+    }
     
     // Load appointments after rendering the basic structure
     // Use setTimeout to ensure DOM is ready
@@ -2939,6 +2959,45 @@
     const currentPath = window.location.hash;
     const appointmentMatch = currentPath.match(/[?&]appointment=([^&]+)/);
     const appointmentId = appointmentMatch ? appointmentMatch[1] : null;
+    const compactNewAppointmentButton = useSidebarMenuOnPortraitMobile();
+    const compactCalendarToolbar = useSidebarMenuOnPortraitMobile();
+    let calendar = null;
+    const calendarHeaderToolbar = compactCalendarToolbar
+      ? {
+          left: 'prev',
+          center: 'title',
+          right: 'next'
+        }
+      : {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,listWeek'
+        };
+
+    function toLocalYmd(dateValue) {
+      const d = new Date(dateValue);
+      if (!Number.isFinite(d.getTime())) return null;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function decorateMobileMonthDots() {
+      if (!compactCalendarToolbar || !calendar || calendar.view?.type !== 'dayGridMonth') return;
+      const dayCells = calendarEl.querySelectorAll('.fc-daygrid-day[data-date]');
+      const eventDays = new Set();
+      calendar.getEvents().forEach((event) => {
+        if (!event.start) return;
+        const day = toLocalYmd(event.start);
+        if (day) eventDays.add(day);
+      });
+      dayCells.forEach((cell) => {
+        const date = cell.getAttribute('data-date');
+        const hasEvent = !!date && eventDays.has(date);
+        cell.classList.toggle('fc-mobile-has-event', hasEvent);
+      });
+    }
     
     appRoot.innerHTML = wrapWithSidebar(`
         <div class="space-between section-header">
@@ -2969,11 +3028,21 @@
               gap: 8px;
               transition: all 0.2s ease;
             ">
-              <span>+</span>
-              <span>${usesJobPipeline() ? `New ${appointmentEntitySingular()}` : t('newAppointment')}</span>
+              ${compactNewAppointmentButton
+                ? `<span>+</span>`
+                : `<span>+</span><span>${usesJobPipeline() ? `New ${appointmentEntitySingular()}` : t('newAppointment')}</span>`}
             </button>
           </div>
         </div>
+      ${compactCalendarToolbar ? `
+      <div class="calendar-mobile-controls" aria-label="Calendar controls">
+        <button id="calendar-mobile-today-btn" class="button secondary">${t('today')}</button>
+        <div class="calendar-mobile-view-group">
+          <button id="calendar-mobile-list-btn" class="button secondary">${t('list')}</button>
+          <button id="calendar-mobile-month-btn" class="button secondary">${t('month')}</button>
+        </div>
+      </div>
+      ` : ''}
       <div class="card" id="calendar-container">
         <div id="calendar"></div>
       </div>
@@ -2985,8 +3054,9 @@
     `);
 
     const calendarEl = document.getElementById('calendar');
-    const calendar = new FullCalendar.Calendar(calendarEl, {
+    calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'listWeek',
+      headerToolbar: calendarHeaderToolbar,
       height: 'auto',
       selectable: true,
       locale: getLang(),
@@ -3003,11 +3073,24 @@
         day: t('day'),
         list: t('list')
       },
-        dayHeaderFormat: { weekday: 'short' },
-      headerToolbar: {
-        left: 'prev,next today',
-        center: 'title',
-        right: 'listWeek,dayGridMonth'
+      dayHeaderFormat: { weekday: 'short' },
+      datesSet: (info) => {
+        if (!compactCalendarToolbar) return;
+        const todayBtn = document.getElementById('calendar-mobile-today-btn');
+        const listBtn = document.getElementById('calendar-mobile-list-btn');
+        const monthBtn = document.getElementById('calendar-mobile-month-btn');
+        const isList = info.view.type === 'listWeek';
+        const isMonth = info.view.type === 'dayGridMonth';
+        listBtn?.classList.toggle('secondary', !isList);
+        monthBtn?.classList.toggle('secondary', !isMonth);
+        if (listBtn && isList) listBtn.classList.remove('secondary');
+        if (monthBtn && isMonth) monthBtn.classList.remove('secondary');
+        todayBtn?.classList.add('secondary');
+        setTimeout(decorateMobileMonthDots, 0);
+      },
+      eventsSet: () => {
+        if (!compactCalendarToolbar) return;
+        setTimeout(decorateMobileMonthDots, 0);
       },
       events: async (info, successCallback, failureCallback) => {
         try {
@@ -3091,6 +3174,22 @@
     globalCalendar = calendar;
     
     calendar.render();
+    decorateMobileMonthDots();
+
+    if (compactCalendarToolbar) {
+      const todayBtn = document.getElementById('calendar-mobile-today-btn');
+      const listBtn = document.getElementById('calendar-mobile-list-btn');
+      const monthBtn = document.getElementById('calendar-mobile-month-btn');
+      todayBtn?.addEventListener('click', () => {
+        calendar.today();
+      });
+      listBtn?.addEventListener('click', () => {
+        calendar.changeView('listWeek');
+      });
+      monthBtn?.addEventListener('click', () => {
+        calendar.changeView('dayGridMonth');
+      });
+    }
     
     // Add event listener for new appointment button
     document.getElementById('new-appointment-btn').addEventListener('click', () => {

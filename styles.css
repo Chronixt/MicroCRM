@@ -317,6 +317,18 @@ body::after {
   width: min(100%, 1080px);
   gap: clamp(18px, 3.5vh, 34px);
 }
+.menu-home-panel {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2.8vh, 24px);
+  width: min(100%, 900px);
+  margin: 0 auto;
+  padding: clamp(6px, 1vh, 12px) 0;
+}
+.menu-home-panel .menu-welcome-block { margin-bottom: 0; }
+.menu-home-panel .todays-appointments {
+  width: min(100%, 560px);
+}
 
 .menu-welcome-block { margin-bottom: var(--space-2); width: min(100%, 860px); }
 .menu-welcome-title {
@@ -539,6 +551,18 @@ button.menu-tile {
   .menu-tiles { grid-template-columns: repeat(2, minmax(120px, 1fr)); width: 100%; }
   .global-search-container { order: 3; flex-basis: 100%; max-width: none; min-width: 0; }
   .lang-toolbar-group { margin-left: 0; margin-inline-start: auto; }
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+  .layout .sidebar {
+    padding-top: calc(var(--sidebar-top-offset, clamp(4px, 0.8vh, 8px)) + 12px);
+  }
+  .content .content-toolbar + * {
+    margin-top: clamp(14px, 3vh, 24px);
+  }
+  .menu-home-panel {
+    padding-top: 0;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1176,6 +1200,130 @@ select option { color: black; }
 /* Make Month and List buttons same width */
 .fc .fc-toolbar-chunk .fc-button-group .fc-button {
   min-width: 90px;
+}
+
+@media (max-width: 768px) {
+  .fc .fc-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "left title right";
+    column-gap: 10px;
+    align-items: center;
+  }
+  .fc .fc-toolbar-chunk {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+  .fc .fc-toolbar-chunk:nth-child(1) {
+    grid-area: left;
+    justify-content: flex-start;
+  }
+  .fc .fc-toolbar-chunk:nth-child(2) {
+    grid-area: title;
+    justify-content: center;
+  }
+  .fc .fc-toolbar-title {
+    font-size: clamp(0.78rem, 3.1vw, 1rem);
+    line-height: 1.2;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+  }
+  .fc .fc-toolbar-chunk:nth-child(3) {
+    grid-area: right;
+    justify-content: flex-end;
+  }
+  .fc .fc-button {
+    min-height: 40px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  .fc .fc-button .fc-icon {
+    font-size: 1.1em;
+  }
+  .fc .fc-toolbar-chunk .fc-button-group .fc-button {
+    min-width: auto;
+  }
+  .calendar-mobile-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 6px 0 10px;
+  }
+  .calendar-mobile-view-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .calendar-mobile-controls .button {
+    margin-top: 0;
+    padding: 8px 12px;
+    min-height: 38px;
+    font-size: 12px;
+  }
+  .fc .fc-dayGridMonth-view .fc-scrollgrid-section-header,
+  .fc .fc-dayGridMonth-view .fc-col-header {
+    display: none;
+  }
+  .fc .fc-dayGridMonth-view .fc-scrollgrid,
+  .fc .fc-dayGridMonth-view .fc-scrollgrid td,
+  .fc .fc-dayGridMonth-view .fc-scrollgrid th {
+    border-color: transparent !important;
+  }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day-top {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex-direction: column !important;
+    min-height: 26px !important;
+    padding: 2px 0 0 !important;
+    margin: 0 !important;
+  }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day-number {
+    float: none !important;
+    width: 100% !important;
+    text-align: center !important;
+    font-size: 0.5em !important;
+    display: inline-flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+  }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day.fc-daygrid-day-has-event .fc-daygrid-day-number::after,
+  .fc .fc-dayGridMonth-view .fc-daygrid-day.fc-daygrid-day-has-events .fc-daygrid-day-number::after,
+  .fc .fc-dayGridMonth-view .fc-daygrid-day.fc-mobile-has-event .fc-daygrid-day-number::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    margin-top: 2px;
+    border-radius: 50%;
+    background: #fbb817;
+    display: block;
+  }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day-events,
+  .fc .fc-dayGridMonth-view .fc-daygrid-event-harness,
+  .fc .fc-dayGridMonth-view .fc-daygrid-event-harness-abs {
+    display: none !important;
+  }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day,
+  .fc .fc-dayGridMonth-view .fc-daygrid-day-frame {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    aspect-ratio: 1 / 1;
+  }
+  .fc .fc-dayGridMonth-view .fc-daygrid-day-events {
+    min-height: 0 !important;
+    max-height: calc(100% - 26px) !important;
+    overflow: hidden !important;
+  }
 }
 
 /* FullCalendar grid and day box sizing - Force fixed heights */
