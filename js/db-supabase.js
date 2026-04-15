@@ -45,6 +45,21 @@
     return `${y}-${m}-${d}`;
   }
 
+  function normalizeDateTimeToISO(dateValue) {
+    if (!dateValue) return null;
+    if (typeof dateValue === 'string') {
+      const trimmed = dateValue.trim();
+      if (!trimmed) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T00:00:00.000Z`;
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+      return null;
+    }
+    const parsed = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+
   function toSnake(obj) {
     if (obj == null) return obj;
     const map = {
@@ -492,8 +507,8 @@
   // --- Notes ---
   async function createNote(note) {
     const date = normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(new Date());
-    const createdAt = normalizeDateToYYYYMMDD(note.createdAt) || new Date().toISOString().split('T')[0];
-    const editedDate = note.editedDate ? normalizeDateToYYYYMMDD(note.editedDate) : undefined;
+    const createdAt = normalizeDateTimeToISO(note.createdAt) || new Date().toISOString();
+    const editedDate = note.editedDate ? normalizeDateTimeToISO(note.editedDate) : undefined;
     const supabase = getClient();
     const row = {
       customer_id: parseInt(note.customerId),
@@ -538,8 +553,8 @@
       ...updatedNote,
       id: existingCamel.id,
       date: updatedNote.date ? normalizeDateToYYYYMMDD(updatedNote.date) : (existingCamel.date || normalizeDateToYYYYMMDD(new Date())),
-      editedDate: updatedNote.editedDate ? normalizeDateToYYYYMMDD(updatedNote.editedDate) : existingCamel.editedDate,
-      createdAt: existingCamel.createdAt || normalizeDateToYYYYMMDD(updatedNote.createdAt) || new Date().toISOString().split('T')[0]
+      editedDate: updatedNote.editedDate ? normalizeDateTimeToISO(updatedNote.editedDate) : existingCamel.editedDate,
+      createdAt: existingCamel.createdAt || normalizeDateTimeToISO(updatedNote.createdAt) || new Date().toISOString()
     };
     // Only send real DB columns; UI-only fields like `source` must never be written.
     const row = {
@@ -846,17 +861,20 @@
         state: c.state ?? null,
         postcode: c.postcode ?? null,
         country: c.country ?? null,
-        updated_at: new Date().toISOString()
+        // Preserve source update timestamp during imports so chronology is not flattened.
+        updated_at: c.updatedAt || new Date().toISOString()
       };
     }
 
     let mergeMatch = null;
+    let mergeIndexCustomer = null;
     if (mode === 'merge') {
       const existingCustomers = await getAllCustomers();
       const byId = new Map();
       const byContact = new Map();
       const bySocial = new Map();
       const byNamePhone = new Map();
+      const byNameOnly = new Map();
 
       function addUnique(map, key, customer) {
         if (!key) return;
@@ -865,12 +883,16 @@
         map.set(key, arr);
       }
 
-      existingCustomers.forEach((ec) => {
+      function indexCustomerForMerge(ec) {
+        if (!ec || ec.id == null) return;
         byId.set(String(ec.id), ec);
         addUnique(byContact, normalizePhone(ec.contactNumber), ec);
         addUnique(bySocial, normalizeText(ec.socialMediaName), ec);
         addUnique(byNamePhone, `${normalizeText(ec.firstName)}|${normalizeText(ec.lastName)}|${normalizePhone(ec.contactNumber)}`, ec);
-      });
+        addUnique(byNameOnly, `${normalizeText(ec.firstName)}|${normalizeText(ec.lastName)}`, ec);
+      }
+
+      existingCustomers.forEach(indexCustomerForMerge);
 
       function pickUnique(map, key) {
         const arr = map.get(key) || [];
@@ -879,11 +901,11 @@
 
       mergeMatch = function findExistingCustomer(c) {
         const oldIdKey = c && c.id != null ? String(c.id) : '';
-        if (oldIdKey && byId.has(oldIdKey)) return byId.get(oldIdKey);
-
         const phoneKey = normalizePhone(c.contactNumber);
         const socialKey = normalizeText(c.socialMediaName);
         const namePhoneKey = `${normalizeText(c.firstName)}|${normalizeText(c.lastName)}|${phoneKey}`;
+        const nameOnlyKey = `${normalizeText(c.firstName)}|${normalizeText(c.lastName)}`;
+        const idHit = oldIdKey && byId.has(oldIdKey) ? byId.get(oldIdKey) : null;
 
         // Prefer unique phone match, then unique social handle, then unique name+phone.
         if (phoneKey) {
@@ -898,7 +920,16 @@
           const hit = pickUnique(byNamePhone, namePhoneKey);
           if (hit) return hit;
         }
-        return null;
+        // Fallback for sparse records where contact/social are blank but full name is unique.
+        if (nameOnlyKey !== '|') {
+          const hit = pickUnique(byNameOnly, nameOnlyKey);
+          if (hit) return hit;
+        }
+        return idHit || null;
+      };
+
+      mergeIndexCustomer = function mergeIndexCustomerFn(customer) {
+        indexCustomerForMerge(customer);
       };
     }
 
@@ -919,6 +950,13 @@
         const insertRow = customerInsertRow(c);
         const res = throwIfError(await supabase.from('customers').insert(insertRow).select('id').single());
         finalCustomerId = res.data.id;
+      }
+
+      if (mode === 'merge' && typeof mergeIndexCustomer === 'function') {
+        mergeIndexCustomer({
+          ...c,
+          id: finalCustomerId
+        });
       }
 
       importedCustomerIds.add(finalCustomerId);
