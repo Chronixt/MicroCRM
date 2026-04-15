@@ -9,6 +9,8 @@
   const APP_LOCK_SALT = productConfig.config?.appLockSalt || 'tradie_salt';
   const PRODUCT_THEME = productConfig.config?.theme || {};
   const NATIVE_DRIVER_MODE_KEY = `${STORAGE_PREFIX}native_driver_mode`;
+  const SIDEBAR_COLLAPSED_KEY = `${STORAGE_PREFIX}sidebar_collapsed`;
+  const SIDEBAR_TOP_OFFSET_KEY = `${STORAGE_PREFIX}sidebar_top_offset`;
   const RUNTIME_INFO = {
     email: null
   };
@@ -70,6 +72,57 @@
     const next = mode === 'sqlite_test' ? 'sqlite_test' : 'adapter';
     localStorage.setItem(NATIVE_DRIVER_MODE_KEY, next);
     return next;
+  }
+
+  function isSidebarCollapsed() {
+    const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (stored === null) return window.matchMedia('(max-width: 480px)').matches;
+    return stored === 'true';
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+    return collapsed;
+  }
+
+  function getCachedSidebarTopOffset() {
+    const raw = localStorage.getItem(SIDEBAR_TOP_OFFSET_KEY);
+    if (!raw) return null;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) return null;
+    return Math.round(parsed);
+  }
+
+  function setCachedSidebarTopOffset(px) {
+    if (!Number.isFinite(px) || px < 0) return;
+    localStorage.setItem(SIDEBAR_TOP_OFFSET_KEY, String(Math.round(px)));
+  }
+
+  function sidebarToggleIconSvg(collapsed) {
+    // Collapsed: hamburger + right chevron (open).
+    // Expanded: left chevron + hamburger (close).
+    if (collapsed) {
+      return `
+        <svg viewBox="0 0 28 16" width="18" height="18" aria-hidden="true" focusable="false">
+          <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="4" x2="14" y2="4"></line>
+            <line x1="4" y1="8" x2="14" y2="8"></line>
+            <line x1="4" y1="12" x2="14" y2="12"></line>
+            <polyline points="18,4 24,8 18,12"></polyline>
+          </g>
+        </svg>
+      `;
+    }
+    return `
+      <svg viewBox="0 0 28 16" width="18" height="18" aria-hidden="true" focusable="false">
+        <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="10,4 4,8 10,12"></polyline>
+          <line x1="14" y1="4" x2="24" y2="4"></line>
+          <line x1="14" y1="8" x2="24" y2="8"></line>
+          <line x1="14" y1="12" x2="24" y2="12"></line>
+        </g>
+      </svg>
+    `;
   }
 
   async function initializeStorageDriverLayer() {
@@ -217,8 +270,28 @@
     });
   }
 
-  function runtimeBannerHtml() {
+  function attachSidebarToggleHandler() {
+    const btn = document.getElementById('sidebar-toggle-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const layout = document.querySelector('.layout');
+      if (!layout) return;
+      const next = !layout.classList.contains('sidebar-collapsed');
+      layout.classList.toggle('sidebar-collapsed', next);
+      setSidebarCollapsed(next);
+      const nextLabel = next ? 'Expand sidebar menu' : 'Collapse sidebar menu';
+      btn.setAttribute('aria-label', nextLabel);
+      btn.setAttribute('title', nextLabel);
+      btn.setAttribute('aria-expanded', next ? 'false' : 'true');
+      btn.innerHTML = sidebarToggleIconSvg(next);
+      // Re-sync offset after layout animation completes.
+      setTimeout(adjustSidebarOffset, 240);
+    });
+  }
+
+  function runtimeBannerHtml(options = {}) {
     if (window.SHOW_ENV_BANNER === false) return '';
+    const compact = options.compact === true;
     const env = window.APP_ENV_LABEL || 'LOCAL DEV';
     const backend = productConfig.useSupabase ? 'SUPABASE' : 'INDEXEDDB';
     const schema = productConfig.supabaseSchema || 'public';
@@ -229,11 +302,19 @@
     const toneBg = isTestUser ? 'rgba(16,185,129,0.18)' : 'rgba(245,158,11,0.18)';
     const toneBorder = isTestUser ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)';
     const toneText = isTestUser ? '#a7f3d0' : '#fde68a';
+    const toneVars = `--rb-bg:${toneBg};--rb-border:${toneBorder};--rb-text:${toneText};`;
     const signOutButton = productConfig.useSupabase && RUNTIME_INFO.email
-      ? '<button type=\"button\" data-action=\"runtime-signout\" style=\"margin-left:8px;padding:2px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.15);color:inherit;font-size:11px;cursor:pointer;\">Sign Out</button>'
+      ? '<button type=\"button\" data-action=\"runtime-signout\" class=\"runtime-signout-btn\">Sign Out</button>'
       : '';
+    if (compact) {
+      return `
+        <div class="runtime-banner runtime-banner--compact" style="${toneVars}" title="${env} | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}">
+          <strong>${env}</strong>&nbsp;|&nbsp;${productLabel}&nbsp;|&nbsp;${user}${signOutButton}
+        </div>
+      `;
+    }
     return `
-      <div class="runtime-banner" style="margin: 0 0 10px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid ${toneBorder}; background: ${toneBg}; color: ${toneText}; font-size: 12px; line-height: 1.35;">
+      <div class="runtime-banner runtime-banner--full" style="${toneVars}">
         <strong>${env}</strong> | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
       </div>
     `;
@@ -1023,8 +1104,18 @@
   }
 
   function getWelcomeMenuMessage() {
-    const template = String(t('welcomeMenuMessage') || 'Welcome back {firstName}, ready for today?');
     const firstNameOrEmail = RUNTIME_INFO.email || '{firstName}';
+    const product = productConfig.activeProduct || 'core';
+    let defaultTemplate = 'Welcome back {firstName}, ready for today?';
+    if (product === 'hairdresser') {
+      defaultTemplate = 'Welcome back {firstName}, who are we making beautiful today?';
+    } else if (product === 'tradie') {
+      defaultTemplate = 'Welcome back {firstName}, what job are we tackling today?';
+    }
+    const translated = t('welcomeMenuMessage');
+    const template = String(
+      translated && translated !== 'welcomeMenuMessage' ? translated : defaultTemplate
+    );
     return escapeHtml(template.replace('{firstName}', firstNameOrEmail));
   }
   function formatReferralType(value) {
@@ -1181,6 +1272,7 @@
     attachLangToggleHandler();
     attachVerticalBackupHandler();
     attachRuntimeBannerHandlers();
+    attachSidebarToggleHandler();
     
     // Show FAB/search on products that enable the job pipeline.
     if (usesJobPipeline()) {
@@ -1204,15 +1296,17 @@
     appRoot.innerHTML = `
       <div class="menu-container">
         <div class="menu-toolbar">
-          <div class="lang-toolbar-group">
+          <div class="toolbar-top-row">
+            ${runtimeBannerHtml({ compact: true })}
+            <div class="lang-toolbar-group">
               <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
               <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
             </div>
+          </div>
         </div>
         <div class="menu-content">
-          ${runtimeBannerHtml()}
-          <div style="margin-bottom: 14px;">
-            <div style="font-size: clamp(1.05rem, 2.4vw, 1.65rem); font-weight: 700; line-height: 1.25; letter-spacing: 0.01em;">${getWelcomeMenuMessage()}</div>
+          <div class="menu-welcome-block">
+            <div class="menu-welcome-title">${getWelcomeMenuMessage()}</div>
           </div>
           <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
@@ -1242,7 +1336,7 @@
               <div class="tile-icon" aria-hidden="true">🚨</div>
               <div class="tile-label">${t('emergencyBackup')}</div>
             </a>
-            <button class="menu-tile" id="daily-backup-btn" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); border: none; cursor: pointer;">
+            <button class="menu-tile menu-tile--backup" id="daily-backup-btn" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); cursor: pointer;">
               <div class="tile-icon" aria-hidden="true">📥</div>
               <div class="tile-label">1-tap Backup</div>
             </button>
@@ -1251,7 +1345,7 @@
           <div class="todays-appointments">
             <h3>${t('todaysAppointments')}</h3>
             <div class="no-appointments">${t('noAppointmentsToday')}</div>
-            <button id="refresh-appointments" style="margin-top: 10px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: white; cursor: pointer;">Refresh</button>
+            <button id="refresh-appointments" class="refresh-appointments-btn">Refresh</button>
           </div>
         </div>
       </div>
@@ -1354,9 +1448,19 @@
 
   function wrapWithSidebar(contentHtml) {
     const lang = getLang();
+    const collapsed = isSidebarCollapsed();
+    const cachedSidebarTopOffset = getCachedSidebarTopOffset();
+    const toggleLabel = collapsed ? 'Expand sidebar menu' : 'Collapse sidebar menu';
+    const toggleIcon = sidebarToggleIconSvg(collapsed);
+    const sidebarInlineStyle = cachedSidebarTopOffset != null
+      ? ` style="--sidebar-top-offset: ${cachedSidebarTopOffset}px;"`
+      : '';
     return `
-      <div class="layout">
-        <aside class="sidebar">
+      <div class="layout ${collapsed ? 'sidebar-collapsed' : ''}">
+        <aside class="sidebar"${sidebarInlineStyle}>
+          <div class="sidebar-controls">
+            <button type="button" id="sidebar-toggle-btn" class="sidebar-icon-btn" aria-label="${toggleLabel}" title="${toggleLabel}" aria-expanded="${collapsed ? 'false' : 'true'}">${toggleIcon}</button>
+          </div>
           <nav class="sidebar-tiles" aria-label="Sidebar menu">
             <a class="menu-tile small" href="#/" aria-label="Menu">
               <div class="tile-icon" aria-hidden="true">🏠</div>
@@ -1384,20 +1488,20 @@
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
             </a>
-            <button class="menu-tile small" id="daily-backup-btn-vertical" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); border: none; cursor: pointer;">
+            <button class="menu-tile small menu-tile--backup" id="daily-backup-btn-vertical" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); cursor: pointer;">
               <div class="tile-icon" aria-hidden="true">📥</div>
               <div class="tile-label">1-tap Backup</div>
             </button>
           </nav>
         </aside>
         <section class="content">
-          ${runtimeBannerHtml()}
-          <div class="content-toolbar" style="display: flex; align-items: center; gap: 12px;">
+          <div class="content-toolbar">
+            ${runtimeBannerHtml({ compact: true })}
             ${usesJobPipeline() ? `
-            <div class="global-search-container" style="flex: 1; max-width: 300px; position: relative;">
-              <input type="text" id="global-search-input" placeholder="Search customers, ${appointmentEntityPlural().toLowerCase()}..." style="width: 100%; padding: 6px 32px 6px 12px; font-size: 13px; border-radius: 6px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: var(--text);" />
-              <span style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
-              <div id="global-search-results" class="search-results-dropdown" style="display: none;"></div>
+            <div class="global-search-container">
+              <input type="text" id="global-search-input" class="global-search-input" placeholder="Search customers, ${appointmentEntityPlural().toLowerCase()}..." />
+              <span class="global-search-icon" aria-hidden="true">&#128269;</span>
+              <div id="global-search-results" class="search-results-dropdown search-results-dropdown--hidden"></div>
             </div>
             ` : ''}
             <div class="lang-toolbar-group">
@@ -1418,7 +1522,7 @@
     clearTempNewCustomerDraft();
     
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between" style="margin-bottom: 8px;">
+      <div class="space-between section-header">
         <h2>${t('newCustomer')}</h2>
       </div>
       <div class="card">
@@ -1665,7 +1769,7 @@
 
   async function renderFind() {
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between" style="margin-bottom: 8px;">
+      <div class="space-between section-header">
         <h2>${t('customers')}</h2>
       </div>
       <div class="card">
@@ -2834,7 +2938,7 @@
     const appointmentId = appointmentMatch ? appointmentMatch[1] : null;
     
     appRoot.innerHTML = wrapWithSidebar(`
-        <div class="space-between" style="margin-bottom: 8px;">
+        <div class="space-between section-header">
           <h2>${usesJobPipeline() ? appointmentEntityPlural() : t('calendar')}</h2>
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             ${usesJobPipeline() ? `
@@ -4066,7 +4170,7 @@
     }
 
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between" style="margin-bottom: 8px;">
+      <div class="space-between section-header">
         <h2>${t('followUps')}</h2>
         <button id="add-reminder-btn" class="button" style="padding: 8px 16px;">
           + ${t('newReminder')}
@@ -5044,7 +5148,7 @@
   async function renderBackup() {
     const db = getDataApi();
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between" style="margin-bottom: 8px;">
+      <div class="space-between section-header">
         <h2>Options</h2>
       </div>
       
@@ -6605,7 +6709,7 @@
 
   async function renderEmergencyBackup() {
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between" style="margin-bottom: 8px;">
+      <div class="space-between section-header">
         <h2>${t('emergencyBackup')}</h2>
       </div>
       <div class="card">
@@ -7250,6 +7354,17 @@
     const content = layout.querySelector('.content');
     const sidebar = layout.querySelector('.sidebar');
     if (!content || !sidebar) return;
+    const toolbar = content.querySelector('.content-toolbar');
+    if (toolbar) {
+      const toolbarHeight = Math.max(0, Math.round(toolbar.getBoundingClientRect().height));
+      const extraOffset = Math.round(toolbarHeight * 0.15);
+      // Keep sidebar controls aligned with the top content frame.
+      const resolvedOffset = toolbarHeight + 4 + extraOffset;
+      sidebar.style.setProperty('--sidebar-top-offset', `${resolvedOffset}px`);
+      setCachedSidebarTopOffset(resolvedOffset);
+    } else {
+      sidebar.style.removeProperty('--sidebar-top-offset');
+    }
     const firstCard = content.querySelector('.card');
     const layoutRect = layout.getBoundingClientRect();
     if (firstCard) {
@@ -11155,4 +11270,6 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
 
 })();
+
+
 
