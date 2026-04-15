@@ -983,6 +983,46 @@
       return null;
     }
 
+    function hashText(value) {
+      const text = String(value || '');
+      let hash = 5381;
+      for (let i = 0; i < text.length; i += 1) {
+        hash = ((hash << 5) + hash) + text.charCodeAt(i);
+        hash &= 0xffffffff;
+      }
+      return String(hash >>> 0);
+    }
+
+    function normalizeNoteMergeDate(value) {
+      const ymd = normalizeDateToYYYYMMDD(value);
+      if (ymd) return ymd;
+      const iso = normalizeDateTimeToISO(value);
+      if (!iso) return '';
+      return iso.split('T')[0];
+    }
+
+    function noteSignatureKey(note, customerId) {
+      const createdKey = normalizeDateTimeToISO(note && note.createdAt) || '';
+      const dateKey = normalizeNoteMergeDate(note && note.date);
+      const noteNumberKey = note && note.noteNumber != null ? String(note.noteNumber) : '';
+      const svgKey = hashText(note && note.svg);
+      return `sig:${customerId}:${noteNumberKey}:${dateKey}:${createdKey}:${svgKey}`;
+    }
+
+    const mergeNoteById = new Map();
+    const mergeNoteBySignature = new Map();
+    function indexMergeNote(note) {
+      if (!note || note.customerId == null || note.id == null) return;
+      const customerIdNum = parseInt(note.customerId, 10);
+      if (Number.isNaN(customerIdNum)) return;
+      mergeNoteById.set(`id:${customerIdNum}:${String(note.id)}`, note);
+      mergeNoteBySignature.set(noteSignatureKey(note, customerIdNum), note);
+    }
+    if (mode === 'merge') {
+      const existingNotes = await getAllNotes();
+      existingNotes.forEach(indexMergeNote);
+    }
+
     for (const a of appointments) {
       const rawCustomerId = extractAppointmentCustomerId(a);
       const newCustomerId = resolveImportedCustomerId(rawCustomerId);
@@ -1006,7 +1046,22 @@
           continue;
         }
         const n = { ...note, customerId: newCid };
-        await createNote(n);
+        if (mode === 'merge') {
+          const idKey = `id:${newCid}:${String(note && note.id != null ? note.id : '')}`;
+          const sigKey = noteSignatureKey(n, newCid);
+          const existingById = note && note.id != null ? mergeNoteById.get(idKey) : null;
+          const existingBySig = mergeNoteBySignature.get(sigKey);
+          const existing = existingById || existingBySig || null;
+          if (existing && existing.id != null) {
+            const updated = await updateNote(existing.id, n);
+            indexMergeNote(updated);
+          } else {
+            const created = await createNote(n);
+            indexMergeNote(created);
+          }
+        } else {
+          await createNote(n);
+        }
       }
     }
     if (orphanNotes.length > 0) {
