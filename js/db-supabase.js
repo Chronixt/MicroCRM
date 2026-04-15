@@ -1053,11 +1053,11 @@
           const existingBySig = mergeNoteBySignature.get(sigKey);
           const existing = existingById || existingBySig || null;
           if (existing && existing.id != null) {
-            const updated = await updateNote(existing.id, n);
-            indexMergeNote(updated);
+            await updateNote({ ...n, id: existing.id });
+            indexMergeNote({ ...existing, ...n, id: existing.id, customerId: newCid });
           } else {
-            const created = await createNote(n);
-            indexMergeNote(created);
+            const createdId = await createNote(n);
+            indexMergeNote({ ...n, id: createdId, customerId: newCid });
           }
         } else {
           await createNote(n);
