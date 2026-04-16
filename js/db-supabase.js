@@ -280,10 +280,46 @@
     const uid = session?.user?.id;
     if (!uid) throw new Error('Not authenticated');
 
-    const BATCH_SIZE = 200;
+    function isStatementTimeout(errorLike) {
+      const message = String(errorLike?.message || '');
+      const code = String(errorLike?.code || '');
+      return (
+        code === '57014' ||
+        message.indexOf('statement timeout') !== -1 ||
+        message.indexOf('canceling statement due to statement timeout') !== -1
+      );
+    }
+
+    async function deleteIdsAdaptive(table, idColumn, ids, initialChunkSize) {
+      let deleted = 0;
+      let idx = 0;
+      let chunkSize = Math.max(1, Math.min(initialChunkSize, ids.length));
+      while (idx < ids.length) {
+        const slice = ids.slice(idx, idx + chunkSize);
+        const delRes = await supabase.from(table).delete().in(idColumn, slice);
+        if (!delRes.error) {
+          deleted += slice.length;
+          idx += slice.length;
+          continue;
+        }
+
+        if (!isStatementTimeout(delRes.error)) throwIfError(delRes);
+
+        if (chunkSize <= 1) {
+          // Single-row timeout is unlikely but possible under heavy load.
+          throwIfError(delRes);
+        }
+        chunkSize = Math.max(1, Math.floor(chunkSize / 2));
+      }
+      return deleted;
+    }
+
+    const FETCH_BATCH_SIZE = 120;
     async function deleteOwnedByIdBatches(table, idColumn = 'id') {
       let deletedCount = 0;
       let loops = 0;
+      const isImagesTable = table === 'images';
+      const initialDeleteChunkSize = isImagesTable ? 8 : 40;
       while (true) {
         loops += 1;
         if (loops > 20000) throw new Error(`Delete failed: too many loops for ${table}`);
@@ -292,13 +328,11 @@
           .select(idColumn)
           .eq('owner_user_id', uid)
           .order(idColumn, { ascending: true })
-          .limit(BATCH_SIZE);
+          .limit(FETCH_BATCH_SIZE);
         throwIfError(fetchRes);
         const ids = (fetchRes.data || []).map((row) => row[idColumn]).filter((v) => v != null);
         if (ids.length === 0) break;
-        const delRes = await supabase.from(table).delete().in(idColumn, ids);
-        throwIfError(delRes);
-        deletedCount += ids.length;
+        deletedCount += await deleteIdsAdaptive(table, idColumn, ids, initialDeleteChunkSize);
       }
       return deletedCount;
     }
