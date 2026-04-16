@@ -891,6 +891,7 @@
     const supabase = getClient();
     const customerIdMap = {};
     const importedCustomerIds = new Set();
+    const existingCustomerIds = new Set();
 
     function normalizeText(value) {
       return String(value || '').trim().toLowerCase();
@@ -956,6 +957,7 @@
 
       function indexCustomerForMerge(ec) {
         if (!ec || ec.id == null) return;
+        existingCustomerIds.add(parseInt(ec.id, 10));
         byId.set(String(ec.id), ec);
         addUnique(byContact, normalizePhone(ec.contactNumber), ec);
         addUnique(bySocial, normalizeText(ec.socialMediaName), ec);
@@ -1051,6 +1053,7 @@
         if (customerIdMap[key] != null) return customerIdMap[key];
       }
       if (!Number.isNaN(parsed) && importedCustomerIds.has(parsed)) return parsed;
+      if (mode === 'merge' && !Number.isNaN(parsed) && existingCustomerIds.has(parsed)) return parsed;
       return null;
     }
 
