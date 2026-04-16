@@ -91,11 +91,17 @@
         if (page.length === 0) break;
         for (var i = 0; i < page.length; i++) {
           var row = page[i];
-          var dataRes = await supabase
-            .from('images')
-            .select('data_url')
-            .eq('id', row.id)
-            .maybeSingle();
+          var dataRes = null;
+          try {
+            dataRes = await supabase
+              .from('images')
+              .select('data_url')
+              .eq('id', row.id)
+              .maybeSingle();
+          } catch (e) {
+            skippedImageIds.push(row.id);
+            continue;
+          }
           if (dataRes.error || !dataRes.data || !dataRes.data.data_url) {
             skippedImageIds.push(row.id);
             continue;
@@ -708,19 +714,48 @@
     var images = imageResult.images;
     var imageWarning = imageResult.warning;
     if (progressCallback) progressCallback('Exported ' + images.length + ' images', 70);
-    var payload = {
-      __meta: {
-        app: APP_SLUG,
-        version: 4,
-        exportedAt: new Date().toISOString(),
-        backupType: 'images-only',
-        warnings: imageWarning ? [imageWarning] : []
-      },
-      images: images
-    };
-    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    var warnings = imageWarning ? [imageWarning] : [];
+    function tryBuildBlob(imagesSubset) {
+      var payload = {
+        __meta: {
+          app: APP_SLUG,
+          version: 4,
+          exportedAt: new Date().toISOString(),
+          backupType: 'images-only',
+          warnings: warnings
+        },
+        images: imagesSubset
+      };
+      return new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    }
+    var blob = null;
+    var exportedImages = images;
+    try {
+      blob = tryBuildBlob(images);
+    } catch (e) {
+      var msg = String((e && e.message) || e || '');
+      var isTooLarge = msg.toLowerCase().indexOf('invalid string length') !== -1;
+      if (!isTooLarge) throw e;
+
+      var low = 0;
+      var high = images.length;
+      var bestCount = 0;
+      while (low <= high) {
+        var mid = Math.floor((low + high) / 2);
+        try {
+          blob = tryBuildBlob(images.slice(0, mid));
+          bestCount = mid;
+          low = mid + 1;
+        } catch (innerErr) {
+          high = mid - 1;
+        }
+      }
+      exportedImages = images.slice(0, bestCount);
+      warnings.push('Image export truncated by browser memory limits: exported ' + bestCount + '/' + images.length + ' images.');
+      blob = tryBuildBlob(exportedImages);
+    }
     if (progressCallback) progressCallback('Images-only export complete!', 100);
-    return { blob: blob, imageCount: images.length };
+    return { blob: blob, imageCount: exportedImages.length };
   }
   async function importAllData(data, options) {
     if (!data || !data.customers) throw new Error('Invalid backup data');

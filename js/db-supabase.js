@@ -190,11 +190,17 @@
         if (page.length === 0) break;
 
         for (const row of page) {
-          const dataRes = await supabase
-            .from('images')
-            .select('data_url')
-            .eq('id', row.id)
-            .maybeSingle();
+          let dataRes = null;
+          try {
+            dataRes = await supabase
+              .from('images')
+              .select('data_url')
+              .eq('id', row.id)
+              .maybeSingle();
+          } catch (e) {
+            skippedImageIds.push(row.id);
+            continue;
+          }
           if (dataRes.error || !dataRes.data || !dataRes.data.data_url) {
             skippedImageIds.push(row.id);
             continue;
@@ -853,18 +859,51 @@
     if (progressCallback) progressCallback('Starting images-only export...', 0);
     const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     if (progressCallback) progressCallback('Creating images export file...', 85);
-    const blob = new Blob([JSON.stringify({
-      __meta: {
-        app: 'chikas-db',
-        version: 3,
-        exportedAt: new Date().toISOString(),
-        backupType: 'images-only',
-        warnings: warning ? [warning] : []
-      },
-      images: imagesSerialized
-    }, null, 2)], { type: 'application/json' });
+    const warnings = warning ? [warning] : [];
+    function tryBuildBlob(imagesSubset) {
+      const payload = {
+        __meta: {
+          app: 'chikas-db',
+          version: 3,
+          exportedAt: new Date().toISOString(),
+          backupType: 'images-only',
+          warnings
+        },
+        images: imagesSubset
+      };
+      return new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    }
+
+    let blob = null;
+    let exportedImages = imagesSerialized;
+    try {
+      blob = tryBuildBlob(imagesSerialized);
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : e);
+      const isTooLarge = msg.toLowerCase().indexOf('invalid string length') !== -1;
+      if (!isTooLarge) throw e;
+
+      // Browser string limits vary; find the largest subset we can serialize.
+      let low = 0;
+      let high = imagesSerialized.length;
+      let bestCount = 0;
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        try {
+          const testBlob = tryBuildBlob(imagesSerialized.slice(0, mid));
+          blob = testBlob;
+          bestCount = mid;
+          low = mid + 1;
+        } catch {
+          high = mid - 1;
+        }
+      }
+      exportedImages = imagesSerialized.slice(0, bestCount);
+      warnings.push(`Image export truncated by browser memory limits: exported ${bestCount}/${imagesSerialized.length} images.`);
+      blob = tryBuildBlob(exportedImages);
+    }
     if (progressCallback) progressCallback('Images-only export complete!', 100);
-    return { blob, imageCount: imagesSerialized.length };
+    return { blob, imageCount: exportedImages.length };
   }
 
   async function clearAllStores() {
