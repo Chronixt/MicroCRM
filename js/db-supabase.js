@@ -269,24 +269,61 @@
       code === 'PGRST202' ||
       msg.indexOf('Could not find the function') !== -1 ||
       msg.indexOf('delete_my_data') !== -1;
-    if (!isMissingRpc) throwIfError(rpcRes);
+    const isTimeout =
+      code === '57014' ||
+      msg.indexOf('statement timeout') !== -1 ||
+      msg.indexOf('canceling statement due to statement timeout') !== -1;
+    if (!isMissingRpc && !isTimeout) throwIfError(rpcRes);
 
-    // Fallback path for environments where migration has not been applied yet.
+    // Fallback path for environments where migration is missing or RPC times out.
     const session = await getSession();
     const uid = session?.user?.id;
     if (!uid) throw new Error('Not authenticated');
 
-    let deleted = { customers: 0, appointments: 0, images: 0, notes: 0, noteVersions: 0, fallback: true };
-    const delNoteVersions = await supabase.from('note_versions').delete().eq('owner_user_id', uid).select('id');
-    throwIfError(delNoteVersions); deleted.noteVersions = (delNoteVersions.data || []).length;
-    const delNotes = await supabase.from('notes').delete().eq('owner_user_id', uid).select('id');
-    throwIfError(delNotes); deleted.notes = (delNotes.data || []).length;
-    const delImages = await supabase.from('images').delete().eq('owner_user_id', uid).select('id');
-    throwIfError(delImages); deleted.images = (delImages.data || []).length;
-    const delAppointments = await supabase.from('appointments').delete().eq('owner_user_id', uid).select('id');
-    throwIfError(delAppointments); deleted.appointments = (delAppointments.data || []).length;
-    const delCustomers = await supabase.from('customers').delete().eq('owner_user_id', uid).select('id');
-    throwIfError(delCustomers); deleted.customers = (delCustomers.data || []).length;
+    const BATCH_SIZE = 200;
+    async function deleteOwnedByIdBatches(table, idColumn = 'id') {
+      let deletedCount = 0;
+      let loops = 0;
+      while (true) {
+        loops += 1;
+        if (loops > 20000) throw new Error(`Delete failed: too many loops for ${table}`);
+        const fetchRes = await supabase
+          .from(table)
+          .select(idColumn)
+          .eq('owner_user_id', uid)
+          .order(idColumn, { ascending: true })
+          .limit(BATCH_SIZE);
+        throwIfError(fetchRes);
+        const ids = (fetchRes.data || []).map((row) => row[idColumn]).filter((v) => v != null);
+        if (ids.length === 0) break;
+        const delRes = await supabase.from(table).delete().in(idColumn, ids);
+        throwIfError(delRes);
+        deletedCount += ids.length;
+      }
+      return deletedCount;
+    }
+
+    let deleted = {
+      customers: 0,
+      appointments: 0,
+      images: 0,
+      notes: 0,
+      noteVersions: 0,
+      reminders: 0,
+      jobEvents: 0,
+      fallback: true,
+      rpcTimedOut: isTimeout
+    };
+
+    deleted.noteVersions = await deleteOwnedByIdBatches('note_versions', 'id');
+    deleted.notes = await deleteOwnedByIdBatches('notes', 'id');
+    deleted.images = await deleteOwnedByIdBatches('images', 'id');
+    if (SCHEMA === 'tradie') {
+      deleted.reminders = await deleteOwnedByIdBatches('reminders', 'id');
+      deleted.jobEvents = await deleteOwnedByIdBatches('job_events', 'id');
+    }
+    deleted.appointments = await deleteOwnedByIdBatches('appointments', 'id');
+    deleted.customers = await deleteOwnedByIdBatches('customers', 'id');
     return deleted;
   }
 
