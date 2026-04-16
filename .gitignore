@@ -1,6 +1,7 @@
 /Scans/*
 *.pdf
 *.json
+*.xlsx
 node_modules/
 www/
 

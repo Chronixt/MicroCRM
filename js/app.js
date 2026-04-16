@@ -85,6 +85,10 @@
     return collapsed;
   }
 
+  function useSidebarMenuOnPortraitMobile() {
+    return window.matchMedia('(max-width: 768px) and (orientation: portrait)').matches;
+  }
+
   function getCachedSidebarTopOffset() {
     const raw = localStorage.getItem(SIDEBAR_TOP_OFFSET_KEY);
     if (!raw) return null;
@@ -1294,8 +1298,23 @@
   // Views
   function renderMenu() {
     const lang = getLang();
-    
-    appRoot.innerHTML = `
+    const homePanelHtml = `
+      <div class="menu-home-panel">
+        <div class="menu-welcome-block">
+          <div class="menu-welcome-title">${getWelcomeMenuMessage()}</div>
+        </div>
+        <div class="todays-appointments">
+          <h3>${t('todaysAppointments')}</h3>
+          <div class="no-appointments">${t('noAppointmentsToday')}</div>
+          <button id="refresh-appointments" class="refresh-appointments-btn">Refresh</button>
+        </div>
+      </div>
+    `;
+
+    if (useSidebarMenuOnPortraitMobile()) {
+      appRoot.innerHTML = wrapWithSidebar(homePanelHtml);
+    } else {
+      appRoot.innerHTML = `
       <div class="menu-container">
         <div class="menu-toolbar">
           <div class="toolbar-top-row">
@@ -1353,6 +1372,7 @@
         </div>
       </div>
     `;
+    }
     
     // Load appointments after rendering the basic structure
     // Use setTimeout to ensure DOM is ready
@@ -2939,6 +2959,45 @@
     const currentPath = window.location.hash;
     const appointmentMatch = currentPath.match(/[?&]appointment=([^&]+)/);
     const appointmentId = appointmentMatch ? appointmentMatch[1] : null;
+    const compactNewAppointmentButton = useSidebarMenuOnPortraitMobile();
+    const compactCalendarToolbar = useSidebarMenuOnPortraitMobile();
+    let calendar = null;
+    const calendarHeaderToolbar = compactCalendarToolbar
+      ? {
+          left: 'prev',
+          center: 'title',
+          right: 'next'
+        }
+      : {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,listWeek'
+        };
+
+    function toLocalYmd(dateValue) {
+      const d = new Date(dateValue);
+      if (!Number.isFinite(d.getTime())) return null;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function decorateMobileMonthDots() {
+      if (!compactCalendarToolbar || !calendar || calendar.view?.type !== 'dayGridMonth') return;
+      const dayCells = calendarEl.querySelectorAll('.fc-daygrid-day[data-date]');
+      const eventDays = new Set();
+      calendar.getEvents().forEach((event) => {
+        if (!event.start) return;
+        const day = toLocalYmd(event.start);
+        if (day) eventDays.add(day);
+      });
+      dayCells.forEach((cell) => {
+        const date = cell.getAttribute('data-date');
+        const hasEvent = !!date && eventDays.has(date);
+        cell.classList.toggle('fc-mobile-has-event', hasEvent);
+      });
+    }
     
     appRoot.innerHTML = wrapWithSidebar(`
         <div class="space-between section-header">
@@ -2969,11 +3028,21 @@
               gap: 8px;
               transition: all 0.2s ease;
             ">
-              <span>+</span>
-              <span>${usesJobPipeline() ? `New ${appointmentEntitySingular()}` : t('newAppointment')}</span>
+              ${compactNewAppointmentButton
+                ? `<span>+</span>`
+                : `<span>+</span><span>${usesJobPipeline() ? `New ${appointmentEntitySingular()}` : t('newAppointment')}</span>`}
             </button>
           </div>
         </div>
+      ${compactCalendarToolbar ? `
+      <div class="calendar-mobile-controls" aria-label="Calendar controls">
+        <button id="calendar-mobile-today-btn" class="button secondary">${t('today')}</button>
+        <div class="calendar-mobile-view-group">
+          <button id="calendar-mobile-list-btn" class="button secondary">${t('list')}</button>
+          <button id="calendar-mobile-month-btn" class="button secondary">${t('month')}</button>
+        </div>
+      </div>
+      ` : ''}
       <div class="card" id="calendar-container">
         <div id="calendar"></div>
       </div>
@@ -2985,8 +3054,9 @@
     `);
 
     const calendarEl = document.getElementById('calendar');
-    const calendar = new FullCalendar.Calendar(calendarEl, {
+    calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'listWeek',
+      headerToolbar: calendarHeaderToolbar,
       height: 'auto',
       selectable: true,
       locale: getLang(),
@@ -3003,11 +3073,24 @@
         day: t('day'),
         list: t('list')
       },
-        dayHeaderFormat: { weekday: 'short' },
-      headerToolbar: {
-        left: 'prev,next today',
-        center: 'title',
-        right: 'listWeek,dayGridMonth'
+      dayHeaderFormat: { weekday: 'short' },
+      datesSet: (info) => {
+        if (!compactCalendarToolbar) return;
+        const todayBtn = document.getElementById('calendar-mobile-today-btn');
+        const listBtn = document.getElementById('calendar-mobile-list-btn');
+        const monthBtn = document.getElementById('calendar-mobile-month-btn');
+        const isList = info.view.type === 'listWeek';
+        const isMonth = info.view.type === 'dayGridMonth';
+        listBtn?.classList.toggle('secondary', !isList);
+        monthBtn?.classList.toggle('secondary', !isMonth);
+        if (listBtn && isList) listBtn.classList.remove('secondary');
+        if (monthBtn && isMonth) monthBtn.classList.remove('secondary');
+        todayBtn?.classList.add('secondary');
+        setTimeout(decorateMobileMonthDots, 0);
+      },
+      eventsSet: () => {
+        if (!compactCalendarToolbar) return;
+        setTimeout(decorateMobileMonthDots, 0);
       },
       events: async (info, successCallback, failureCallback) => {
         try {
@@ -3091,6 +3174,22 @@
     globalCalendar = calendar;
     
     calendar.render();
+    decorateMobileMonthDots();
+
+    if (compactCalendarToolbar) {
+      const todayBtn = document.getElementById('calendar-mobile-today-btn');
+      const listBtn = document.getElementById('calendar-mobile-list-btn');
+      const monthBtn = document.getElementById('calendar-mobile-month-btn');
+      todayBtn?.addEventListener('click', () => {
+        calendar.today();
+      });
+      listBtn?.addEventListener('click', () => {
+        calendar.changeView('listWeek');
+      });
+      monthBtn?.addEventListener('click', () => {
+        calendar.changeView('dayGridMonth');
+      });
+    }
     
     // Add event listener for new appointment button
     document.getElementById('new-appointment-btn').addEventListener('click', () => {
@@ -7307,6 +7406,21 @@
     return `${year}-${month}-${day}`;
   }
 
+  function normalizeDateTimeToISO(dateValue) {
+    if (!dateValue) return null;
+    if (typeof dateValue === 'string') {
+      const trimmed = dateValue.trim();
+      if (!trimmed) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T00:00:00.000Z`;
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+      return null;
+    }
+    const parsed = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
     const ts = timestamp instanceof Date ? timestamp : new Date();
     const tsStr = ts.toLocaleString();
@@ -8559,7 +8673,7 @@
           const updatedNote = {
             ...this.editingNote,
             svg: optimizedSvgData,
-            editedDate: formatDateYYYYMMDD(new Date())
+            editedDate: new Date().toISOString()
           };
           
           // Determine which storage method to use based on the note's source
@@ -8597,7 +8711,7 @@
             const normalizedUpdatedNote = {
               ...updatedNote,
               date: formatDateYYYYMMDD(updatedNote.date || this.editingNote.date),
-              editedDate: updatedNote.editedDate ? formatDateYYYYMMDD(updatedNote.editedDate) : undefined
+              editedDate: updatedNote.editedDate ? (normalizeDateTimeToISO(updatedNote.editedDate) || updatedNote.editedDate) : undefined
             };
             
             customerNotes[noteIndex] = normalizedUpdatedNote;
@@ -9250,8 +9364,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const normalizedNoteData = {
         ...noteData,
         date: formatDateYYYYMMDD(noteData.date),
-        editedDate: noteData.editedDate ? formatDateYYYYMMDD(noteData.editedDate) : undefined,
-        createdAt: noteData.createdAt ? formatDateYYYYMMDD(noteData.createdAt) : undefined
+        editedDate: noteData.editedDate ? (normalizeDateTimeToISO(noteData.editedDate) || noteData.editedDate) : undefined,
+        createdAt: noteData.createdAt ? (normalizeDateTimeToISO(noteData.createdAt) || noteData.createdAt) : undefined
       };
       
       try {
@@ -9287,7 +9401,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             svg: normalizedNoteData.svg,
             date: normalizedNoteData.date,
             noteNumber: normalizedNoteData.noteNumber,
-            createdAt: formatDateYYYYMMDD(new Date()),
+            createdAt: new Date().toISOString(),
             editedDate: normalizedNoteData.editedDate,
             source: 'indexeddb-fallback', // Mark as fallback save
             originalId: normalizedNoteData.id // Store the original ID for reference
@@ -9607,23 +9721,24 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Add edited timestamp if the note was edited
       if (noteData.editedDate) {
-        // Format editedDate for display (convert yyyy-mm-dd to readable format)
+        // Format editedDate for display (supports ISO datetime and yyyy-mm-dd legacy values)
         let displayEditedDate = noteData.editedDate;
-        if (displayEditedDate && /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate)) {
-          try {
-            const date = new Date(displayEditedDate + 'T00:00:00');
-            if (!isNaN(date.getTime())) {
-              displayEditedDate = date.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              });
-            }
-          } catch (e) {
-            // Keep original if conversion fails
+        try {
+          const toParse = /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate)
+            ? `${displayEditedDate}T00:00:00`
+            : displayEditedDate;
+          const date = new Date(toParse);
+          if (!isNaN(date.getTime())) {
+            displayEditedDate = date.toLocaleString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
           }
+        } catch (e) {
+          // Keep original if conversion fails
         }
         const editedText = document.createElement('span');
         editedText.textContent = ` (edited: ${displayEditedDate})`;
