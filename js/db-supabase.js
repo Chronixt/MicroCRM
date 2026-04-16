@@ -173,37 +173,52 @@
   async function fetchImagesForExportSafe() {
     try {
       const supabase = getClient();
-      const pageSize = 5; // Keep pages small because data_url rows can be very large.
+      const pageSize = 50; // Fetch lightweight metadata in larger pages.
       const imagesSerialized = [];
+      const skippedImageIds = [];
       let from = 0;
 
       while (true) {
         const to = from + pageSize - 1;
         const pageRes = await supabase
           .from('images')
-          .select('id,customer_id,name,type,data_url,created_at')
+          .select('id,customer_id,name,type,created_at')
           .order('id', { ascending: true })
           .range(from, to);
         throwIfError(pageRes);
         const page = pageRes.data || [];
         if (page.length === 0) break;
 
-        page.forEach((row) => {
+        for (const row of page) {
+          const dataRes = await supabase
+            .from('images')
+            .select('data_url')
+            .eq('id', row.id)
+            .maybeSingle();
+          if (dataRes.error || !dataRes.data || !dataRes.data.data_url) {
+            skippedImageIds.push(row.id);
+            continue;
+          }
           imagesSerialized.push({
             id: row.id,
             customerId: row.customer_id,
             name: row.name,
             type: row.type,
             createdAt: row.created_at,
-            dataUrl: row.data_url
+            dataUrl: dataRes.data.data_url
           });
-        });
+        }
 
         if (page.length < pageSize) break;
         from += pageSize;
       }
 
-      return { imagesSerialized, warning: null };
+      let warning = null;
+      if (skippedImageIds.length > 0) {
+        warning = `Skipped ${skippedImageIds.length} image(s) that could not be read: ${skippedImageIds.slice(0, 20).join(', ')}${skippedImageIds.length > 20 ? ' ...' : ''}`;
+        console.warn('[Backup]', warning);
+      }
+      return { imagesSerialized, warning };
     } catch (error) {
       const warning = `Images export skipped: ${error.message || error}`;
       console.warn('[Backup]', warning);

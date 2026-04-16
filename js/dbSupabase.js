@@ -73,8 +73,9 @@
 
   async function fetchImagesForExportSafe() {
     try {
-      var pageSize = 5; // Keep pages small because data_url rows can be very large.
+      var pageSize = 50; // Fetch lightweight metadata in larger pages.
       var images = [];
+      var skippedImageIds = [];
       var from = 0;
 
       while (true) {
@@ -82,18 +83,44 @@
         var imgRes = check(
           await supabase
             .from('images')
-            .select('id,customer_id,name,type,data_url,created_at')
+            .select('id,customer_id,name,type,created_at')
             .order('id', { ascending: true })
             .range(from, to)
         );
         var page = imgRes.data || [];
         if (page.length === 0) break;
-        images = images.concat(page.map(toCamel));
+        for (var i = 0; i < page.length; i++) {
+          var row = page[i];
+          var dataRes = await supabase
+            .from('images')
+            .select('data_url')
+            .eq('id', row.id)
+            .maybeSingle();
+          if (dataRes.error || !dataRes.data || !dataRes.data.data_url) {
+            skippedImageIds.push(row.id);
+            continue;
+          }
+          images.push(toCamel({
+            id: row.id,
+            customer_id: row.customer_id,
+            name: row.name,
+            type: row.type,
+            created_at: row.created_at,
+            data_url: dataRes.data.data_url
+          }));
+        }
         if (page.length < pageSize) break;
         from += pageSize;
       }
 
-      return { images: images, warning: null };
+      var warning = null;
+      if (skippedImageIds.length > 0) {
+        warning = 'Skipped ' + skippedImageIds.length + ' image(s) that could not be read: ' +
+          skippedImageIds.slice(0, 20).join(', ') +
+          (skippedImageIds.length > 20 ? ' ...' : '');
+        console.warn('[Backup]', warning);
+      }
+      return { images: images, warning: warning };
     } catch (error) {
       var warning = 'Images export skipped: ' + (error && error.message ? error.message : String(error));
       console.warn('[Backup]', warning);
