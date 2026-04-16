@@ -5962,6 +5962,9 @@
             const chunkCustomerIds = chunk.map(c => c.id);
             const chunkAppointments = appointments.filter(a => chunkCustomerIds.includes(a.customerId));
             const chunkImages = images.filter(img => chunkCustomerIds.includes(img.customerId));
+            // In chunked imports, a full replace should only happen once.
+            // Running replace on every chunk repeatedly wipes previously imported chunks.
+            const chunkMode = (mode === 'replace' && i > 0) ? 'merge' : mode;
             
             const payload = {
               __meta: loadedBackup.__meta || { app: productConfig.appSlug || 'crm', version: 1 },
@@ -5971,7 +5974,7 @@
               customerNotes: filterCustomerNotesForIds(loadedBackup.customerNotes || loadedBackup.notes || [], chunkCustomerIds)
             };
             
-            await db.importAllData(payload, { mode });
+            await db.importAllData(payload, { mode: chunkMode });
             
             const processed = Math.min(i + CHUNK_SIZE, totalCustomers);
             statusEl.textContent = `Importing in chunks... (${processed}/${totalCustomers})`;
