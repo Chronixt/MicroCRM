@@ -193,9 +193,6 @@
       const existing = await api.getSession();
       if (existing) {
         RUNTIME_INFO.email = existing?.user?.email || null;
-        if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === true && typeof api.claimUnownedData === 'function') {
-          try { await api.claimUnownedData(); } catch (e) {}
-        }
         return true;
       }
     } catch (e) {}
@@ -209,9 +206,6 @@
         const session = await api.signInWithPassword(email.trim(), password);
         if (session) {
           RUNTIME_INFO.email = session?.user?.email || email.trim();
-          if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === true && typeof api.claimUnownedData === 'function') {
-            try { await api.claimUnownedData(); } catch (e) {}
-          }
           return true;
         }
       } catch (e) {

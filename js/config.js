@@ -46,6 +46,9 @@
   if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA === undefined) {
     window.ENABLE_AUTO_CLAIM_UNOWNED_DATA = false;
   }
+  if (window.ALLOW_UNOWNED_CLAIM_RPC === undefined) {
+    window.ALLOW_UNOWNED_CLAIM_RPC = false;
+  }
   if (window.ALLOW_DESTRUCTIVE_WIPE === undefined) {
     window.ALLOW_DESTRUCTIVE_WIPE = false;
   }

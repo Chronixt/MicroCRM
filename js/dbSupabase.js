@@ -126,6 +126,12 @@
   }
 
   async function claimUnownedData() {
+    // Deliberately gated behind two explicit flags to avoid accidental ownership reassignment
+    // in shared/live environments.
+    if (window.ENABLE_AUTO_CLAIM_UNOWNED_DATA !== true || window.ALLOW_UNOWNED_CLAIM_RPC !== true) {
+      console.warn('[dbSupabase] claim_unowned_data blocked (set ENABLE_AUTO_CLAIM_UNOWNED_DATA=true and ALLOW_UNOWNED_CLAIM_RPC=true to enable).');
+      return null;
+    }
     var res = await supabase.rpc('claim_unowned_data');
     check(res);
     return res.data;
