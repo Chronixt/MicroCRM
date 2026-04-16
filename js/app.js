@@ -970,7 +970,7 @@
       const host = window.location.hostname;
       const isLocalDev = host === 'localhost' || host === '127.0.0.1' || host === '::1';
       if (isLocalDev) return;
-      navigator.serviceWorker.register('/sw.js?v=1.0.2')
+      navigator.serviceWorker.register('/sw.js?v=1.0.3')
         .then((registration) => {
           
           // Check for updates every time the app loads
