@@ -893,6 +893,7 @@
   async function importAllData(payload, options = {}) {
     const mode = options.mode || 'replace';
     const { customers = [], appointments = [], images = [], customerNotes = {} } = payload || {};
+    const hasImportedCustomers = Array.isArray(customers) && customers.length > 0;
     if (mode === 'replace') await clearAllStores();
     const supabase = getClient();
     const customerIdMap = {};
@@ -948,11 +949,9 @@
     let mergeIndexCustomer = null;
     if (mode === 'merge') {
       const existingCustomers = await getAllCustomers();
-      const byId = new Map();
       const byContact = new Map();
       const bySocial = new Map();
       const byNamePhone = new Map();
-      const byNameOnly = new Map();
 
       function addUnique(map, key, customer) {
         if (!key) return;
@@ -964,11 +963,9 @@
       function indexCustomerForMerge(ec) {
         if (!ec || ec.id == null) return;
         existingCustomerIds.add(parseInt(ec.id, 10));
-        byId.set(String(ec.id), ec);
         addUnique(byContact, normalizePhone(ec.contactNumber), ec);
         addUnique(bySocial, normalizeText(ec.socialMediaName), ec);
         addUnique(byNamePhone, `${normalizeText(ec.firstName)}|${normalizeText(ec.lastName)}|${normalizePhone(ec.contactNumber)}`, ec);
-        addUnique(byNameOnly, `${normalizeText(ec.firstName)}|${normalizeText(ec.lastName)}`, ec);
       }
 
       existingCustomers.forEach(indexCustomerForMerge);
@@ -979,12 +976,9 @@
       }
 
       mergeMatch = function findExistingCustomer(c) {
-        const oldIdKey = c && c.id != null ? String(c.id) : '';
         const phoneKey = normalizePhone(c.contactNumber);
         const socialKey = normalizeText(c.socialMediaName);
         const namePhoneKey = `${normalizeText(c.firstName)}|${normalizeText(c.lastName)}|${phoneKey}`;
-        const nameOnlyKey = `${normalizeText(c.firstName)}|${normalizeText(c.lastName)}`;
-        const idHit = oldIdKey && byId.has(oldIdKey) ? byId.get(oldIdKey) : null;
 
         // Prefer unique phone match, then unique social handle, then unique name+phone.
         if (phoneKey) {
@@ -999,12 +993,7 @@
           const hit = pickUnique(byNamePhone, namePhoneKey);
           if (hit) return hit;
         }
-        // Fallback for sparse records where contact/social are blank but full name is unique.
-        if (nameOnlyKey !== '|') {
-          const hit = pickUnique(byNameOnly, nameOnlyKey);
-          if (hit) return hit;
-        }
-        return idHit || null;
+        return null;
       };
 
       mergeIndexCustomer = function mergeIndexCustomerFn(customer) {
@@ -1058,8 +1047,12 @@
       for (const key of candidates) {
         if (customerIdMap[key] != null) return customerIdMap[key];
       }
-      if (!Number.isNaN(parsed) && importedCustomerIds.has(parsed)) return parsed;
-      if (mode === 'merge' && !Number.isNaN(parsed) && existingCustomerIds.has(parsed)) return parsed;
+      // Only allow loose direct-ID fallback for payloads that intentionally contain
+      // no customer rows (for example, images-only imports).
+      if (!hasImportedCustomers) {
+        if (!Number.isNaN(parsed) && importedCustomerIds.has(parsed)) return parsed;
+        if (mode === 'merge' && !Number.isNaN(parsed) && existingCustomerIds.has(parsed)) return parsed;
+      }
       return null;
     }
 
@@ -1158,34 +1151,54 @@
       await insertRowsAdaptive('appointments', appointmentRows, 100);
     }
 
+    function flattenImportedNotes(noteInput) {
+      const out = [];
+      if (Array.isArray(noteInput)) {
+        noteInput.forEach((note) => {
+          if (note && typeof note === 'object') out.push(note);
+        });
+        return out;
+      }
+      if (noteInput && typeof noteInput === 'object') {
+        Object.keys(noteInput).forEach((cid) => {
+          const list = noteInput[cid] || [];
+          if (!Array.isArray(list)) return;
+          list.forEach((note) => {
+            if (!note || typeof note !== 'object') return;
+            out.push(note.customerId == null ? { ...note, customerId: parseInt(cid, 10) } : note);
+          });
+        });
+      }
+      return out;
+    }
+
     const orphanNotes = [];
     const replaceModeNoteRows = [];
-    for (const cid in customerNotes || {}) {
-      for (const note of customerNotes[cid] || []) {
-        const rawCustomerId = note && note.customerId != null ? note.customerId : cid;
-        const newCid = resolveImportedCustomerId(rawCustomerId);
-        if (newCid == null) {
-          orphanNotes.push(rawCustomerId);
-          continue;
-        }
-        const n = { ...note, customerId: newCid };
-        if (mode === 'merge') {
-          const idKey = `id:${newCid}:${String(note && note.id != null ? note.id : '')}`;
-          const sigKey = noteSignatureKey(n, newCid);
-          const existingById = note && note.id != null ? mergeNoteById.get(idKey) : null;
-          const existingBySig = mergeNoteBySignature.get(sigKey);
-          const existing = existingById || existingBySig || null;
-          if (existing && existing.id != null) {
-            const row = buildNoteRowForImport(n);
-            throwIfError(await supabase.from('notes').update(row).eq('id', parseInt(existing.id, 10)));
-            indexMergeNote({ ...existing, ...n, id: existing.id, customerId: newCid });
-          } else {
-            const createdId = await createNote(n);
-            indexMergeNote({ ...n, id: createdId, customerId: newCid });
-          }
+    const importedNotesList = flattenImportedNotes(customerNotes);
+    for (const note of importedNotesList) {
+      const rawCustomerId = note && note.customerId != null ? note.customerId : null;
+      const newCid = resolveImportedCustomerId(rawCustomerId);
+      if (newCid == null) {
+        orphanNotes.push(rawCustomerId);
+        continue;
+      }
+      const n = { ...note, customerId: newCid };
+      if (mode === 'merge') {
+        const idKey = `id:${newCid}:${String(note && note.id != null ? note.id : '')}`;
+        const sigKey = noteSignatureKey(n, newCid);
+        const existingById = note && note.id != null ? mergeNoteById.get(idKey) : null;
+        const existingBySig = mergeNoteBySignature.get(sigKey);
+        const existing = existingById || existingBySig || null;
+        if (existing && existing.id != null) {
+          const row = buildNoteRowForImport(n);
+          throwIfError(await supabase.from('notes').update(row).eq('id', parseInt(existing.id, 10)));
+          indexMergeNote({ ...existing, ...n, id: existing.id, customerId: newCid });
         } else {
-          replaceModeNoteRows.push(buildNoteRowForImport(n));
+          const createdId = await createNote(n);
+          indexMergeNote({ ...n, id: createdId, customerId: newCid });
         }
+      } else {
+        replaceModeNoteRows.push(buildNoteRowForImport(n));
       }
     }
     if (mode !== 'merge' && replaceModeNoteRows.length > 0) {
