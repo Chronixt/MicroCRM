@@ -9758,8 +9758,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Format editedDate for display (supports ISO datetime and yyyy-mm-dd legacy values)
         let displayEditedDate = noteData.editedDate;
         try {
-          const toParse = /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate)
-            ? `${displayEditedDate}T00:00:00`
+          const isDateOnlyEdited = /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate);
+          const toParse = isDateOnlyEdited
+            ? (noteData.updatedAt || `${displayEditedDate}T00:00:00`)
             : displayEditedDate;
           const date = new Date(toParse);
           if (!isNaN(date.getTime())) {
