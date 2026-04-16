@@ -1057,16 +1057,6 @@
       return null;
     }
 
-    function hashText(value) {
-      const text = String(value || '');
-      let hash = 5381;
-      for (let i = 0; i < text.length; i += 1) {
-        hash = ((hash << 5) + hash) + text.charCodeAt(i);
-        hash &= 0xffffffff;
-      }
-      return String(hash >>> 0);
-    }
-
     function normalizeNoteMergeDate(value) {
       const ymd = normalizeDateToYYYYMMDD(value);
       if (ymd) return ymd;
@@ -1079,8 +1069,51 @@
       const createdKey = normalizeDateTimeToISO(note && note.createdAt) || '';
       const dateKey = normalizeNoteMergeDate(note && note.date);
       const noteNumberKey = note && note.noteNumber != null ? String(note.noteNumber) : '';
-      const svgKey = hashText(note && note.svg);
-      return `sig:${customerId}:${noteNumberKey}:${dateKey}:${createdKey}:${svgKey}`;
+      return `sig:${customerId}:${noteNumberKey}:${dateKey}:${createdKey}`;
+    }
+
+    function isStatementTimeout(errorLike) {
+      const message = String(errorLike?.message || '');
+      const code = String(errorLike?.code || '');
+      return (
+        code === '57014' ||
+        message.indexOf('statement timeout') !== -1 ||
+        message.indexOf('canceling statement due to statement timeout') !== -1
+      );
+    }
+
+    async function insertRowsAdaptive(table, rows, initialChunkSize) {
+      if (!Array.isArray(rows) || rows.length === 0) return 0;
+      let inserted = 0;
+      let idx = 0;
+      let chunkSize = Math.max(1, Math.min(initialChunkSize, rows.length));
+      while (idx < rows.length) {
+        const slice = rows.slice(idx, idx + chunkSize);
+        const res = await supabase.from(table).insert(slice);
+        if (!res.error) {
+          inserted += slice.length;
+          idx += slice.length;
+          continue;
+        }
+        if (!isStatementTimeout(res.error)) throwIfError(res);
+        if (chunkSize <= 1) throwIfError(res);
+        chunkSize = Math.max(1, Math.floor(chunkSize / 2));
+      }
+      return inserted;
+    }
+
+    function buildNoteRowForImport(note) {
+      const date = normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(new Date());
+      const createdAt = normalizeDateTimeToISO(note.createdAt) || new Date().toISOString();
+      const editedDate = note.editedDate ? normalizeDateTimeToISO(note.editedDate) : null;
+      return {
+        customer_id: parseInt(note.customerId, 10),
+        date: date,
+        created_at: createdAt,
+        edited_date: editedDate,
+        svg: note.svg ?? null,
+        note_number: note.noteNumber ?? null
+      };
     }
 
     const mergeNoteById = new Map();
@@ -1093,10 +1126,16 @@
       mergeNoteBySignature.set(noteSignatureKey(note, customerIdNum), note);
     }
     if (mode === 'merge') {
-      const existingNotes = await getAllNotes();
-      existingNotes.forEach(indexMergeNote);
+      const existingNotesRes = throwIfError(
+        await supabase
+          .from('notes')
+          .select('id,customer_id,note_number,date,created_at,edited_date')
+          .order('id', { ascending: true })
+      );
+      (existingNotesRes.data || []).map(toCamel).forEach(indexMergeNote);
     }
 
+    const appointmentRows = [];
     for (const a of appointments) {
       const rawCustomerId = extractAppointmentCustomerId(a);
       const newCustomerId = resolveImportedCustomerId(rawCustomerId);
@@ -1107,10 +1146,14 @@
       if (!row.start) {
         throw new Error('Import failed: appointment is missing start date/time');
       }
-      throwIfError(await supabase.from('appointments').insert(row));
+      appointmentRows.push(row);
+    }
+    if (appointmentRows.length > 0) {
+      await insertRowsAdaptive('appointments', appointmentRows, 100);
     }
 
     const orphanNotes = [];
+    const replaceModeNoteRows = [];
     for (const cid in customerNotes || {}) {
       for (const note of customerNotes[cid] || []) {
         const rawCustomerId = note && note.customerId != null ? note.customerId : cid;
@@ -1127,34 +1170,44 @@
           const existingBySig = mergeNoteBySignature.get(sigKey);
           const existing = existingById || existingBySig || null;
           if (existing && existing.id != null) {
-            await updateNote({ ...n, id: existing.id });
+            const row = buildNoteRowForImport(n);
+            throwIfError(await supabase.from('notes').update(row).eq('id', parseInt(existing.id, 10)));
             indexMergeNote({ ...existing, ...n, id: existing.id, customerId: newCid });
           } else {
             const createdId = await createNote(n);
             indexMergeNote({ ...n, id: createdId, customerId: newCid });
           }
         } else {
-          await createNote(n);
+          replaceModeNoteRows.push(buildNoteRowForImport(n));
         }
       }
+    }
+    if (mode !== 'merge' && replaceModeNoteRows.length > 0) {
+      // Notes can contain large SVG payloads; start conservative and adapt down on timeout.
+      await insertRowsAdaptive('notes', replaceModeNoteRows, 20);
     }
     if (orphanNotes.length > 0) {
       const unique = Array.from(new Set(orphanNotes.map((v) => String(v))));
       throw new Error(`Import failed: ${orphanNotes.length} note(s) reference missing customerId(s): ${unique.slice(0, 20).join(', ')}${unique.length > 20 ? ' ...' : ''}`);
     }
 
+    const imageRows = [];
     for (const img of images || []) {
       const newCustomerId = resolveImportedCustomerId(img.customerId);
       if (newCustomerId == null) {
         throw new Error(`Import failed: image references missing customerId (${img.customerId})`);
       }
-      throwIfError(await supabase.from('images').insert({
+      imageRows.push({
         customer_id: newCustomerId,
         name: img.name,
         type: img.type,
         data_url: img.dataUrl,
         created_at: img.createdAt
-      }));
+      });
+    }
+    if (imageRows.length > 0) {
+      // Image rows can be very large due to data_url payloads.
+      await insertRowsAdaptive('images', imageRows, 8);
     }
   }
 
