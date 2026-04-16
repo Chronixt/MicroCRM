@@ -7421,6 +7421,14 @@
     return parsed.toISOString();
   }
 
+  function isDbBackedNoteSource(source) {
+    const normalized = String(source || '').toLowerCase();
+    return normalized === 'indexeddb' ||
+      normalized === 'indexeddb-fallback' ||
+      normalized === 'supabase' ||
+      normalized === 'supabase-native';
+  }
+
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
     const ts = timestamp instanceof Date ? timestamp : new Date();
     const tsStr = ts.toLocaleString();
@@ -7820,6 +7828,7 @@
       this.eraserWidth = 10;
       this.pencilBtn = null;
       this.eraserBtn = null;
+      this.isEditingImageBasedNote = false;
     }
 
 
@@ -8234,6 +8243,7 @@
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.strokes = [];
       this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+      this.isEditingImageBasedNote = false;
     }
 
     undo() {
@@ -8317,32 +8327,13 @@
       // Check if there are any eraser strokes - if so, we need to use a different approach
       const hasEraserStrokes = this.strokes.some(stroke => stroke.color === 'eraser');
       
-      // Check if we're editing an image-based note (no strokes but editing)
-      const isEditingImageNote = this.editingNote && this.strokes.length === 0;
+      // Preserve full canvas for image-based note edits so existing content is not lost.
+      const isEditingImageNote = this.editingNote && this.isEditingImageBasedNote;
       
       if (hasEraserStrokes || isEditingImageNote) {
         // When eraser strokes are present OR we're editing an image-based note,
         // capture the final canvas state as an image
-        
-        // Calculate bounding box of all strokes (including eraser strokes for bounds)
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        let hasStrokes = false;
-        
-        this.strokes.forEach(stroke => {
-          if (stroke.points && stroke.points.length > 0) {
-            hasStrokes = true;
-            stroke.points.forEach(point => {
-              minX = Math.min(minX, point.x);
-              minY = Math.min(minY, point.y);
-              maxX = Math.max(maxX, point.x);
-              maxY = Math.max(maxY, point.y);
-            });
-          }
-        });
-        
-        // If we're editing an image-based note and have no new strokes,
-        // use the entire canvas since it already contains the full image
-        if (!hasStrokes && isEditingImageNote) {
+        if (isEditingImageNote) {
           const canvasData = this.canvas.toDataURL('image/png');
           const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           svg.setAttribute('width', this.canvas.width);
@@ -8359,6 +8350,22 @@
           
           return new XMLSerializer().serializeToString(svg);
         }
+        
+        // Calculate bounding box of all strokes (including eraser strokes for bounds)
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let hasStrokes = false;
+        
+        this.strokes.forEach(stroke => {
+          if (stroke.points && stroke.points.length > 0) {
+            hasStrokes = true;
+            stroke.points.forEach(point => {
+              minX = Math.min(minX, point.x);
+              minY = Math.min(minY, point.y);
+              maxX = Math.max(maxX, point.x);
+              maxY = Math.max(maxY, point.y);
+            });
+          }
+        });
         
         // If no strokes and not editing, return empty SVG
         if (!hasStrokes) {
@@ -8677,7 +8684,7 @@
           };
           
           // Determine which storage method to use based on the note's source
-          if (this.editingNote.source === 'indexeddb-fallback' || this.editingNote.source === 'indexeddb') {
+          if (isDbBackedNoteSource(this.editingNote.source)) {
             // Update in IndexedDB
             try {
               await CrmDB.updateNote(updatedNote);
@@ -9463,10 +9470,11 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       try {
         // Load from IndexedDB
         const indexedDBNotes = await CrmDB.getNotesByCustomerId(customerId);
+        const dbSourceDefault = productConfig.useSupabase ? 'supabase' : 'indexeddb';
         
         // Mark IndexedDB notes
         indexedDBNotes.forEach(note => {
-          note.source = note.source || 'indexeddb';
+          note.source = note.source || dbSourceDefault;
         });
         
         allNotes.push(...indexedDBNotes);
@@ -9475,21 +9483,47 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       } catch (error) {
         console.warn('Error loading from IndexedDB:', error);
       }
+
+      // De-duplicate by note ID, preferring DB-backed copies over localStorage copies.
+      const dedupedById = new Map();
+      allNotes.forEach((note) => {
+        if (!note || note.id == null) return;
+        const key = String(note.id);
+        const existing = dedupedById.get(key);
+        if (!existing) {
+          dedupedById.set(key, note);
+          return;
+        }
+        const existingDb = isDbBackedNoteSource(existing.source);
+        const incomingDb = isDbBackedNoteSource(note.source);
+        if (!existingDb && incomingDb) {
+          dedupedById.set(key, note);
+          return;
+        }
+        if (existingDb && !incomingDb) return;
+        const existingTime = new Date(existing.editedDate || existing.updatedAt || existing.createdAt || existing.date || 0).getTime() || 0;
+        const incomingTime = new Date(note.editedDate || note.updatedAt || note.createdAt || note.date || 0).getTime() || 0;
+        if (incomingTime >= existingTime) {
+          dedupedById.set(key, note);
+        }
+      });
+      const notesWithoutId = allNotes.filter((note) => !note || note.id == null);
+      const mergedNotes = [...dedupedById.values(), ...notesWithoutId];
       
       // Sort all notes by creation time (newest first)
-      allNotes.sort((a, b) => {
+      mergedNotes.sort((a, b) => {
         const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.id || 0);
         const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.id || 0);
         return timeB - timeA;
       });
       
       // Re-number notes for display consistency
-      allNotes.forEach((note, index) => {
+      mergedNotes.forEach((note, index) => {
         note.noteNumber = index + 1;
       });
       
-      console.log(`Total notes loaded: ${allNotes.length}`);
-      return allNotes;
+      console.log(`Total notes loaded: ${mergedNotes.length}`);
+      return mergedNotes;
     }
 
     // Refresh the notes display using hybrid loading
@@ -9805,7 +9839,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       // Show delete button only on edit/new customer screens for all notes
       if (isEditScreen || isNewCustomerScreen) {
         // Add revert button for IndexedDB notes (only they have version history)
-        if (noteData.source === 'indexeddb' || noteData.source === 'indexeddb-fallback') {
+        if (isDbBackedNoteSource(noteData.source)) {
           const revertButton = document.createElement('button');
           revertButton.textContent = '↩️';
           revertButton.title = 'Revert to Previous Version';
@@ -10042,7 +10076,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     async revertNoteToPreviousVersion(noteData) {
       try {
         // Only works for IndexedDB notes
-        if (noteData.source !== 'indexeddb' && noteData.source !== 'indexeddb-fallback') {
+        if (!isDbBackedNoteSource(noteData.source)) {
           throw new Error('Version history is only available for notes stored in IndexedDB');
         }
         
@@ -10132,7 +10166,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       try {
         // Determine which storage method to use based on the note's source
-        if (noteData.source === 'indexeddb-fallback' || noteData.source === 'indexeddb') {
+        if (isDbBackedNoteSource(noteData.source)) {
           // Delete from IndexedDB
           await CrmDB.deleteNote(noteData.id);
           console.log('Note deleted successfully from IndexedDB');
@@ -10207,6 +10241,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Check if this is an image-based SVG (from eraser strokes)
         const image = svgDoc.querySelector('image');
         if (image) {
+          this.isEditingImageBasedNote = true;
           // Handle image-based SVG
           const imageData = image.getAttribute('href');
           if (imageData) {
@@ -10225,6 +10260,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           }
           return;
         }
+
+        this.isEditingImageBasedNote = false;
         
         // Handle vector-based SVG
         const paths = svgDoc.querySelectorAll('path');
@@ -10301,6 +10338,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Reset editing state
       this.editingNote = null;
+      this.isEditingImageBasedNote = false;
     }
   }
 
@@ -10553,6 +10591,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const updatedNote = {
         ...this.editingNote,
         text: text,
+        editedDate: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         type: 'text'
       };
@@ -10570,7 +10609,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         return;
       }
       
-      if (this.editingNote.id && (this.editingNote.source === 'indexeddb' || this.editingNote.source === 'indexeddb-fallback')) {
+      if (this.editingNote.id && isDbBackedNoteSource(this.editingNote.source)) {
         await CrmDB.updateNote(updatedNote);
       } else {
         await CrmDB.createNote({ ...updatedNote, customerId: this.customerId });
