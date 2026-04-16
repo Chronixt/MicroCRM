@@ -111,6 +111,21 @@
     return `${year}-${month}-${day}`;
   }
 
+  function normalizeDateTimeToISO(dateValue) {
+    if (!dateValue) return null;
+    if (typeof dateValue === 'string') {
+      const trimmed = dateValue.trim();
+      if (!trimmed) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T00:00:00.000Z`;
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+      return null;
+    }
+    const parsed = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+
   function openDatabase() {
     return new Promise((resolve, reject) => {
       // If database exists but might be old version, check if upgrade is needed
@@ -1120,15 +1135,15 @@
   function createNote(note) {
     return runTransaction(['notes'], 'readwrite', (notes) => (
       new Promise((resolve, reject) => {
-        // Normalize date fields to yyyy-mm-dd format
+        // Keep note date as yyyy-mm-dd, but preserve created/edited timestamps.
         const normalizedDate = normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(new Date());
-        const normalizedCreatedAt = note.createdAt || new Date().toISOString().split('T')[0];
+        const normalizedCreatedAt = normalizeDateTimeToISO(note.createdAt) || new Date().toISOString();
         
         const noteToStore = {
           ...note,
           date: normalizedDate,
-          createdAt: normalizeDateToYYYYMMDD(normalizedCreatedAt) || new Date().toISOString().split('T')[0],
-          editedDate: note.editedDate ? normalizeDateToYYYYMMDD(note.editedDate) : undefined
+          createdAt: normalizedCreatedAt,
+          editedDate: note.editedDate ? (normalizeDateTimeToISO(note.editedDate) || note.editedDate) : undefined
         };
         const req = notes.add(noteToStore);
         req.onsuccess = () => resolve(req.result);
@@ -1240,17 +1255,21 @@
         }
       }
       
-      // Merge existing note with updates, preserving all original fields
-      // Normalize date fields to yyyy-mm-dd format
+      // Merge existing note with updates, preserving all original fields.
+      // Keep note date as yyyy-mm-dd, but preserve created/edited timestamps.
       const mergedNote = {
         ...existingNote,
         ...updatedNote,
         // Ensure ID is preserved from existing note
         id: existingNote.id,
-        // Normalize date fields
+        // Normalize note date for filtering/sorting compatibility.
         date: updatedNote.date ? normalizeDateToYYYYMMDD(updatedNote.date) : (existingNote.date ? normalizeDateToYYYYMMDD(existingNote.date) : normalizeDateToYYYYMMDD(new Date())),
-        editedDate: updatedNote.editedDate ? normalizeDateToYYYYMMDD(updatedNote.editedDate) : existingNote.editedDate ? normalizeDateToYYYYMMDD(existingNote.editedDate) : undefined,
-        createdAt: existingNote.createdAt ? normalizeDateToYYYYMMDD(existingNote.createdAt) : (updatedNote.createdAt ? normalizeDateToYYYYMMDD(updatedNote.createdAt) : new Date().toISOString().split('T')[0])
+        editedDate: updatedNote.editedDate
+          ? (normalizeDateTimeToISO(updatedNote.editedDate) || updatedNote.editedDate)
+          : (existingNote.editedDate ? (normalizeDateTimeToISO(existingNote.editedDate) || existingNote.editedDate) : undefined),
+        createdAt: existingNote.createdAt
+          ? (normalizeDateTimeToISO(existingNote.createdAt) || existingNote.createdAt)
+          : (updatedNote.createdAt ? (normalizeDateTimeToISO(updatedNote.createdAt) || updatedNote.createdAt) : new Date().toISOString())
       };
       
       // Now save the merged note
@@ -2137,13 +2156,13 @@
               return Promise.all(chunk.map(note => {
                 return new Promise((resolve, reject) => {
                   try {
-                    // Ensure note has customerId and normalize dates
+                    // Ensure note has customerId and normalize date/timestamp fields.
                     const noteToImport = {
                       ...note,
                       customerId: note.customerId || parseInt(customerId),
                       date: normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(note.createdAt) || normalizeDateToYYYYMMDD(new Date()),
-                      createdAt: normalizeDateToYYYYMMDD(note.createdAt) || normalizeDateToYYYYMMDD(note.date) || new Date().toISOString().split('T')[0],
-                      editedDate: note.editedDate ? normalizeDateToYYYYMMDD(note.editedDate) : undefined
+                      createdAt: normalizeDateTimeToISO(note.createdAt) || normalizeDateTimeToISO(note.date) || new Date().toISOString(),
+                      editedDate: note.editedDate ? (normalizeDateTimeToISO(note.editedDate) || note.editedDate) : undefined
                     };
                     
                     // Use put() which will update if exists, add if new

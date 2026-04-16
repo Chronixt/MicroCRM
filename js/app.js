@@ -7406,6 +7406,21 @@
     return `${year}-${month}-${day}`;
   }
 
+  function normalizeDateTimeToISO(dateValue) {
+    if (!dateValue) return null;
+    if (typeof dateValue === 'string') {
+      const trimmed = dateValue.trim();
+      if (!trimmed) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T00:00:00.000Z`;
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString();
+      return null;
+    }
+    const parsed = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
     const ts = timestamp instanceof Date ? timestamp : new Date();
     const tsStr = ts.toLocaleString();
@@ -8658,7 +8673,7 @@
           const updatedNote = {
             ...this.editingNote,
             svg: optimizedSvgData,
-            editedDate: formatDateYYYYMMDD(new Date())
+            editedDate: new Date().toISOString()
           };
           
           // Determine which storage method to use based on the note's source
@@ -8696,7 +8711,7 @@
             const normalizedUpdatedNote = {
               ...updatedNote,
               date: formatDateYYYYMMDD(updatedNote.date || this.editingNote.date),
-              editedDate: updatedNote.editedDate ? formatDateYYYYMMDD(updatedNote.editedDate) : undefined
+              editedDate: updatedNote.editedDate ? (normalizeDateTimeToISO(updatedNote.editedDate) || updatedNote.editedDate) : undefined
             };
             
             customerNotes[noteIndex] = normalizedUpdatedNote;
@@ -9349,8 +9364,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const normalizedNoteData = {
         ...noteData,
         date: formatDateYYYYMMDD(noteData.date),
-        editedDate: noteData.editedDate ? formatDateYYYYMMDD(noteData.editedDate) : undefined,
-        createdAt: noteData.createdAt ? formatDateYYYYMMDD(noteData.createdAt) : undefined
+        editedDate: noteData.editedDate ? (normalizeDateTimeToISO(noteData.editedDate) || noteData.editedDate) : undefined,
+        createdAt: noteData.createdAt ? (normalizeDateTimeToISO(noteData.createdAt) || noteData.createdAt) : undefined
       };
       
       try {
@@ -9386,7 +9401,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             svg: normalizedNoteData.svg,
             date: normalizedNoteData.date,
             noteNumber: normalizedNoteData.noteNumber,
-            createdAt: formatDateYYYYMMDD(new Date()),
+            createdAt: new Date().toISOString(),
             editedDate: normalizedNoteData.editedDate,
             source: 'indexeddb-fallback', // Mark as fallback save
             originalId: normalizedNoteData.id // Store the original ID for reference
@@ -9706,23 +9721,24 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Add edited timestamp if the note was edited
       if (noteData.editedDate) {
-        // Format editedDate for display (convert yyyy-mm-dd to readable format)
+        // Format editedDate for display (supports ISO datetime and yyyy-mm-dd legacy values)
         let displayEditedDate = noteData.editedDate;
-        if (displayEditedDate && /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate)) {
-          try {
-            const date = new Date(displayEditedDate + 'T00:00:00');
-            if (!isNaN(date.getTime())) {
-              displayEditedDate = date.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              });
-            }
-          } catch (e) {
-            // Keep original if conversion fails
+        try {
+          const toParse = /^\d{4}-\d{2}-\d{2}$/.test(displayEditedDate)
+            ? `${displayEditedDate}T00:00:00`
+            : displayEditedDate;
+          const date = new Date(toParse);
+          if (!isNaN(date.getTime())) {
+            displayEditedDate = date.toLocaleString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
           }
+        } catch (e) {
+          // Keep original if conversion fails
         }
         const editedText = document.createElement('span');
         editedText.textContent = ` (edited: ${displayEditedDate})`;
