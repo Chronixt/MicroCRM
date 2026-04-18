@@ -2,6 +2,8 @@
 (function () {
   const SCHEMA = window.SUPABASE_SCHEMA || 'hairdresser';
   var cachedClient = null;
+  let cachedTypedNoteColumns = null;
+  let cachedTypedNoteVersionColumns = null;
 
   function getClient() {
     if (cachedClient) return cachedClient;
@@ -68,6 +70,7 @@
       addressLine1: 'address_line1', addressLine2: 'address_line2', suburb: 'suburb', state: 'state', postcode: 'postcode', country: 'country',
       updatedAt: 'updated_at', customerId: 'customer_id', createdAt: 'created_at',
       editedDate: 'edited_date', noteNumber: 'note_number', dataUrl: 'data_url',
+      textValue: 'text_value', noteType: 'note_type',
       noteId: 'note_id', savedAt: 'saved_at'
     };
     const out = {};
@@ -87,6 +90,7 @@
       address_line1: 'addressLine1', address_line2: 'addressLine2', suburb: 'suburb', state: 'state', postcode: 'postcode', country: 'country',
       updated_at: 'updatedAt', customer_id: 'customerId', created_at: 'createdAt',
       edited_date: 'editedDate', note_number: 'noteNumber', data_url: 'dataUrl',
+      text_value: 'textValue', note_type: 'noteType',
       note_id: 'noteId', saved_at: 'savedAt'
     };
     const out = {};
@@ -95,7 +99,56 @@
       const key = map[k] || k;
       out[key] = obj[k];
     }
+    if (out.text == null && typeof out.textValue === 'string') out.text = out.textValue;
     return out;
+  }
+
+  function hasNonEmptyText(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  function inferNoteType(note) {
+    if (note && (note.noteType === 'svg' || note.type === 'svg')) return 'svg';
+    const hasText = !!(note && (hasNonEmptyText(note.text) || hasNonEmptyText(note.textValue) || hasNonEmptyText(note.content)));
+    const hasSvg = !!(note && hasNonEmptyText(note.svg));
+    if (note && (note.noteType === 'text' || note.type === 'text')) {
+      if (hasText || !hasSvg) return 'text';
+      return 'svg';
+    }
+    if (hasText) return 'text';
+    return 'svg';
+  }
+
+  function isMissingColumnError(errorLike) {
+    const code = String(errorLike?.code || '');
+    const msg = String(errorLike?.message || '').toLowerCase();
+    return code === '42703' || msg.includes('column') && msg.includes('does not exist');
+  }
+
+  async function hasTypedNoteColumns() {
+    if (cachedTypedNoteColumns != null) return cachedTypedNoteColumns;
+    const supabase = getClient();
+    const probe = await supabase.from('notes').select('id,note_type,text_value').limit(1);
+    if (probe.error && isMissingColumnError(probe.error)) {
+      cachedTypedNoteColumns = false;
+      return false;
+    }
+    if (probe.error) throwIfError(probe);
+    cachedTypedNoteColumns = true;
+    return true;
+  }
+
+  async function hasTypedNoteVersionColumns() {
+    if (cachedTypedNoteVersionColumns != null) return cachedTypedNoteVersionColumns;
+    const supabase = getClient();
+    const probe = await supabase.from('note_versions').select('id,note_type,text_value').limit(1);
+    if (probe.error && isMissingColumnError(probe.error)) {
+      cachedTypedNoteVersionColumns = false;
+      return false;
+    }
+    if (probe.error) throwIfError(probe);
+    cachedTypedNoteVersionColumns = true;
+    return true;
   }
 
   function dataURLToBlob(dataUrl, fallbackType) {
@@ -168,6 +221,34 @@
   function throwIfError(res) {
     if (res.error) throw new Error(res.error.message || 'Supabase error');
     return res;
+  }
+
+  function parseNoteDateValue(raw) {
+    if (!raw) return Number.NaN;
+    if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return new Date(`${raw}T12:00:00.000Z`).getTime();
+    }
+    return new Date(raw).getTime();
+  }
+
+  function noteSortTimestamp(note) {
+    const primary = parseNoteDateValue(note?.date);
+    if (Number.isFinite(primary)) return primary;
+    const fallback = parseNoteDateValue(note?.createdAt ?? note?.created_at);
+    if (Number.isFinite(fallback)) return fallback;
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  function noteSortId(note) {
+    const idNum = Number(note?.id);
+    return Number.isFinite(idNum) ? idNum : Number.NEGATIVE_INFINITY;
+  }
+
+  function compareNotesByCreatedDesc(a, b) {
+    const aTime = noteSortTimestamp(a);
+    const bTime = noteSortTimestamp(b);
+    if (aTime !== bTime) return bTime - aTime;
+    return noteSortId(b) - noteSortId(a);
   }
 
   async function fetchImagesForExportSafe() {
@@ -608,6 +689,9 @@
     const createdAt = normalizeDateTimeToISO(note.createdAt) || new Date().toISOString();
     const editedDate = note.editedDate ? normalizeDateTimeToISO(note.editedDate) : undefined;
     const supabase = getClient();
+    const noteType = inferNoteType(note);
+    const textValue = note.text ?? note.textValue ?? note.content ?? null;
+    const supportsTypedColumns = await hasTypedNoteColumns();
     const row = {
       customer_id: parseInt(note.customerId),
       date: date,
@@ -616,6 +700,11 @@
       svg: note.svg ?? null,
       note_number: note.noteNumber ?? null
     };
+    if (supportsTypedColumns) {
+      row.note_type = noteType;
+      row.text_value = noteType === 'text' ? textValue : null;
+      if (noteType === 'text') row.svg = null;
+    }
     const res = throwIfError(await supabase.from('notes').insert(row).select('id').single());
     return res.data.id;
   }
@@ -626,9 +715,17 @@
       return [];
     }
     const supabase = getClient();
-    const res = throwIfError(await supabase.from('notes').select('*').eq('customer_id', numId).order('created_at', { ascending: false }));
+    const res = throwIfError(
+      await supabase
+        .from('notes')
+        .select('*')
+        .eq('customer_id', numId)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+    );
     const list = (res.data || []).map(toCamel);
-    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    list.sort(compareNotesByCreatedDesc);
     return list;
   }
 
@@ -638,13 +735,32 @@
     const { data: existing } = throwIfError(await supabase.from('notes').select('*').eq('id', noteId).single());
     if (!existing) throw new Error('Note with id ' + noteId + ' not found');
     const existingCamel = toCamel(existing);
-    if (existingCamel.svg && existingCamel.svg !== updatedNote.svg) {
-      throwIfError(await supabase.from('note_versions').insert({
+    const supportsTypedColumns = await hasTypedNoteColumns();
+    const supportsTypedVersionColumns = await hasTypedNoteVersionColumns();
+    const nextNoteType = inferNoteType(updatedNote);
+    const nextTextValue = updatedNote.text ?? updatedNote.textValue ?? updatedNote.content ?? null;
+    const existingType = existingCamel.noteType || inferNoteType(existingCamel);
+    const existingText = existingCamel.text ?? existingCamel.textValue ?? existingCamel.content ?? null;
+    const previousSvg = existingType === 'svg' ? (existingCamel.svg ?? null) : null;
+    const nextSvg = nextNoteType === 'svg' ? (updatedNote.svg ?? existingCamel.svg ?? null) : null;
+    const contentChanged = (
+      existingType !== nextNoteType ||
+      (existingType === 'svg' && previousSvg !== nextSvg) ||
+      (existingType === 'text' && existingText !== nextTextValue)
+    );
+    if (contentChanged) {
+      const versionRow = {
         note_id: noteId,
         svg: existingCamel.svg,
         edited_date: existingCamel.editedDate || null,
         saved_at: new Date().toISOString()
-      }));
+      };
+      if (supportsTypedVersionColumns) {
+        versionRow.note_type = existingType;
+        versionRow.text_value = existingType === 'text' ? existingText : null;
+        if (existingType === 'text') versionRow.svg = null;
+      }
+      throwIfError(await supabase.from('note_versions').insert(versionRow));
     }
     const merged = {
       ...existingCamel,
@@ -663,6 +779,11 @@
       svg: merged.svg ?? null,
       note_number: merged.noteNumber ?? null
     };
+    if (supportsTypedColumns) {
+      row.note_type = nextNoteType;
+      row.text_value = nextNoteType === 'text' ? nextTextValue : null;
+      if (nextNoteType === 'text') row.svg = null;
+    }
     throwIfError(await supabase.from('notes').update(row).eq('id', noteId));
   }
 
@@ -684,6 +805,7 @@
       editedDate: previousVersion.editedDate || currentCamel.editedDate,
       restoredAt: new Date().toISOString()
     };
+    const supportsTypedColumns = await hasTypedNoteColumns();
     const row = {
       customer_id: parseInt(restored.customerId),
       date: restored.date || null,
@@ -692,6 +814,12 @@
       svg: restored.svg ?? null,
       note_number: restored.noteNumber ?? null
     };
+    if (supportsTypedColumns) {
+      const restoredType = restored.noteType || inferNoteType(restored);
+      row.note_type = restoredType;
+      row.text_value = restoredType === 'text' ? (restored.text ?? restored.textValue ?? restored.content ?? null) : null;
+      if (restoredType === 'text') row.svg = null;
+    }
     throwIfError(await supabase.from('notes').update(row).eq('id', parseInt(noteId)));
   }
 
@@ -714,9 +842,12 @@
     const healthy = [];
     const isCorrupted = (n) => {
       if (!n) return true;
-      const hasSvg = n.svg && typeof n.svg === 'string' && n.svg.length > 10;
+      const noteType = inferNoteType(n);
+      const hasSvg = n.svg && typeof n.svg === 'string' && n.svg.trim().length > 0;
+      const hasText = hasNonEmptyText(n.text) || hasNonEmptyText(n.textValue) || hasNonEmptyText(n.content);
       const hasDate = n.date || n.createdAt;
-      return !hasSvg || !hasDate;
+      if (!hasDate) return true;
+      return noteType === 'text' ? !hasText : !hasSvg;
     };
     notes.forEach((n) => {
       if (isCorrupted(n)) corrupted.push({ noteId: n.id, customerId: n.customerId, source: 'supabase', corruptedVersion: n });
@@ -750,9 +881,11 @@
     const results = { restored: [], skipped: [], failed: [] };
     for (const note of notesToRestore) {
       try {
-        const hasSvg = note.svg && typeof note.svg === 'string' && note.svg.length > 10;
+        const noteType = inferNoteType(note);
+        const hasSvg = note.svg && typeof note.svg === 'string' && note.svg.trim().length > 0;
+        const hasText = hasNonEmptyText(note.text) || hasNonEmptyText(note.textValue) || hasNonEmptyText(note.content);
         const hasDate = note.date || note.createdAt;
-        if (!hasSvg || !hasDate) {
+        if (!hasDate || (noteType === 'svg' && !hasSvg) || (noteType === 'text' && !hasText)) {
           results.skipped.push({ noteId: note.id, customerId: note.customerId, reason: 'Backup note missing essential fields' });
           continue;
         }
@@ -1155,11 +1288,11 @@
       return inserted;
     }
 
-    function buildNoteRowForImport(note) {
+    function buildNoteRowForImport(note, supportsTypedColumns) {
       const date = normalizeDateToYYYYMMDD(note.date) || normalizeDateToYYYYMMDD(new Date());
       const createdAt = normalizeDateTimeToISO(note.createdAt) || new Date().toISOString();
       const editedDate = note.editedDate ? normalizeDateTimeToISO(note.editedDate) : null;
-      return {
+      const row = {
         customer_id: parseInt(note.customerId, 10),
         date: date,
         created_at: createdAt,
@@ -1167,6 +1300,13 @@
         svg: note.svg ?? null,
         note_number: note.noteNumber ?? null
       };
+      if (supportsTypedColumns) {
+        const noteType = inferNoteType(note);
+        row.note_type = noteType;
+        row.text_value = noteType === 'text' ? (note.text ?? note.textValue ?? note.content ?? null) : null;
+        if (noteType === 'text') row.svg = null;
+      }
+      return row;
     }
 
     const mergeNoteById = new Map();
@@ -1226,6 +1366,7 @@
       return out;
     }
 
+    const supportsTypedNoteCols = await hasTypedNoteColumns();
     const orphanNotes = [];
     const replaceModeNoteRows = [];
     const importedNotesList = flattenImportedNotes(customerNotes);
@@ -1244,7 +1385,7 @@
         const existingBySig = mergeNoteBySignature.get(sigKey);
         const existing = existingById || existingBySig || null;
         if (existing && existing.id != null) {
-          const row = buildNoteRowForImport(n);
+          const row = buildNoteRowForImport(n, supportsTypedNoteCols);
           throwIfError(await supabase.from('notes').update(row).eq('id', parseInt(existing.id, 10)));
           indexMergeNote({ ...existing, ...n, id: existing.id, customerId: newCid });
         } else {
@@ -1252,7 +1393,7 @@
           indexMergeNote({ ...n, id: createdId, customerId: newCid });
         }
       } else {
-        replaceModeNoteRows.push(buildNoteRowForImport(n));
+        replaceModeNoteRows.push(buildNoteRowForImport(n, supportsTypedNoteCols));
       }
     }
     if (mode !== 'merge' && replaceModeNoteRows.length > 0) {
