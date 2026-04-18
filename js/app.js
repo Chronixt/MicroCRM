@@ -1668,6 +1668,10 @@
     return 'svg';
   }
 
+  function isNoteQueuedForSync(note) {
+    return !!(note && note.queuedSync === true);
+  }
+
   function serializeTextNoteToSvg(textValue) {
     const text = String(textValue || '').replace(/\r\n/g, '\n');
     const lines = text.split('\n');
@@ -10169,6 +10173,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     addNoteToUI(noteData) {
       const notesList = document.querySelector('.notes-list');
       if (!notesList) return;
+      const isPendingSync = isNoteQueuedForSync(noteData);
 
       const noteElement = document.createElement('div');
       noteElement.className = 'note-entry';
@@ -10178,6 +10183,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         background: rgba(255,255,255,0.03);
         overflow: hidden;
       `;
+      if (isPendingSync) {
+        noteElement.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+        noteElement.style.boxShadow = '0 0 0 1px rgba(245, 158, 11, 0.18) inset';
+      }
 
       const noteHeader = document.createElement('div');
       noteHeader.className = 'note-header';
@@ -10269,6 +10278,25 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         align-items: center;
         gap: 8px;
       `;
+
+      if (isPendingSync) {
+        const pendingBadge = document.createElement('span');
+        pendingBadge.textContent = 'Sync pending';
+        pendingBadge.title = 'Saved offline. Will sync when connection is restored.';
+        pendingBadge.style.cssText = `
+          font-size: 11px;
+          line-height: 1;
+          padding: 5px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(245, 158, 11, 0.45);
+          background: rgba(245, 158, 11, 0.2);
+          color: #fcd34d;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          white-space: nowrap;
+        `;
+        headerRight.appendChild(pendingBadge);
+      }
 
       // Only show edit button for non-migrated notes
       if (!isMigratedNote) {
