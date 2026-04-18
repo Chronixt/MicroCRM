@@ -24,8 +24,8 @@ All tables, indexes, RLS, and triggers will be created.
 | `customers`      | `customers`      | Columns are `snake_case` (e.g. `first_name`). App uses `camelCase` (`firstName`) – map in code when you integrate. |
 | `appointments`   | `appointments`   | Same. `end` is quoted in SQL because it’s a reserved word. |
 | `images`         | `images`         | `data_url` stores base64 image data (can be large). |
-| `notes`          | `notes`          | App uses `content` and `text`; schema has `content`. Map `text` → `content` when writing. |
-| `note_versions`  | `noteVersions`   | One previous version per note (content + svg). Filled on note update; used for “Revert to previous version”. |
+| `notes`          | `notes`          | Typed payload: `note_type` (`text`/`svg`) with exactly one payload field populated (`text_value` or `svg`). |
+| `note_versions`  | `noteVersions`   | Version snapshots use the same typed payload model as `notes` (`note_type` + `text_value`/`svg`). |
 | `reminders`      | `reminders`      | Follow-ups. |
 | `job_events`     | `jobEvents`      | Timeline / activity log. |
 
@@ -54,6 +54,8 @@ When you switch the app to Supabase, convert keys when reading/writing:
 - `data_url` ↔ `dataUrl`
 - `edited_date` ↔ `editedDate`
 - `note_number` ↔ `noteNumber`
+- `text_value` ↔ `textValue`
+- `note_type` ↔ `noteType`
 - `note_id` ↔ `noteId`
 - `saved_at` ↔ `savedAt`
 - `due_at` ↔ `dueAt`
