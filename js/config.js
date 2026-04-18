@@ -7,6 +7,23 @@
   var host = String(window.location.hostname || '').toLowerCase();
   var isLocal = host === 'localhost' || host === '127.0.0.1';
   var isProdLike = !isLocal;
+  var branchName = String(
+    window.GIT_BRANCH ||
+    window.NETLIFY_BRANCH ||
+    window.BRANCH ||
+    ''
+  ).toLowerCase().trim();
+  var forceLiveSchema = (
+    window.FORCE_LIVE_SCHEMA === true ||
+    String(window.FORCE_LIVE_SCHEMA || '').toLowerCase() === 'true'
+  );
+  var devSchema = String(window.SUPABASE_DEV_SCHEMA || '').trim();
+
+  function isUpdateOrMainBranch(name) {
+    if (!name) return false;
+    return name === 'main' || name.indexOf('update') !== -1;
+  }
+
   if (!window.ACTIVE_PRODUCT && !window.PRODUCT_PROFILE) {
     if (host.indexOf('beautician') !== -1 || host.indexOf('hairdresser') !== -1 || host.indexOf('chikas') !== -1) {
       window.ACTIVE_PRODUCT = 'hairdresser';
@@ -22,6 +39,13 @@
     } else if (activeProduct === 'tradie') {
       window.SUPABASE_SCHEMA = 'tradie';
     }
+  }
+
+  // Branch-safe schema routing:
+  // If SUPABASE_DEV_SCHEMA is set, use it automatically on `main` and update branches.
+  // Set FORCE_LIVE_SCHEMA=true to bypass this protection for intentional prod operations.
+  if (!forceLiveSchema && devSchema && isUpdateOrMainBranch(branchName)) {
+    window.SUPABASE_SCHEMA = devSchema;
   }
 
   window.SUPABASE_URL = window.SUPABASE_URL || '';

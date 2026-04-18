@@ -1532,6 +1532,158 @@
     `;
   }
 
+  const NOTE_INPUT_MODE_KEY = 'noteInputMode';
+
+  function getDefaultNoteInputMode() {
+    return productConfig.activeProduct === 'hairdresser' ? 'canvas' : 'text';
+  }
+
+  function getNoteInputMode() {
+    const saved = localStorage.getItem(NOTE_INPUT_MODE_KEY);
+    if (saved === 'text' || saved === 'canvas') return saved;
+    return getDefaultNoteInputMode();
+  }
+
+  function setNoteInputMode(mode) {
+    if (mode !== 'text' && mode !== 'canvas') return;
+    localStorage.setItem(NOTE_INPUT_MODE_KEY, mode);
+    applyNoteInputModeToggleState(mode);
+  }
+
+  function shouldUseCanvasNoteInput() {
+    return getNoteInputMode() === 'canvas';
+  }
+
+  function renderNoteInputModeToggle(options = {}) {
+    const compact = options.compact === true;
+    const noMargin = options.noMargin === true;
+    const marginStyle = noMargin ? '' : (compact ? ' margin-top:10px;' : ' margin-bottom:10px;');
+    return `
+      <div class="note-input-mode-toggle" style="display:flex; align-items:center;${marginStyle}">
+        <label style="position:relative; display:inline-flex; width:64px; height:38px; cursor:pointer; vertical-align:middle;" title="Toggle note input mode">
+          <input type="checkbox" data-note-input-toggle style="opacity:0; width:0; height:0;" aria-label="Toggle note input mode" />
+          <span class="note-input-mode-slider" style="position:absolute; inset:0; background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.25); border-radius:999px; transition:all 0.2s ease;"></span>
+          <span class="note-input-mode-knob" style="position:absolute; top:3px; left:3px; width:32px; height:32px; background:#ffffff; border-radius:50%; transition:transform 0.2s ease; position:absolute;">
+            <span class="note-input-mode-icon" aria-hidden="true" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:16px; height:16px; display:block; pointer-events:none;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="5" width="20" height="14" rx="2" fill="#dbeafe"></rect>
+                <path d="M6 9h.01M9 9h.01M12 9h.01M15 9h.01M18 9h.01M6 12h.01M9 12h.01M12 12h.01M15 12h.01M18 12h.01M8 15h8" stroke="#1d4ed8"></path>
+              </svg>
+            </span>
+          </span>
+        </label>
+      </div>
+    `;
+  }
+
+  function noteInputModeIconSvg(mode) {
+    if (mode === 'canvas') {
+      return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#7c2d12" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c-4.9 0-9 3.6-9 8 0 4.2 3.7 7 6.8 7h1.5c1.1 0 2 .9 2 2v.5c0 .8.7 1.5 1.5 1.5 4.6 0 8.2-3.6 8.2-8.3C23 7.9 18.1 3 12 3Z" fill="#fde68a"></path><circle cx="7.5" cy="10" r="1" fill="#ef4444" stroke="#ef4444"></circle><circle cx="10.5" cy="8" r="1" fill="#22c55e" stroke="#22c55e"></circle><circle cx="14" cy="8.5" r="1" fill="#3b82f6" stroke="#3b82f6"></circle><circle cx="16.5" cy="11" r="1" fill="#a855f7" stroke="#a855f7"></circle></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2" fill="#dbeafe"></rect><path d="M6 9h.01M9 9h.01M12 9h.01M15 9h.01M18 9h.01M6 12h.01M9 12h.01M12 12h.01M15 12h.01M18 12h.01M8 15h8" stroke="#1d4ed8"></path></svg>';
+  }
+
+  function applyNoteInputModeToggleState(mode = getNoteInputMode()) {
+    const isCanvas = mode === 'canvas';
+    document.querySelectorAll('input[data-note-input-toggle]').forEach((input) => {
+      input.checked = isCanvas;
+      input.setAttribute('aria-checked', isCanvas ? 'true' : 'false');
+      const container = input.closest('.note-input-mode-toggle');
+      const slider = container ? container.querySelector('.note-input-mode-slider') : null;
+      const knob = container ? container.querySelector('.note-input-mode-knob') : null;
+      if (slider) {
+        slider.style.background = isCanvas ? 'var(--brand)' : 'rgba(255,255,255,0.18)';
+        slider.style.borderColor = isCanvas ? 'var(--brand)' : 'rgba(255,255,255,0.25)';
+      }
+      if (knob) {
+        knob.style.transform = isCanvas ? 'translateX(26px)' : 'translateX(0)';
+      }
+      const icon = container ? container.querySelector('.note-input-mode-icon') : null;
+      if (icon) {
+        icon.innerHTML = noteInputModeIconSvg(isCanvas ? 'canvas' : 'text');
+      }
+    });
+  }
+
+  function bindNoteInputModeToggles(scope = document) {
+    scope.querySelectorAll('input[data-note-input-toggle]').forEach((input) => {
+      input.addEventListener('change', () => {
+        setNoteInputMode(input.checked ? 'canvas' : 'text');
+      });
+    });
+    applyNoteInputModeToggleState();
+  }
+
+  function openNoteEditorByMode(customerId) {
+    if (shouldUseCanvasNoteInput()) {
+      fullscreenNotesCanvas.show();
+    } else {
+      textNotesOverlay.show(customerId);
+    }
+  }
+
+  function escapeXmlText(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function isSerializedTextNoteSvg(svgValue) {
+    return typeof svgValue === 'string' && svgValue.indexOf('data-note-type="text"') !== -1;
+  }
+
+  function extractTextFromSerializedTextNoteSvg(svgValue) {
+    if (!isSerializedTextNoteSvg(svgValue)) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgValue, 'image/svg+xml');
+      const tspans = doc.querySelectorAll('text tspan');
+      if (tspans.length > 0) {
+        return Array.from(tspans).map((el) => el.textContent || '').join('\n').trim();
+      }
+      const textEl = doc.querySelector('text');
+      return textEl ? String(textEl.textContent || '').trim() : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function getNoteTextValue(note) {
+    if (!note) return '';
+    const directText = note.text ?? note.textValue ?? note.content ?? '';
+    if (typeof directText === 'string' && directText.trim().length > 0) return directText;
+    return extractTextFromSerializedTextNoteSvg(note.svg);
+  }
+
+  function getNoteTypeValue(note) {
+    if (!note) return 'svg';
+    const noteType = String(note.noteType || note.type || '').toLowerCase();
+    if (noteType === 'text' || noteType === 'svg') return noteType;
+    const textValue = getNoteTextValue(note);
+    if (textValue && textValue.trim().length > 0) return 'text';
+    if (isSerializedTextNoteSvg(note.svg)) return 'text';
+    return 'svg';
+  }
+
+  function serializeTextNoteToSvg(textValue) {
+    const text = String(textValue || '').replace(/\r\n/g, '\n');
+    const lines = text.split('\n');
+    const lineHeight = 24;
+    const topPadding = 28;
+    const bottomPadding = 20;
+    const maxChars = Math.max(1, ...lines.map((l) => l.length));
+    const width = Math.max(420, Math.min(2200, 40 + maxChars * 9));
+    const height = Math.max(80, topPadding + lines.length * lineHeight + bottomPadding);
+    const escapedLines = lines.map((line) => escapeXmlText(line));
+    const tspans = escapedLines.map((line, idx) => (
+      `<tspan x="16" dy="${idx === 0 ? 0 : lineHeight}">${line || '&#160;'}</tspan>`
+    )).join('');
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-note-type="text"><rect width="100%" height="100%" fill="transparent"></rect><text x="16" y="${topPadding}" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" font-size="16" fill="#f8fafc">${tspans}</text></svg>`;
+  }
+
   async function renderAddRecord() {
     // Clear global customer variables to prevent notes from being assigned to wrong customer
     window.currentCustomerId = null;
@@ -1543,20 +1695,24 @@
         <h2>${t('newCustomer')}</h2>
       </div>
       <div class="card">
+        <div class="view-header" style="margin-bottom: 8px;">
+          <div></div>
+          <div class="view-actions" style="display: flex; gap: 8px;">
+            ${renderNoteInputModeToggle({ compact: true, noMargin: true })}
+          </div>
+        </div>
         <div class="form" id="new-form">
           <div class="grid-2">
             <div>
               <label>${t('firstName')}</label>
               <div class="input-with-button">
                 <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="firstName" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('lastName')}</label>
               <div class="input-with-button">
                 <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="lastName" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -1564,7 +1720,6 @@
             <label>${t('contactNumber')}</label>
             <div class="input-with-button">
               <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
-              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
           ${!isTradie() ? `
@@ -1572,7 +1727,6 @@
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
               <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
           ` : ''}
@@ -1616,14 +1770,12 @@
             <label>${t('address')}</label>
             <div class="input-with-button">
               <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>${t('addressLine2')}</label>
             <div class="input-with-button">
               <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
-              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Edit">⌨️</button>
             </div>
           </div>
           <div class="grid-2">
@@ -1631,14 +1783,12 @@
               <label>${t('suburb')}</label>
               <div class="input-with-button">
                 <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="suburb" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('state')}</label>
               <div class="input-with-button">
                 <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="state" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -1647,14 +1797,12 @@
               <label>${t('postcode')}</label>
               <div class="input-with-button">
                 <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="postcode" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('country')}</label>
               <div class="input-with-button">
                 <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
-                <button type="button" class="input-icon-btn" data-field="country" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -1663,7 +1811,6 @@
             <label>Referral</label>
             <div class="input-with-button">
               <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
@@ -1686,28 +1833,12 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      if (productConfig.activeProduct === 'hairdresser') {
-        fullscreenNotesCanvas.show();
-      } else {
-        textNotesOverlay.show('temp-new-customer');
-      }
+      openNoteEditorByMode('temp-new-customer');
     });
+    bindNoteInputModeToggles(appRoot);
     
     // Load any existing temporary notes for new customer
     loadExistingNotes('temp-new-customer');
-    
-    // Text input buttons - focus on input to trigger keyboard
-    document.querySelectorAll('.input-icon-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const fieldName = btn.dataset.field;
-        const input = document.querySelector(`input[name="${fieldName}"]`);
-        if (input) {
-          input.focus();
-          // Move cursor to end
-          input.setSelectionRange(input.value.length, input.value.length);
-        }
-      });
-    });
     
     document.getElementById('save-btn').addEventListener('click', async () => {
       const form = document.getElementById('new-form');
@@ -1729,7 +1860,7 @@
       
       // Get notes data from fullscreenNotesCanvas if available, otherwise use empty string
       let notesImageData = '';
-      if (fullscreenNotesCanvas && fullscreenNotesCanvas.canvas && fullscreenNotesCanvas.strokes && fullscreenNotesCanvas.strokes.length > 0) {
+      if (shouldUseCanvasNoteInput() && fullscreenNotesCanvas && fullscreenNotesCanvas.canvas && fullscreenNotesCanvas.strokes && fullscreenNotesCanvas.strokes.length > 0) {
         notesImageData = fullscreenNotesCanvas.getImageData();
       }
       
@@ -1758,7 +1889,9 @@
           const note = tempNotes[i];
           await CrmDB.createNote({
             customerId: newId,
-            text: note.text || note.content,
+            text: note.text || note.textValue || note.content,
+            textValue: note.textValue || note.text || note.content || null,
+            noteType: note.noteType || note.type || null,
             svg: note.svg || null,
             date: note.date,
             noteNumber: note.noteNumber != null ? note.noteNumber : i + 1,
@@ -2056,6 +2189,7 @@
         <div class="view-header">
           <h2 class="customer-title" style="text-align: left; font-size: 24px; margin: 0; padding-left: 16px;">👤 ${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
           <div class="view-actions" style="display: flex; gap: 8px;">
+            ${renderNoteInputModeToggle({ compact: true })}
             <button id="reminder-btn" class="edit-btn-custom" title="Set Follow-up" aria-label="Set Follow-up" style="background: rgba(251,191,36,0.2); border: 2px solid rgba(251,191,36,0.4); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">🔔</button>
             <button id="edit-btn" class="edit-btn-custom" title="Edit" aria-label="Edit" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">✏️</button>
           </div>
@@ -2317,12 +2451,9 @@
     
     // Add note button event listener
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      if (productConfig.activeProduct === 'hairdresser') {
-        fullscreenNotesCanvas.show();
-      } else {
-        textNotesOverlay.show(id);
-      }
+      openNoteEditorByMode(id);
     });
+    bindNoteInputModeToggles(appRoot);
 
     // Load next appointment
     async function loadNextAppointment() {
@@ -2525,7 +2656,10 @@
       <div class="card">
         <div class="space-between">
           <h2>${t('edit')} ${t('customer')}</h2>
-          <a class="button secondary" href="#/customer?id=${encodeURIComponent(id)}">${t('cancel')}</a>
+          <div style="display:flex; align-items:center; gap:12px;">
+            ${renderNoteInputModeToggle({ compact: true })}
+            <a class="button secondary" href="#/customer?id=${encodeURIComponent(id)}">${t('cancel')}</a>
+          </div>
         </div>
         <div class="form" id="customer-form">
           <div class="grid-2">
@@ -2533,14 +2667,12 @@
               <label>First Name</label>
               <div class="input-with-button">
                 <input type="text" name="firstName" />
-                <button type="button" class="input-icon-btn" data-field="firstName" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>Last Name</label>
               <div class="input-with-button">
                 <input type="text" name="lastName" />
-                <button type="button" class="input-icon-btn" data-field="lastName" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -2548,7 +2680,6 @@
             <label>Contact Number</label>
             <div class="input-with-button">
               <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="contactNumber" title="Edit">⌨️</button>
             </div>
           </div>
           ${!isTradie() ? `
@@ -2556,7 +2687,6 @@
             <label>${t('socialMediaName')}</label>
             <div class="input-with-button">
               <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" />
-              <button type="button" class="input-icon-btn" data-field="socialMediaName" title="Edit">⌨️</button>
             </div>
           </div>
           ` : ''}
@@ -2564,7 +2694,6 @@
             <label>Referral</label>
             <div class="input-with-button">
               <input type="text" name="referralNotes" />
-              <button type="button" class="input-icon-btn" data-field="referralNotes" title="Edit">⌨️</button>
             </div>
           </div>
           
@@ -2618,14 +2747,12 @@
             <label>${t('address')}</label>
             <div class="input-with-button">
               <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" />
-              <button type="button" class="input-icon-btn" data-field="addressLine1" title="Edit">⌨️</button>
             </div>
           </div>
           <div>
             <label>${t('addressLine2')}</label>
             <div class="input-with-button">
               <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" />
-              <button type="button" class="input-icon-btn" data-field="addressLine2" title="Edit">⌨️</button>
             </div>
           </div>
           <div class="grid-2">
@@ -2633,14 +2760,12 @@
               <label>${t('suburb')}</label>
               <div class="input-with-button">
                 <input type="text" name="suburb" placeholder="${t('suburb')}" />
-                <button type="button" class="input-icon-btn" data-field="suburb" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('state')}</label>
               <div class="input-with-button">
                 <input type="text" name="state" placeholder="${t('state')}" />
-                <button type="button" class="input-icon-btn" data-field="state" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -2649,14 +2774,12 @@
               <label>${t('postcode')}</label>
               <div class="input-with-button">
                 <input type="text" name="postcode" placeholder="${t('postcode')}" />
-                <button type="button" class="input-icon-btn" data-field="postcode" title="Edit">⌨️</button>
               </div>
             </div>
             <div>
               <label>${t('country')}</label>
               <div class="input-with-button">
                 <input type="text" name="country" placeholder="${t('country')}" />
-                <button type="button" class="input-icon-btn" data-field="country" title="Edit">⌨️</button>
               </div>
             </div>
           </div>
@@ -2721,29 +2844,13 @@
 
     // Initialize add note button functionality
     document.querySelector('.add-note-btn').addEventListener('click', () => {
-      if (productConfig.activeProduct === 'hairdresser') {
-        fullscreenNotesCanvas.show();
-      } else {
-        textNotesOverlay.show(customer.id);
-      }
+      openNoteEditorByMode(customer.id);
     });
+    bindNoteInputModeToggles(appRoot);
     
     // Load existing notes
     loadExistingNotes(customer.id);
     
-    // Text input buttons - focus on input to trigger keyboard
-    document.querySelectorAll('.input-icon-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const fieldName = btn.dataset.field;
-        const input = document.querySelector(`input[name="${fieldName}"]`);
-        if (input) {
-          input.focus();
-          // Move cursor to end
-          input.setSelectionRange(input.value.length, input.value.length);
-        }
-      });
-    });
-
     // Load and display existing images
     const existingImagesGrid = document.getElementById('existing-images-grid');
     
@@ -2883,7 +2990,7 @@
       let notesImageData = customer.notesImageData || '';
       let hasNotes = false;
       
-      if (fullscreenNotesCanvas && fullscreenNotesCanvas.canvas && fullscreenNotesCanvas.strokes && fullscreenNotesCanvas.strokes.length > 0) {
+      if (shouldUseCanvasNoteInput() && fullscreenNotesCanvas && fullscreenNotesCanvas.canvas && fullscreenNotesCanvas.strokes && fullscreenNotesCanvas.strokes.length > 0) {
         notesImageData = fullscreenNotesCanvas.getImageData();
         hasNotes = true;
       }
@@ -4808,7 +4915,7 @@
       
       // Filter notes
       const matchingNotes = notes.filter(n => {
-        const content = (n.content || '').toLowerCase();
+        const content = getNoteTextValue(n).toLowerCase();
         return content.includes(lowerQuery);
       }).slice(0, 3);
       
@@ -4848,7 +4955,8 @@
       if (matchingNotes.length > 0) {
         html += '<div class="search-section"><div class="search-section-title">Notes</div>';
         for (const n of matchingNotes) {
-          const preview = (n.content || '').substring(0, 50) + (n.content && n.content.length > 50 ? '...' : '');
+          const noteText = getNoteTextValue(n);
+          const preview = noteText.substring(0, 50) + (noteText.length > 50 ? '...' : '');
           html += '<div class="search-result-item" data-type="note" data-customer-id="' + n.customerId + '">';
           html += '<span class="search-icon">📝</span>';
           html += '<span class="search-text">' + escapeHtml(preview) + '</span>';
@@ -7418,6 +7526,34 @@
     return parsed.toISOString();
   }
 
+  function parseNoteDateValue(raw) {
+    if (!raw) return Number.NaN;
+    if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return new Date(`${raw}T12:00:00.000Z`).getTime();
+    }
+    return new Date(raw).getTime();
+  }
+
+  function noteSortTimestamp(note) {
+    const primary = parseNoteDateValue(note?.date);
+    if (Number.isFinite(primary)) return primary;
+    const fallback = parseNoteDateValue(note?.createdAt ?? note?.created_at);
+    if (Number.isFinite(fallback)) return fallback;
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  function noteSortId(note) {
+    const idNum = Number(note?.id);
+    return Number.isFinite(idNum) ? idNum : Number.NEGATIVE_INFINITY;
+  }
+
+  function compareNotesByCreatedDesc(a, b) {
+    const aTime = noteSortTimestamp(a);
+    const bTime = noteSortTimestamp(b);
+    if (aTime !== bTime) return bTime - aTime;
+    return noteSortId(b) - noteSortId(a);
+  }
+
   function isDbBackedNoteSource(source) {
     const normalized = String(source || '').toLowerCase();
     return normalized === 'indexeddb' ||
@@ -8672,6 +8808,9 @@
         if (this.editingNote) {
           // Editing existing note - update it
           console.log('Updating existing note:', this.editingNote.id);
+          const editingNoteId = this.editingNote.id != null ? String(this.editingNote.id) : '';
+          const matchedExistingNote = allExistingNotes.find((n) => String(n?.id) === editingNoteId);
+          const effectiveSource = (this.editingNote.source || matchedExistingNote?.source || '').toString();
           
           // Update the note data
           const updatedNote = {
@@ -8681,7 +8820,10 @@
           };
           
           // Determine which storage method to use based on the note's source
-          if (isDbBackedNoteSource(this.editingNote.source)) {
+          if (isDbBackedNoteSource(effectiveSource)) {
+            if (!editingNoteId) {
+              throw new Error('Edit mode requires an existing note ID for DB-backed notes');
+            }
             // Update in IndexedDB
             try {
               await CrmDB.updateNote(updatedNote);
@@ -8690,13 +8832,16 @@
               throw new Error(`Failed to update note in IndexedDB: ${error.message}`);
             }
           } else {
+            if (productConfig.useSupabase) {
+              throw new Error('Supabase mode requires DB-backed notes. Refresh the page and retry to avoid mixed local note edits.');
+            }
             // Update in localStorage
             const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
             const customerNotes = existingNotes[customerId] || [];
             
-            const noteIndex = customerNotes.findIndex(note => note.id === this.editingNote.id);
+            const noteIndex = customerNotes.findIndex(note => String(note.id) === editingNoteId);
             if (noteIndex === -1) {
-              throw new Error('Could not find existing note to update in localStorage');
+              throw new Error('Could not find existing note to update in localStorage. Edit was aborted to avoid creating a duplicate note.');
             }
             
             // Save previous version to IndexedDB if possible (for future migration/recovery)
@@ -8720,48 +8865,14 @@
             
             customerNotes[noteIndex] = normalizedUpdatedNote;
             
-            // Try to update localStorage with quota handling
+            // Try to update localStorage. Do not create a replacement note during edit.
             try {
               existingNotes[customerId] = customerNotes;
               localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
               console.log('Note updated successfully in localStorage');
             } catch (localStorageError) {
               console.log('❌ localStorage update failed:', localStorageError.message);
-              
-              if (localStorageError.message.includes('quota') || localStorageError.message.includes('QuotaExceededError')) {
-                console.log('🔄 Moving note from localStorage to IndexedDB due to quota...');
-                
-                try {
-                  // Remove the note from localStorage first (restore original state)
-                  customerNotes.splice(noteIndex, 1);
-                  existingNotes[customerId] = customerNotes;
-                  localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-                  
-                  // Save updated note to IndexedDB
-                  const noteForDB = {
-                    customerId: parseInt(customerId),
-                    svg: normalizedUpdatedNote.svg,
-                    date: normalizedUpdatedNote.date,
-                    noteNumber: normalizedUpdatedNote.noteNumber,
-                    createdAt: normalizedUpdatedNote.createdAt || new Date().toISOString(),
-                    editedDate: normalizedUpdatedNote.editedDate,
-                    source: 'indexeddb-fallback',
-                    originalId: this.editingNote.id
-                  };
-                  
-                  const savedId = await CrmDB.createNote(noteForDB);
-                  console.log('✅ Note migrated to IndexedDB successfully, new ID:', savedId);
-                  
-                  // Update the editing note reference for future operations
-                  this.editingNote.id = savedId;
-                  this.editingNote.source = 'indexeddb-fallback';
-                  
-                } catch (migrationError) {
-                  throw new Error(`Failed to migrate note to IndexedDB: ${migrationError.message}`);
-                }
-              } else {
-                throw localStorageError;
-              }
+              throw new Error(`Failed to update existing note in localStorage: ${localStorageError.message}`);
             }
           }
           
@@ -9371,6 +9482,24 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         editedDate: noteData.editedDate ? (normalizeDateTimeToISO(noteData.editedDate) || noteData.editedDate) : undefined,
         createdAt: noteData.createdAt ? (normalizeDateTimeToISO(noteData.createdAt) || noteData.createdAt) : undefined
       };
+
+      // Supabase mode: keep notes DB-backed only.
+      if (productConfig.useSupabase) {
+        const noteForDB = {
+          customerId: parseInt(customerId, 10),
+          svg: normalizedNoteData.svg,
+          date: normalizedNoteData.date,
+          noteNumber: normalizedNoteData.noteNumber,
+          createdAt: normalizedNoteData.createdAt || new Date().toISOString(),
+          editedDate: normalizedNoteData.editedDate
+        };
+        const savedId = await CrmDB.createNote(noteForDB);
+        normalizedNoteData.id = savedId;
+        normalizedNoteData.source = 'supabase';
+        Object.assign(noteData, normalizedNoteData);
+        console.log('✅ Note saved to Supabase successfully, ID:', savedId);
+        return { method: 'supabase', success: true, id: savedId };
+      }
       
       try {
         // First, try localStorage (existing method)
@@ -9445,6 +9574,25 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     // Load notes from both localStorage and IndexedDB
     async loadNotesHybrid(customerId) {
+      // Supabase mode: use DB-backed notes only to avoid mixed local + DB note state.
+      if (productConfig.useSupabase && customerId !== 'temp-new-customer') {
+        try {
+          const dbNotes = await CrmDB.getNotesByCustomerId(customerId);
+          dbNotes.forEach((note) => {
+            note.source = note.source || 'supabase';
+          });
+          dbNotes.sort(compareNotesByCreatedDesc);
+          dbNotes.forEach((note, index) => {
+            note.noteNumber = index + 1;
+          });
+          console.log(`Loaded ${dbNotes.length} notes from Supabase (DB-only mode)`);
+          return dbNotes;
+        } catch (error) {
+          console.warn('Error loading DB-only notes in Supabase mode:', error);
+          return [];
+        }
+      }
+
       const allNotes = [];
       
       try {
@@ -9508,11 +9656,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const mergedNotes = [...dedupedById.values(), ...notesWithoutId];
       
       // Sort all notes by creation time (newest first)
-      mergedNotes.sort((a, b) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.id || 0);
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.id || 0);
-        return timeB - timeA;
-      });
+      mergedNotes.sort(compareNotesByCreatedDesc);
       
       // Re-number notes for display consistency
       mergedNotes.forEach((note, index) => {
@@ -9806,7 +9950,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         editButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
           // Use text overlay for text-based notes, canvas for SVG notes
-          const isTextNote = noteData.type === 'text' || (noteData.text && !noteData.svg);
+          const noteText = getNoteTextValue(noteData);
+          const isTextNote = getNoteTypeValue(noteData) === 'text';
           if (isTextNote) {
             textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
           } else {
@@ -9913,7 +10058,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       `;
 
       // Check if this is a text-based note or SVG-based note
-      const isTextNote = noteData.type === 'text' || (noteData.text && !noteData.svg);
+      const noteText = getNoteTextValue(noteData);
+      const isTextNote = getNoteTypeValue(noteData) === 'text';
       
       let contentContainer;
       
@@ -9933,7 +10079,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           white-space: pre-wrap;
           word-wrap: break-word;
         `;
-        contentContainer.textContent = noteData.text || '';
+        contentContainer.textContent = noteText;
       } else {
         // Render SVG-based note (legacy handwriting)
         contentContainer = document.createElement('div');
@@ -10163,6 +10309,16 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const customerId = this.getCurrentCustomerId();
 
       try {
+        if (productConfig.useSupabase) {
+          if (!noteData || noteData.id == null) {
+            throw new Error('Cannot delete note: missing note ID');
+          }
+          await CrmDB.deleteNote(noteData.id);
+          console.log('Note deleted successfully in Supabase mode');
+          await this.refreshNotesList(customerId);
+          return;
+        }
+
         // Determine which storage method to use based on the note's source
         if (isDbBackedNoteSource(noteData.source)) {
           // Delete from IndexedDB
@@ -10362,7 +10518,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         if (this.textarea) {
           this.textarea.focus();
           // Scroll to end if editing
-          if (this.editingNote && this.editingNote.text) {
+          if (this.editingNote && getNoteTextValue(this.editingNote)) {
             this.textarea.setSelectionRange(this.textarea.value.length, this.textarea.value.length);
           }
         }
@@ -10473,8 +10629,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       // Pre-fill if editing
       if (this.editingNote) {
         // Handle both text-based notes and legacy SVG notes
-        if (this.editingNote.text) {
-          this.textarea.value = this.editingNote.text;
+        const existingText = getNoteTextValue(this.editingNote);
+        if (existingText) {
+          this.textarea.value = existingText;
         } else if (this.editingNote.svg) {
           // Try to extract text from SVG (for legacy notes)
           const textContent = this.extractTextFromSVG(this.editingNote.svg);
@@ -10554,16 +10711,19 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     async createNote(customerId, text, dateStr) {
       const existingNotesList = await this.getNotesForCustomer(customerId);
       const noteNumber = existingNotesList.length + 1;
+      const serializedSvg = serializeTextNoteToSvg(text);
       
       const noteData = {
         customerId: customerId,
         text: text,
-        svg: null,
+        textValue: text,
+        svg: serializedSvg,
         date: dateStr,
         noteNumber: noteNumber,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        type: 'text'
+        type: 'text',
+        noteType: 'text'
       };
       
       // New customer flow: queue in localStorage until customer is saved
@@ -10585,13 +10745,17 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     async updateNote(text) {
       if (!this.editingNote) return;
+      const serializedSvg = serializeTextNoteToSvg(text);
       
       const updatedNote = {
         ...this.editingNote,
         text: text,
+        textValue: text,
+        svg: serializedSvg,
         editedDate: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        type: 'text'
+        type: 'text',
+        noteType: 'text'
       };
       
       // Temp-new-customer: update in localStorage queue
@@ -10607,11 +10771,32 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         return;
       }
       
-      if (this.editingNote.id && isDbBackedNoteSource(this.editingNote.source)) {
+      const editingNoteId = this.editingNote.id != null ? String(this.editingNote.id) : '';
+      const notesForCustomer = await this.getNotesForCustomer(this.customerId);
+      const matchedExistingNote = notesForCustomer.find((n) => String(n?.id) === editingNoteId);
+      const effectiveSource = String(this.editingNote.source || matchedExistingNote?.source || '');
+
+      if (editingNoteId && isDbBackedNoteSource(effectiveSource)) {
         await CrmDB.updateNote(updatedNote);
-      } else {
-        await CrmDB.createNote({ ...updatedNote, customerId: this.customerId });
+        return;
       }
+
+      if (editingNoteId) {
+        if (productConfig.useSupabase) {
+          throw new Error('Supabase mode requires DB-backed note updates. Refresh and retry.');
+        }
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        const customerNotes = existingNotes[String(this.customerId)] || [];
+        const idx = customerNotes.findIndex((n) => String(n?.id) === editingNoteId);
+        if (idx !== -1) {
+          customerNotes[idx] = { ...customerNotes[idx], ...updatedNote };
+          existingNotes[String(this.customerId)] = customerNotes;
+          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+          return;
+        }
+      }
+
+      throw new Error('Cannot update note: existing note metadata is missing. Refresh the page and try editing again.');
     }
 
     async getNotesForCustomer(customerId) {
@@ -11007,6 +11192,84 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       } catch (error) {
         console.error('❌ Debug failed:', error);
         return { error: error.message };
+      }
+    },
+
+    // Regression test: editing an SVG note must update in place (same ID, no extra row)
+    verifySvgEditUpdatesInPlace: async () => {
+      console.log('=== Verify SVG Edit Updates In Place ===');
+      const customerId = getCurrentCustomerId();
+      if (!customerId || customerId === 'default' || customerId === 'temp-new-customer') {
+        console.error('❌ Open a real customer page first (with ?id=...)');
+        return { ok: false, error: 'invalid-customer-context' };
+      }
+
+      const cid = parseInt(customerId, 10);
+      if (Number.isNaN(cid)) {
+        console.error('❌ Invalid customer ID:', customerId);
+        return { ok: false, error: 'invalid-customer-id' };
+      }
+
+      const marker = `debug-svg-edit-${Date.now()}`;
+      const baseSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120"><text x="10" y="40" fill="#fff" font-size="20">${marker}</text></svg>`;
+      const editedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120"><text x="10" y="40" fill="#fff" font-size="20">${marker}-edited</text></svg>`;
+
+      let createdId = null;
+      try {
+        const before = await CrmDB.getNotesByCustomerId(cid);
+        const beforeCount = before.length;
+
+        createdId = await CrmDB.createNote({
+          customerId: cid,
+          svg: baseSvg,
+          date: formatDateYYYYMMDD(new Date()),
+          noteNumber: beforeCount + 1,
+          createdAt: new Date().toISOString()
+        });
+
+        await CrmDB.updateNote({
+          id: createdId,
+          customerId: cid,
+          svg: editedSvg,
+          editedDate: new Date().toISOString()
+        });
+
+        const after = await CrmDB.getNotesByCustomerId(cid);
+        const afterCount = after.length;
+        const updated = after.find((n) => String(n.id) === String(createdId));
+
+        const sameCount = afterCount === beforeCount + 1;
+        const sameIdExists = !!updated;
+        const svgUpdated = !!(updated && typeof updated.svg === 'string' && updated.svg.indexOf(`${marker}-edited`) !== -1);
+
+        const ok = sameCount && sameIdExists && svgUpdated;
+        if (ok) {
+          console.log('✅ PASS: SVG edit updated existing row in place.');
+        } else {
+          console.error('❌ FAIL:', { sameCount, sameIdExists, svgUpdated, beforeCount, afterCount, createdId });
+        }
+
+        return {
+          ok,
+          beforeCount,
+          afterCount,
+          createdId,
+          sameCount,
+          sameIdExists,
+          svgUpdated
+        };
+      } catch (error) {
+        console.error('❌ verifySvgEditUpdatesInPlace failed:', error);
+        return { ok: false, error: error.message || String(error), createdId };
+      } finally {
+        if (createdId != null) {
+          try {
+            await CrmDB.deleteNote(createdId);
+            console.log('🧹 Cleaned up test note:', createdId);
+          } catch (cleanupError) {
+            console.warn('Cleanup failed for test note', createdId, cleanupError);
+          }
+        }
       }
     }
   };

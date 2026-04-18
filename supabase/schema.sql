@@ -79,13 +79,19 @@ CREATE INDEX IF NOT EXISTS idx_images_appointment_id ON images (appointment_id);
 CREATE TABLE IF NOT EXISTS notes (
   id          BIGSERIAL PRIMARY KEY,
   customer_id BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  content     TEXT,
   svg         TEXT,
+  text_value  TEXT,
+  note_type   TEXT NOT NULL CHECK (note_type IN ('text', 'svg')),
   date        DATE,
   note_number INT,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW(),
-  edited_date DATE
+  edited_date DATE,
+  CONSTRAINT notes_note_payload_xor_chk CHECK (
+    (note_type = 'svg' AND svg IS NOT NULL AND BTRIM(svg) <> '' AND (text_value IS NULL OR BTRIM(text_value) = ''))
+    OR
+    (note_type = 'text' AND text_value IS NOT NULL AND BTRIM(text_value) <> '' AND (svg IS NULL OR BTRIM(svg) = ''))
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_notes_customer_id ON notes (customer_id);
@@ -97,17 +103,25 @@ CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes (created_at);
 CREATE TABLE IF NOT EXISTS note_versions (
   id         BIGSERIAL PRIMARY KEY,
   note_id    BIGINT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-  content    TEXT,
   svg        TEXT,
+  text_value TEXT,
+  note_type  TEXT NOT NULL CHECK (note_type IN ('text', 'svg')),
   edited_date TIMESTAMPTZ,
-  saved_at   TIMESTAMPTZ DEFAULT NOW()
+  saved_at   TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT note_versions_note_payload_xor_chk CHECK (
+    (note_type = 'svg' AND svg IS NOT NULL AND BTRIM(svg) <> '' AND (text_value IS NULL OR BTRIM(text_value) = ''))
+    OR
+    (note_type = 'text' AND text_value IS NOT NULL AND BTRIM(text_value) <> '' AND (svg IS NULL OR BTRIM(svg) = ''))
+  )
 );
 
 CREATE INDEX IF NOT EXISTS idx_note_versions_note_id ON note_versions (note_id);
 CREATE INDEX IF NOT EXISTS idx_note_versions_saved_at ON note_versions (saved_at);
 
--- If the table already existed without content, add the column (run once)
-ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS text_value TEXT;
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS note_type TEXT;
+ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS text_value TEXT;
+ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS note_type TEXT;
 
 -- -----------------------------------------------------------------------------
 -- 6. REMINDERS (Follow-ups)
