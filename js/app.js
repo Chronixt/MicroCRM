@@ -7554,6 +7554,45 @@
     return noteSortId(b) - noteSortId(a);
   }
 
+  function getLocalNotesForCustomer(customerId) {
+    try {
+      const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      return Array.isArray(all[String(customerId)]) ? all[String(customerId)] : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function getNotePayloadForSync(note) {
+    const noteType = getNoteTypeValue(note);
+    const date = formatDateYYYYMMDD(note?.date || new Date());
+    const noteNumber = note?.noteNumber != null ? note.noteNumber : null;
+    const createdAt = note?.createdAt ? (normalizeDateTimeToISO(note.createdAt) || note.createdAt) : null;
+    const editedDate = note?.editedDate ? (normalizeDateTimeToISO(note.editedDate) || note.editedDate) : null;
+    const textValue = getNoteTextValue(note);
+    const svgValue = typeof note?.svg === 'string' ? note.svg : '';
+
+    if (noteType === 'text') {
+      const text = (textValue || '').trim();
+      if (!text) return null;
+      return { noteType: 'text', text, date, noteNumber, createdAt, editedDate, svg: null };
+    }
+
+    const svg = (svgValue || '').trim();
+    if (!svg) return null;
+    return { noteType: 'svg', svg, date, noteNumber, createdAt, editedDate, text: '' };
+  }
+
+  function buildNoteSyncSignature(note) {
+    const payload = getNotePayloadForSync(note);
+    if (!payload) return null;
+    const base = `${payload.noteType}|${payload.date}|${payload.noteNumber ?? ''}`;
+    if (payload.noteType === 'text') {
+      return `${base}|text:${payload.text}`;
+    }
+    return `${base}|svg:${payload.svg}`;
+  }
+
   function isDbBackedNoteSource(source) {
     const normalized = String(source || '').toLowerCase();
     return normalized === 'indexeddb' ||
@@ -9588,7 +9627,14 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       // Supabase mode: use DB-backed notes only to avoid mixed local + DB note state.
       if (productConfig.useSupabase && customerId !== 'temp-new-customer') {
         try {
-          const dbNotes = await CrmDB.getNotesByCustomerId(customerId);
+          let dbNotes = await CrmDB.getNotesByCustomerId(customerId);
+          const localNotes = getLocalNotesForCustomer(customerId);
+          if (localNotes.length > 0) {
+            const syncedCount = await this.syncLocalNotesToSupabase(customerId, localNotes, dbNotes);
+            if (syncedCount > 0) {
+              dbNotes = await CrmDB.getNotesByCustomerId(customerId);
+            }
+          }
           dbNotes.forEach((note) => {
             note.source = note.source || 'supabase';
           });
@@ -9600,7 +9646,15 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           return dbNotes;
         } catch (error) {
           console.warn('Error loading DB-only notes in Supabase mode:', error);
-          return [];
+          const localNotes = getLocalNotesForCustomer(customerId);
+          localNotes.forEach((note) => {
+            note.source = note.source || 'localStorage';
+          });
+          localNotes.sort(compareNotesByCreatedDesc);
+          localNotes.forEach((note, index) => {
+            note.noteNumber = index + 1;
+          });
+          return localNotes;
         }
       }
 
@@ -9676,6 +9730,60 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       console.log(`Total notes loaded: ${mergedNotes.length}`);
       return mergedNotes;
+    }
+
+    async syncLocalNotesToSupabase(customerId, localNotesInput, dbNotesInput) {
+      if (!productConfig.useSupabase) return 0;
+      const localNotes = Array.isArray(localNotesInput) ? localNotesInput : [];
+      const dbNotes = Array.isArray(dbNotesInput) ? dbNotesInput : [];
+      if (localNotes.length === 0) return 0;
+
+      const existingSigs = new Set();
+      dbNotes.forEach((note) => {
+        const sig = buildNoteSyncSignature(note);
+        if (sig) existingSigs.add(sig);
+      });
+
+      let syncedCount = 0;
+      const numericCustomerId = parseInt(customerId, 10);
+      if (Number.isNaN(numericCustomerId)) return 0;
+
+      for (const localNote of localNotes) {
+        const sig = buildNoteSyncSignature(localNote);
+        if (!sig || existingSigs.has(sig)) continue;
+
+        const payload = getNotePayloadForSync(localNote);
+        if (!payload) continue;
+
+        try {
+          const createInput = {
+            customerId: numericCustomerId,
+            date: payload.date,
+            noteNumber: payload.noteNumber,
+            createdAt: payload.createdAt || new Date().toISOString(),
+            editedDate: payload.editedDate || null,
+            noteType: payload.noteType
+          };
+          if (payload.noteType === 'text') {
+            createInput.text = payload.text;
+            createInput.textValue = payload.text;
+            createInput.svg = null;
+          } else {
+            createInput.svg = payload.svg;
+          }
+
+          await CrmDB.createNote(createInput);
+          existingSigs.add(sig);
+          syncedCount++;
+        } catch (error) {
+          console.warn('Failed syncing local note to Supabase', error);
+        }
+      }
+
+      if (syncedCount > 0) {
+        console.log(`Synced ${syncedCount} local note(s) to Supabase for customer ${customerId}`);
+      }
+      return syncedCount;
     }
 
     // Refresh the notes display using hybrid loading
