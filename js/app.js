@@ -8797,7 +8797,7 @@
         console.log('Storage info:', storageInfo);
         
         // If storage is getting full, try to clean up old data
-        if (storageInfo.isNearLimit) {
+        if (storageInfo.isNearLimit && !productConfig.useSupabase) {
           console.log('Storage near limit, attempting cleanup...');
           await this.cleanupOldData();
         }
@@ -9321,6 +9321,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           freedSpace += size;
         });
         
+        // In Supabase mode, never mutate localStorage notes history during cleanup.
+        if (productConfig.useSupabase) {
+          console.log('Supabase mode: skipping customerNotes cleanup to preserve local note history.');
+          console.log(`Cleanup completed. Freed approximately ${(freedSpace / 1024).toFixed(1)}KB`);
+          return freedSpace;
+        }
+
         // 2. Compress customer notes by removing redundant data
         const customerNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
         let notesModified = false;
@@ -9416,6 +9423,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       console.log('Performing aggressive cleanup...');
       
       try {
+        if (productConfig.useSupabase) {
+          console.log('Supabase mode: skipping aggressive customerNotes cleanup to preserve local note history.');
+          return;
+        }
         // Remove all non-essential localStorage items
         const essentialKeys = ['customerNotes'];
         const keysToRemove = [];
