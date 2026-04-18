@@ -7554,6 +7554,44 @@
     return noteSortId(b) - noteSortId(a);
   }
 
+  const NOTE_OFFLINE_QUEUE_KEY = `${STORAGE_PREFIX}noteOfflineQueue`;
+
+  function isOfflineLikeError(error) {
+    if (!navigator.onLine) return true;
+    const msg = String(error && error.message ? error.message : error || '').toLowerCase();
+    return (
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('network request failed') ||
+      msg.includes('load failed') ||
+      msg.includes('timeout')
+    );
+  }
+
+  function readNoteOfflineQueue() {
+    try {
+      const raw = localStorage.getItem(NOTE_OFFLINE_QUEUE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function writeNoteOfflineQueue(queue) {
+    localStorage.setItem(NOTE_OFFLINE_QUEUE_KEY, JSON.stringify(Array.isArray(queue) ? queue : []));
+  }
+
+  function enqueueNoteOfflineOp(op) {
+    const queue = readNoteOfflineQueue();
+    queue.push({
+      ...op,
+      opId: op.opId || `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      enqueuedAt: new Date().toISOString()
+    });
+    writeNoteOfflineQueue(queue);
+  }
+
   function getLocalNotesForCustomer(customerId) {
     try {
       const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
@@ -7591,6 +7629,130 @@
       return `${base}|text:${payload.text}`;
     }
     return `${base}|svg:${payload.svg}`;
+  }
+
+  function buildDbNoteInputFromAnyNote(note, customerId) {
+    const payload = getNotePayloadForSync(note);
+    if (!payload) return null;
+    const numericCustomerId = parseInt(customerId, 10);
+    if (Number.isNaN(numericCustomerId)) return null;
+    const input = {
+      customerId: numericCustomerId,
+      date: payload.date,
+      noteNumber: payload.noteNumber,
+      createdAt: payload.createdAt || new Date().toISOString(),
+      editedDate: payload.editedDate || null,
+      noteType: payload.noteType
+    };
+    if (payload.noteType === 'text') {
+      input.text = payload.text;
+      input.textValue = payload.text;
+      input.svg = null;
+    } else {
+      input.svg = payload.svg;
+    }
+    return input;
+  }
+
+  function upsertLocalCustomerNote(customerId, note) {
+    try {
+      const key = String(customerId);
+      const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const arr = Array.isArray(all[key]) ? all[key] : [];
+      const idKey = String(note && note.id != null ? note.id : '');
+      const idx = arr.findIndex((n) => String(n && n.id != null ? n.id : '') === idKey);
+      if (idx >= 0) arr[idx] = { ...arr[idx], ...note };
+      else arr.push(note);
+      all[key] = arr;
+      localStorage.setItem('customerNotes', JSON.stringify(all));
+    } catch (error) {
+      console.warn('Failed to upsert local customer note', error);
+    }
+  }
+
+  function removeLocalCustomerNote(customerId, noteId) {
+    try {
+      const key = String(customerId);
+      const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+      const arr = Array.isArray(all[key]) ? all[key] : [];
+      all[key] = arr.filter((n) => String(n && n.id != null ? n.id : '') !== String(noteId));
+      localStorage.setItem('customerNotes', JSON.stringify(all));
+    } catch (error) {
+      console.warn('Failed to remove local customer note', error);
+    }
+  }
+
+  async function flushQueuedNoteOperations() {
+    if (!productConfig.useSupabase || !navigator.onLine || !window.CrmDB) return { processed: 0, remaining: 0 };
+    const queue = readNoteOfflineQueue();
+    if (queue.length === 0) return { processed: 0, remaining: 0 };
+
+    const remaining = [];
+    const createdIdMap = {};
+    let processed = 0;
+
+    for (let i = 0; i < queue.length; i++) {
+      const op = queue[i];
+      try {
+        if (op.type === 'create') {
+          const dbInput = op.note;
+          if (!dbInput) {
+            processed++;
+            continue;
+          }
+          const newId = await CrmDB.createNote(dbInput);
+          if (op.localId) createdIdMap[String(op.localId)] = newId;
+          if (op.customerId && op.localId) removeLocalCustomerNote(op.customerId, op.localId);
+          processed++;
+          continue;
+        }
+
+        if (op.type === 'update') {
+          const rawId = op.noteId;
+          const mappedId = createdIdMap[String(rawId)];
+          const targetId = mappedId != null ? mappedId : rawId;
+          if (String(targetId).startsWith('local-')) {
+            remaining.push(op);
+            continue;
+          }
+          await CrmDB.updateNote({ ...(op.note || {}), id: targetId });
+          if (op.customerId && rawId != null) removeLocalCustomerNote(op.customerId, rawId);
+          processed++;
+          continue;
+        }
+
+        if (op.type === 'delete') {
+          const rawId = op.noteId;
+          const mappedId = createdIdMap[String(rawId)];
+          const targetId = mappedId != null ? mappedId : rawId;
+          if (String(targetId).startsWith('local-')) {
+            if (op.customerId && rawId != null) removeLocalCustomerNote(op.customerId, rawId);
+            processed++;
+            continue;
+          }
+          await CrmDB.deleteNote(targetId);
+          if (op.customerId && rawId != null) removeLocalCustomerNote(op.customerId, rawId);
+          processed++;
+          continue;
+        }
+
+        // Unknown op types are dropped.
+        processed++;
+      } catch (error) {
+        if (isOfflineLikeError(error)) {
+          remaining.push(op, ...queue.slice(i + 1));
+          break;
+        }
+        console.warn('Dropping failed queued note operation:', op, error);
+        processed++;
+      }
+    }
+
+    writeNoteOfflineQueue(remaining);
+    if (processed > 0) {
+      console.log(`Flushed queued note operations: processed=${processed}, remaining=${remaining.length}`);
+    }
+    return { processed, remaining: remaining.length };
   }
 
   function isDbBackedNoteSource(source) {
@@ -7675,6 +7837,11 @@
 
 
   window.addEventListener('hashchange', render);
+  window.addEventListener('online', () => {
+    flushQueuedNoteOperations().catch((error) => {
+      console.warn('Failed to flush queued note operations on reconnect', error);
+    });
+  });
   window.addEventListener('load', async () => {
     applyProductMetadata();
     applyProductTheme();
@@ -7685,6 +7852,7 @@
       return;
     }
     await refreshRuntimeUserInfo();
+    await flushQueuedNoteOperations();
 
     // Check for app lock (tradie edition)
     if (isTradie()) {
@@ -8868,10 +9036,29 @@
               await CrmDB.updateNote(updatedNote);
               console.log('Note updated successfully in IndexedDB');
             } catch (error) {
-              throw new Error(`Failed to update note in IndexedDB: ${error.message}`);
+              if (!productConfig.useSupabase || !isOfflineLikeError(error)) {
+                throw new Error(`Failed to update note in IndexedDB: ${error.message}`);
+              }
+              const queuedLocal = {
+                ...updatedNote,
+                source: 'localStorage',
+                queuedSync: true,
+                queuedOpType: 'update'
+              };
+              upsertLocalCustomerNote(customerId, queuedLocal);
+              const dbInput = buildDbNoteInputFromAnyNote(queuedLocal, customerId);
+              if (dbInput) {
+                enqueueNoteOfflineOp({
+                  type: 'update',
+                  customerId: parseInt(customerId, 10),
+                  noteId: editingNoteId,
+                  note: { ...dbInput, id: editingNoteId }
+                });
+              }
+              console.log('⚠️ Offline: queued note update for sync when online.');
             }
           } else {
-            if (productConfig.useSupabase) {
+            if (productConfig.useSupabase && !this.editingNote?.queuedSync) {
               throw new Error('Supabase mode requires DB-backed notes. Refresh the page and retry to avoid mixed local note edits.');
             }
             // Update in localStorage
@@ -8908,6 +9095,17 @@
             try {
               existingNotes[customerId] = customerNotes;
               localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+              if (productConfig.useSupabase && this.editingNote?.queuedSync) {
+                const dbInput = buildDbNoteInputFromAnyNote(normalizedUpdatedNote, customerId);
+                if (dbInput) {
+                  enqueueNoteOfflineOp({
+                    type: 'update',
+                    customerId: parseInt(customerId, 10),
+                    noteId: editingNoteId,
+                    note: { ...dbInput, id: editingNoteId }
+                  });
+                }
+              }
               console.log('Note updated successfully in localStorage');
             } catch (localStorageError) {
               console.log('❌ localStorage update failed:', localStorageError.message);
@@ -9535,20 +9733,39 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       // Supabase mode: keep notes DB-backed only.
       if (productConfig.useSupabase) {
-        const noteForDB = {
-          customerId: parseInt(customerId, 10),
-          svg: normalizedNoteData.svg,
-          date: normalizedNoteData.date,
-          noteNumber: normalizedNoteData.noteNumber,
-          createdAt: normalizedNoteData.createdAt || new Date().toISOString(),
-          editedDate: normalizedNoteData.editedDate
-        };
-        const savedId = await CrmDB.createNote(noteForDB);
-        normalizedNoteData.id = savedId;
-        normalizedNoteData.source = 'supabase';
-        Object.assign(noteData, normalizedNoteData);
-        console.log('✅ Note saved to Supabase successfully, ID:', savedId);
-        return { method: 'supabase', success: true, id: savedId };
+        const noteForDB = buildDbNoteInputFromAnyNote(normalizedNoteData, customerId);
+        if (!noteForDB) {
+          throw new Error('Cannot save note: invalid note payload');
+        }
+        try {
+          const savedId = await CrmDB.createNote(noteForDB);
+          normalizedNoteData.id = savedId;
+          normalizedNoteData.source = 'supabase';
+          normalizedNoteData.queuedSync = false;
+          Object.assign(noteData, normalizedNoteData);
+          console.log('✅ Note saved to Supabase successfully, ID:', savedId);
+          return { method: 'supabase', success: true, id: savedId };
+        } catch (error) {
+          if (!isOfflineLikeError(error)) throw error;
+          const localId = normalizedNoteData.id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const queuedLocal = {
+            ...normalizedNoteData,
+            id: localId,
+            source: 'localStorage',
+            queuedSync: true,
+            queuedOpType: 'create'
+          };
+          upsertLocalCustomerNote(customerId, queuedLocal);
+          enqueueNoteOfflineOp({
+            type: 'create',
+            customerId: parseInt(customerId, 10),
+            localId: localId,
+            note: noteForDB
+          });
+          Object.assign(noteData, queuedLocal);
+          console.log('⚠️ Offline: queued note create for sync when online.');
+          return { method: 'offline-queued', success: true, id: localId };
+        }
       }
       
       try {
@@ -9627,6 +9844,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       // Supabase mode: use DB-backed notes only to avoid mixed local + DB note state.
       if (productConfig.useSupabase && customerId !== 'temp-new-customer') {
         try {
+          await flushQueuedNoteOperations();
           let dbNotes = await CrmDB.getNotesByCustomerId(customerId);
           const localNotes = getLocalNotesForCustomer(customerId);
           if (localNotes.length > 0) {
@@ -9749,6 +9967,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       if (Number.isNaN(numericCustomerId)) return 0;
 
       for (const localNote of localNotes) {
+        if (localNote && localNote.queuedSync === true) continue;
         const sig = buildNoteSyncSignature(localNote);
         if (!sig || existingSigs.has(sig)) continue;
 
@@ -10432,8 +10651,19 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           if (!noteData || noteData.id == null) {
             throw new Error('Cannot delete note: missing note ID');
           }
-          await CrmDB.deleteNote(noteData.id);
-          console.log('Note deleted successfully in Supabase mode');
+          try {
+            await CrmDB.deleteNote(noteData.id);
+            console.log('Note deleted successfully in Supabase mode');
+          } catch (error) {
+            if (!isOfflineLikeError(error)) throw error;
+            removeLocalCustomerNote(customerId, noteData.id);
+            enqueueNoteOfflineOp({
+              type: 'delete',
+              customerId: parseInt(customerId, 10),
+              noteId: noteData.id
+            });
+            console.log('⚠️ Offline: queued note delete for sync when online.');
+          }
           await this.refreshNotesList(customerId);
           return;
         }
@@ -10858,8 +11088,32 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         return tempId;
       }
       
-      const savedId = await CrmDB.createNote(noteData);
-      return savedId;
+      try {
+        const savedId = await CrmDB.createNote(noteData);
+        return savedId;
+      } catch (error) {
+        if (!productConfig.useSupabase || !isOfflineLikeError(error)) throw error;
+        const localId = noteData.id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const queuedLocal = {
+          ...noteData,
+          id: localId,
+          source: 'localStorage',
+          queuedSync: true,
+          queuedOpType: 'create'
+        };
+        upsertLocalCustomerNote(customerId, queuedLocal);
+        const dbInput = buildDbNoteInputFromAnyNote(queuedLocal, customerId);
+        if (dbInput) {
+          enqueueNoteOfflineOp({
+            type: 'create',
+            customerId: parseInt(customerId, 10),
+            localId: localId,
+            note: dbInput
+          });
+        }
+        console.log('⚠️ Offline: queued text note create for sync when online.');
+        return localId;
+      }
     }
 
     async updateNote(text) {
@@ -10896,12 +11150,33 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const effectiveSource = String(this.editingNote.source || matchedExistingNote?.source || '');
 
       if (editingNoteId && isDbBackedNoteSource(effectiveSource)) {
-        await CrmDB.updateNote(updatedNote);
+        try {
+          await CrmDB.updateNote(updatedNote);
+        } catch (error) {
+          if (!productConfig.useSupabase || !isOfflineLikeError(error)) throw error;
+          const queuedLocal = {
+            ...updatedNote,
+            source: 'localStorage',
+            queuedSync: true,
+            queuedOpType: 'update'
+          };
+          upsertLocalCustomerNote(this.customerId, queuedLocal);
+          const dbInput = buildDbNoteInputFromAnyNote(queuedLocal, this.customerId);
+          if (dbInput) {
+            enqueueNoteOfflineOp({
+              type: 'update',
+              customerId: parseInt(this.customerId, 10),
+              noteId: editingNoteId,
+              note: { ...dbInput, id: editingNoteId }
+            });
+          }
+          console.log('⚠️ Offline: queued text note update for sync when online.');
+        }
         return;
       }
 
       if (editingNoteId) {
-        if (productConfig.useSupabase) {
+        if (productConfig.useSupabase && !this.editingNote?.queuedSync) {
           throw new Error('Supabase mode requires DB-backed note updates. Refresh and retry.');
         }
         const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
@@ -10911,6 +11186,17 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           customerNotes[idx] = { ...customerNotes[idx], ...updatedNote };
           existingNotes[String(this.customerId)] = customerNotes;
           localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+          if (productConfig.useSupabase && this.editingNote?.queuedSync) {
+            const dbInput = buildDbNoteInputFromAnyNote(customerNotes[idx], this.customerId);
+            if (dbInput) {
+              enqueueNoteOfflineOp({
+                type: 'update',
+                customerId: parseInt(this.customerId, 10),
+                noteId: editingNoteId,
+                note: { ...dbInput, id: editingNoteId }
+              });
+            }
+          }
           return;
         }
       }
