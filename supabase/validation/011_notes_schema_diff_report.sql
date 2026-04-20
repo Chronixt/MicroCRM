@@ -227,7 +227,8 @@ SELECT
   cfg.compare_schema AS compare_value
 FROM _notes_schema_diff_results r
 CROSS JOIN cfg
-WHERE r.check_name IN ('diff.columns', 'diff.indexes', 'diff.triggers');
+WHERE r.check_name IN ('diff.columns', 'diff.indexes', 'diff.triggers')
+GROUP BY cfg.base_schema, cfg.compare_schema;
 
 SELECT
   check_name,
