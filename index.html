@@ -62,7 +62,8 @@
       var useSupabase = !!cfg.useSupabase && !!window.SupabaseClient;
       var moduleName = 'db';
       if (useSupabase) {
-        moduleName = cfg.activeProduct === 'hairdresser' ? 'db-supabase' : 'dbSupabase';
+        // Single canonical Supabase adapter; schema/product behavior comes from ProductConfig.
+        moduleName = 'db-supabase';
       }
       document.write('<script src="js/' + moduleName + '.js?v=1.0.7"><\/script>');
     })();
