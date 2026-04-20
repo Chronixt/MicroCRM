@@ -15,6 +15,7 @@
       dbName: 'chikas-db',
       dbVersion: 6,
       storagePrefix: 'chikas_',
+      supabaseSchema: 'hairdresser',
       theme: {
         backgroundImage: 'assets/beautician-bg.png',
         haze1: 'rgba(34, 211, 238, 0.10)',
