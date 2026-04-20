@@ -11,6 +11,8 @@
   var APP_SLUG = config.appSlug || 'tradie-crm';
   var SUPABASE_SCHEMA = config.supabaseSchema || 'public';
   var supabase = null;
+  var cachedTypedNoteColumns = null;
+  var cachedTypedNoteVersionColumns = null;
 
   function initSupabaseClient() {
     if (window.SupabaseClient) return window.SupabaseClient;
@@ -64,6 +66,52 @@
       out[toCamelKey(k)] = toCamel(obj[k]);
     }
     return out;
+  }
+
+  function hasNonEmptyText(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  function inferNoteType(note) {
+    if (note && (note.noteType === 'svg' || note.type === 'svg')) return 'svg';
+    var hasText = !!(note && (hasNonEmptyText(note.text) || hasNonEmptyText(note.textValue) || hasNonEmptyText(note.content)));
+    var hasSvg = !!(note && hasNonEmptyText(note.svg));
+    if (note && (note.noteType === 'text' || note.type === 'text')) {
+      if (hasText || !hasSvg) return 'text';
+      return 'svg';
+    }
+    if (hasText) return 'text';
+    return 'svg';
+  }
+
+  function isMissingColumnError(errorLike) {
+    var code = String((errorLike && errorLike.code) || '');
+    var msg = String((errorLike && errorLike.message) || '').toLowerCase();
+    return code === '42703' || (msg.indexOf('column') !== -1 && msg.indexOf('does not exist') !== -1);
+  }
+
+  async function hasTypedNoteColumns() {
+    if (cachedTypedNoteColumns != null) return cachedTypedNoteColumns;
+    var probe = await supabase.from('notes').select('id,note_type,text_value').limit(1);
+    if (probe.error && isMissingColumnError(probe.error)) {
+      cachedTypedNoteColumns = false;
+      return false;
+    }
+    check(probe);
+    cachedTypedNoteColumns = true;
+    return true;
+  }
+
+  async function hasTypedNoteVersionColumns() {
+    if (cachedTypedNoteVersionColumns != null) return cachedTypedNoteVersionColumns;
+    var probe = await supabase.from('note_versions').select('id,note_type,text_value').limit(1);
+    if (probe.error && isMissingColumnError(probe.error)) {
+      cachedTypedNoteVersionColumns = false;
+      return false;
+    }
+    check(probe);
+    cachedTypedNoteVersionColumns = true;
+    return true;
   }
 
   function check(res) {
@@ -442,7 +490,7 @@
     var day = String(d.getDate()).padStart(2, '0');
     return y + '-' + m + '-' + day;
   }
-  var NOTES_COLUMNS = ['customer_id', 'content', 'svg', 'date', 'note_number', 'created_at', 'updated_at', 'edited_date'];
+  var NOTES_COLUMNS = ['customer_id', 'content', 'svg', 'text_value', 'note_type', 'date', 'note_number', 'created_at', 'updated_at', 'edited_date'];
   async function createNote(note) {
     var cid = parseInt(note.customerId != null ? note.customerId : note.customer_id, 10);
     if (Number.isNaN(cid)) throw new Error('Cannot save note: customer not saved yet (e.g. temp-new-customer). Save the customer first.');
@@ -454,6 +502,14 @@
     row.updated_at = row.updated_at || new Date().toISOString();
     row.content = note.content != null ? note.content : (note.text != null ? note.text : null);
     row.customer_id = cid;
+    var supportsTypedColumns = await hasTypedNoteColumns();
+    if (supportsTypedColumns) {
+      var noteType = inferNoteType(note);
+      var textValue = note.text != null ? note.text : (note.textValue != null ? note.textValue : note.content);
+      row.note_type = noteType;
+      row.text_value = noteType === 'text' ? textValue : null;
+      if (noteType === 'text') row.svg = null;
+    }
     var res = check(await supabase.from('notes').insert(row).select('id').single());
     return res.data.id;
   }
@@ -462,33 +518,69 @@
     if (Number.isNaN(id)) return []; // e.g. 'temp-new-customer' during add flow
     var res = check(await supabase.from('notes').select('*').eq('customer_id', id).order('created_at', { ascending: false }));
     var list = (res.data || []).map(toCamel);
-    list.forEach(function (n) { if (n.content != null && n.text == null) n.text = n.content; });
+    list.forEach(function (n) {
+      if (n.text == null && n.textValue != null) n.text = n.textValue;
+      if (n.content != null && n.text == null) n.text = n.content;
+    });
     return list;
   }
   async function updateNote(updated) {
     var noteId = parseInt(updated.id, 10);
+    var existingRes = check(await supabase.from('notes').select('*').eq('id', noteId).single());
+    var existingRow = existingRes.data || null;
+    if (!existingRow) throw new Error('Note with id ' + noteId + ' not found');
+    var existing = toCamel(existingRow);
+    if (existing.text == null && existing.textValue != null) existing.text = existing.textValue;
+
+    var supportsTypedColumns = await hasTypedNoteColumns();
+    var supportsTypedVersionColumns = await hasTypedNoteVersionColumns();
+    var nextNoteType = inferNoteType(updated);
+    var nextTextValue = updated.text != null ? updated.text : (updated.textValue != null ? updated.textValue : updated.content);
+    var existingType = existing.noteType || inferNoteType(existing);
+    var existingText = existing.text != null ? existing.text : (existing.textValue != null ? existing.textValue : existing.content);
+    var existingSvg = existingType === 'svg' ? (existing.svg || null) : null;
+    var nextSvg = nextNoteType === 'svg'
+      ? (updated.svg != null ? updated.svg : (existing.svg != null ? existing.svg : null))
+      : null;
+
+    var contentChanged = (
+      existingType !== nextNoteType ||
+      (existingType === 'svg' && existingSvg !== nextSvg) ||
+      (existingType === 'text' && existingText !== nextTextValue)
+    );
+
     var raw = toSnake(updated);
     var row = {};
     NOTES_COLUMNS.forEach(function (k) { if (raw[k] !== undefined) row[k] = raw[k]; });
     row.updated_at = new Date().toISOString();
-    row.content = updated.text != null ? updated.text : (updated.content != null ? updated.content : raw.content);
+    row.content = nextTextValue != null ? nextTextValue : raw.content;
 
     // Save previous version (current state before this update) to note_versions
-    var prevContent = updated.content != null ? String(updated.content) : (raw.content != null ? String(raw.content) : null);
-    var prevSvg = updated.svg != null && updated.svg !== '' ? updated.svg : null;
-    if (prevContent != null && prevContent !== '' || prevSvg != null) {
+    if (contentChanged) {
       try {
         await supabase.from('note_versions').delete().eq('note_id', noteId).then(check);
-        await supabase.from('note_versions').insert({
+        var versionRow = {
           note_id: noteId,
-          content: prevContent || null,
-          svg: prevSvg,
-          edited_date: updated.editedDate || updated.updatedAt || new Date().toISOString(),
+          content: existingText || null,
+          svg: existing.svg || null,
+          edited_date: existing.editedDate || updated.editedDate || updated.updatedAt || new Date().toISOString(),
           saved_at: new Date().toISOString()
-        }).then(check);
+        };
+        if (supportsTypedVersionColumns) {
+          versionRow.note_type = existingType;
+          versionRow.text_value = existingType === 'text' ? (existingText || null) : null;
+          if (existingType === 'text') versionRow.svg = null;
+        }
+        await supabase.from('note_versions').insert(versionRow).then(check);
       } catch (e) {
         console.warn('Failed to save note version:', e);
       }
+    }
+
+    if (supportsTypedColumns) {
+      row.note_type = nextNoteType;
+      row.text_value = nextNoteType === 'text' ? nextTextValue : null;
+      if (nextNoteType === 'text') row.svg = null;
     }
 
     return supabase.from('notes').update(row).eq('id', noteId).then(check);
@@ -499,7 +591,10 @@
   async function getAllNotes() {
     var res = check(await supabase.from('notes').select('*').order('created_at', { ascending: false }));
     var list = (res.data || []).map(toCamel);
-    list.forEach(function (n) { if (n.content != null && n.text == null) n.text = n.content; });
+    list.forEach(function (n) {
+      if (n.text == null && n.textValue != null) n.text = n.textValue;
+      if (n.content != null && n.text == null) n.text = n.content;
+    });
     return list;
   }
 
@@ -843,6 +938,7 @@
     var res = check(await supabase.from('notes').select('*').eq('id', parseInt(noteId, 10)).single());
     if (!res.data) return null;
     var n = toCamel(res.data);
+    if (n.text == null && n.textValue != null) n.text = n.textValue;
     if (n.content != null && n.text == null) n.text = n.content;
     return n;
   }
@@ -851,38 +947,141 @@
     if (Number.isNaN(id)) return null;
     var res = await supabase.from('note_versions').select('*').eq('note_id', id).order('saved_at', { ascending: false }).limit(1);
     if (res.error || !res.data || res.data.length === 0) return null;
-    var row = res.data[0];
+    var row = toCamel(res.data[0]);
+    var text = row.text != null ? row.text : (row.textValue != null ? row.textValue : row.content);
     return {
-      noteId: row.note_id,
+      noteId: row.noteId,
       content: row.content,
-      text: row.content,
+      text: text,
+      textValue: row.textValue != null ? row.textValue : (text != null ? text : null),
+      noteType: row.noteType || inferNoteType(row),
       svg: row.svg,
-      editedDate: row.edited_date,
-      savedAt: row.saved_at
+      editedDate: row.editedDate,
+      savedAt: row.savedAt
     };
   }
   async function restoreNoteToPreviousVersion(noteId) {
     var prev = await getNotePreviousVersion(noteId);
     if (!prev) throw new Error('No previous version found for this note');
     var id = parseInt(noteId, 10);
+    var supportsTypedColumns = await hasTypedNoteColumns();
+    var restoredType = prev.noteType || inferNoteType(prev);
+    var restoredText = prev.text != null ? prev.text : (prev.textValue != null ? prev.textValue : prev.content);
     var notesRow = {
-      content: prev.content != null ? prev.content : null,
+      content: restoredText != null ? restoredText : null,
       svg: prev.svg != null ? prev.svg : null,
       updated_at: new Date().toISOString(),
       edited_date: prev.editedDate || null
     };
+    if (supportsTypedColumns) {
+      notesRow.note_type = restoredType;
+      notesRow.text_value = restoredType === 'text' ? (restoredText != null ? restoredText : null) : null;
+      if (restoredType === 'text') notesRow.svg = null;
+    }
     await supabase.from('notes').update(notesRow).eq('id', id).then(check);
   }
 
   // ---- Recovery (stubs for compatibility) ----
   async function scanForCorruptedNotes() {
-    return { corrupted: [], healthy: [], localStorageOnly: [], indexeddbOnly: [], conflicts: [] };
+    var notes = await getAllNotes();
+    var corrupted = [];
+    var healthy = [];
+    notes.forEach(function (n) {
+      var noteType = inferNoteType(n);
+      var hasSvg = n.svg && typeof n.svg === 'string' && n.svg.trim().length > 0;
+      var hasText = hasNonEmptyText(n.text) || hasNonEmptyText(n.textValue) || hasNonEmptyText(n.content);
+      var hasDate = n.date || n.createdAt;
+      var invalid = !hasDate || (noteType === 'svg' ? !hasSvg : !hasText);
+      if (invalid) {
+        corrupted.push({
+          noteId: n.id,
+          customerId: n.customerId,
+          source: 'supabase',
+          corruptedVersion: n,
+          healthyVersion: null
+        });
+      } else {
+        healthy.push({ noteId: n.id, customerId: n.customerId, note: n });
+      }
+    });
+    return { corrupted: corrupted, healthy: healthy, localStorageOnly: [], indexeddbOnly: [], conflicts: [] };
   }
-  async function recoverCorruptedNotes() {
-    return { recovered: [], failed: [] };
+  async function recoverCorruptedNotes(dryRun) {
+    var shouldDryRun = dryRun !== false;
+    var scan = await scanForCorruptedNotes();
+    var recoverable = scan.corrupted.filter(function (c) { return !!c.healthyVersion; });
+    if (shouldDryRun) return { canRecover: recoverable.length, actions: recoverable, summary: scan };
+    var recovered = 0;
+    var failed = 0;
+    for (var i = 0; i < recoverable.length; i++) {
+      try {
+        await updateNote(recoverable[i].healthyVersion);
+        recovered += 1;
+      } catch (e) {
+        failed += 1;
+      }
+    }
+    return { recovered: recovered, failed: failed, details: { recovered: recoverable, failed: [] }, summary: scan };
   }
-  async function restoreNotesFromBackup() {
-    return { restored: [], skipped: [], failed: [] };
+  async function restoreNotesFromBackup(backupData, options) {
+    var opts = options || {};
+    var mode = opts.mode || 'merge';
+    var onlyCustomerId = opts.customerId || null;
+    var backupNotes = (backupData && (backupData.customerNotes || backupData.notes)) || {};
+    var noteList = [];
+
+    if (Array.isArray(backupNotes)) {
+      noteList = backupNotes.slice();
+    } else if (backupNotes && typeof backupNotes === 'object') {
+      Object.keys(backupNotes).forEach(function (cid) {
+        var list = backupNotes[cid] || [];
+        if (!Array.isArray(list)) return;
+        if (onlyCustomerId != null && String(onlyCustomerId) !== String(cid)) return;
+        list.forEach(function (note) {
+          if (!note || typeof note !== 'object') return;
+          var next = Object.assign({}, note);
+          if (next.customerId == null) next.customerId = parseInt(cid, 10);
+          noteList.push(next);
+        });
+      });
+    }
+
+    var restored = [];
+    var skipped = [];
+    var failed = [];
+    for (var i = 0; i < noteList.length; i++) {
+      var note = noteList[i];
+      try {
+        var noteType = inferNoteType(note);
+        var hasSvg = note.svg && typeof note.svg === 'string' && note.svg.trim().length > 0;
+        var hasText = hasNonEmptyText(note.text) || hasNonEmptyText(note.textValue) || hasNonEmptyText(note.content);
+        var hasDate = note.date || note.createdAt;
+        if (!hasDate || (noteType === 'svg' && !hasSvg) || (noteType === 'text' && !hasText)) {
+          skipped.push({ noteId: note.id, customerId: note.customerId, reason: 'Backup note missing essential fields' });
+          continue;
+        }
+        if (mode === 'replace') {
+          try {
+            await updateNote(note);
+            restored.push({ noteId: note.id, customerId: note.customerId, action: 'replaced' });
+          } catch (eReplace) {
+            await createNote(note);
+            restored.push({ noteId: note.id, customerId: note.customerId, action: 'added' });
+          }
+        } else {
+          try {
+            await updateNote(note);
+            restored.push({ noteId: note.id, customerId: note.customerId, action: 'merged' });
+          } catch (eMerge) {
+            await createNote(note);
+            restored.push({ noteId: note.id, customerId: note.customerId, action: 'added' });
+          }
+        }
+      } catch (err) {
+        failed.push({ noteId: note.id, customerId: note.customerId, error: err.message || String(err) });
+      }
+    }
+    return { restored: restored.length, skipped: skipped.length, failed: failed.length, details: { restored: restored, skipped: skipped, failed: failed } };
   }
 
   // ---- Expose API ----
