@@ -1,6 +1,28 @@
-/* Supabase backend for CRMicro (hairdresser schema). Same API as db.js. */
+/* Canonical Supabase backend for CRMicro. Same API as db.js (+ tradie pipeline extensions). */
 (function () {
-  const SCHEMA = window.SUPABASE_SCHEMA || 'hairdresser';
+  const productConfig = window.ProductConfig || {};
+  const profileConfig = productConfig.config || {};
+  const FEATURE_FLAGS = profileConfig.features || {};
+  const SCHEMA =
+    window.SUPABASE_SCHEMA ||
+    productConfig.supabaseSchema ||
+    profileConfig.supabaseSchema ||
+    'public';
+  const APP_SLUG = productConfig.appSlug || profileConfig.appSlug || 'crm';
+  const STORAGE_PREFIX = productConfig.storagePrefix || profileConfig.storagePrefix || 'crm_';
+  const SUPPORTS_JOB_PIPELINE = !!FEATURE_FLAGS.jobPipeline;
+  const APPOINTMENT_COLUMNS = [
+    'customer_id',
+    'title',
+    'start',
+    'end',
+    'status',
+    'address',
+    'quoted_amount',
+    'invoice_amount',
+    'paid_amount',
+    'created_at'
+  ];
   var cachedClient = null;
   let cachedTypedNoteColumns = null;
   let cachedTypedNoteVersionColumns = null;
@@ -71,7 +93,9 @@
       updatedAt: 'updated_at', customerId: 'customer_id', createdAt: 'created_at',
       editedDate: 'edited_date', noteNumber: 'note_number', dataUrl: 'data_url',
       textValue: 'text_value', noteType: 'note_type',
-      noteId: 'note_id', savedAt: 'saved_at'
+      noteId: 'note_id', savedAt: 'saved_at',
+      appointmentId: 'appointment_id', dueAt: 'due_at',
+      quotedAmount: 'quoted_amount', invoiceAmount: 'invoice_amount', paidAmount: 'paid_amount'
     };
     const out = {};
     for (const k in obj) {
@@ -91,7 +115,9 @@
       updated_at: 'updatedAt', customer_id: 'customerId', created_at: 'createdAt',
       edited_date: 'editedDate', note_number: 'noteNumber', data_url: 'dataUrl',
       text_value: 'textValue', note_type: 'noteType',
-      note_id: 'noteId', saved_at: 'savedAt'
+      note_id: 'noteId', saved_at: 'savedAt',
+      appointment_id: 'appointmentId', due_at: 'dueAt',
+      quoted_amount: 'quotedAmount', invoice_amount: 'invoiceAmount', paid_amount: 'paidAmount'
     };
     const out = {};
     for (const k in obj) {
@@ -221,6 +247,11 @@
   function throwIfError(res) {
     if (res.error) throw new Error(res.error.message || 'Supabase error');
     return res;
+  }
+
+  function assertJobPipelineFeature(methodName) {
+    if (SUPPORTS_JOB_PIPELINE) return;
+    throw new Error(methodName + ' is not available for this product profile.');
   }
 
   function parseNoteDateValue(raw) {
@@ -460,7 +491,7 @@
     deleted.noteVersions = await deleteOwnedByIdBatches('note_versions', 'id');
     deleted.notes = await deleteOwnedByIdBatches('notes', 'id');
     deleted.images = await deleteOwnedByIdBatches('images', 'id');
-    if (SCHEMA === 'tradie') {
+    if (SUPPORTS_JOB_PIPELINE) {
       deleted.reminders = await deleteOwnedByIdBatches('reminders', 'id');
       deleted.jobEvents = await deleteOwnedByIdBatches('job_events', 'id');
     }
@@ -477,13 +508,24 @@
   function buildAppointmentRow(appointment, customerIdOverride) {
     const rawCustomerId = customerIdOverride != null ? customerIdOverride : extractAppointmentCustomerId(appointment);
     const customerId = rawCustomerId == null ? null : parseInt(rawCustomerId, 10);
-    return {
+    const row = {
       customer_id: Number.isNaN(customerId) ? null : customerId,
       start: appointment.start || null,
       end: appointment.end || null,
       title: appointment.title || null,
       created_at: appointment.createdAt || new Date().toISOString()
     };
+    const optionalMap = {
+      status: 'status',
+      address: 'address',
+      quotedAmount: 'quoted_amount',
+      invoiceAmount: 'invoice_amount',
+      paidAmount: 'paid_amount'
+    };
+    Object.keys(optionalMap).forEach((k) => {
+      if (appointment[k] !== undefined) row[optionalMap[k]] = appointment[k];
+    });
+    return row;
   }
 
   // --- Customers ---
@@ -562,6 +604,10 @@
     const numId = parseInt(id);
     throwIfError(await supabase.from('appointments').delete().eq('customer_id', numId));
     throwIfError(await supabase.from('images').delete().eq('customer_id', numId));
+    if (SUPPORTS_JOB_PIPELINE) {
+      throwIfError(await supabase.from('reminders').delete().eq('customer_id', numId));
+      throwIfError(await supabase.from('job_events').delete().eq('customer_id', numId));
+    }
     const noteRes = await supabase.from('notes').select('id').eq('customer_id', numId);
     throwIfError(noteRes);
     const noteIds = (noteRes.data || []).map((r) => r.id);
@@ -621,6 +667,56 @@
     return (res.data || []).map(toCamel);
   }
 
+  async function getAppointmentsByStatus(status) {
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('appointments').select('*').eq('status', status).order('start'));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getAppointmentsGroupedByStatus() {
+    const all = await getAllAppointments();
+    const grouped = {};
+    all.forEach((apt) => {
+      const key = apt.status || 'scheduled';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(apt);
+    });
+    Object.keys(grouped).forEach((key) => {
+      grouped[key].sort((a, b) => new Date(a.start) - new Date(b.start));
+    });
+    return grouped;
+  }
+
+  async function getUnpaidJobs() {
+    const all = await getAllAppointments();
+    return all.filter((apt) => {
+      const invoiceAmount = apt.invoiceAmount || 0;
+      const paidAmount = apt.paidAmount || 0;
+      return invoiceAmount > 0 && paidAmount < invoiceAmount;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
+
+  async function getNeedsInvoiceJobs() {
+    const all = await getAllAppointments();
+    const completedStatuses = ['completed', 'invoiced', 'paid'];
+    return all.filter((apt) => {
+      const status = apt.status || 'scheduled';
+      const invoiceAmount = apt.invoiceAmount || 0;
+      return completedStatuses.includes(status) && invoiceAmount === 0;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
+
+  function computePaymentStatus(appointment) {
+    const quoted = appointment.quotedAmount || 0;
+    const invoiced = appointment.invoiceAmount || 0;
+    const paid = appointment.paidAmount || 0;
+    if (paid > 0 && paid >= invoiced && invoiced > 0) return 'paid';
+    if (paid > 0 && paid < invoiced) return 'part_paid';
+    if (invoiced > 0) return 'invoiced';
+    if (quoted > 0) return 'quoted';
+    return 'not_quoted';
+  }
+
   async function getAppointmentById(id) {
     const supabase = getClient();
     const res = throwIfError(await supabase.from('appointments').select('*').eq('id', parseInt(id)).maybeSingle());
@@ -629,8 +725,16 @@
 
   async function updateAppointment(updated) {
     const supabase = getClient();
-    const row = buildAppointmentRow(updated);
-    if (row.customer_id == null) throw new Error('Appointment is missing customerId');
+    const raw = toSnake(updated);
+    const row = {};
+    APPOINTMENT_COLUMNS.forEach((k) => {
+      if (raw[k] !== undefined) row[k] = raw[k];
+    });
+    if (row.customer_id == null) {
+      const inferredCustomerId = extractAppointmentCustomerId(updated);
+      if (inferredCustomerId != null) row.customer_id = parseInt(inferredCustomerId, 10);
+    }
+    if (row.customer_id == null || Number.isNaN(row.customer_id)) throw new Error('Appointment is missing customerId');
     if (!row.start) throw new Error('Appointment is missing start');
     throwIfError(await supabase.from('appointments').update(row).eq('id', parseInt(updated.id)));
   }
@@ -641,11 +745,15 @@
   }
 
   // --- Images ---
-  async function addImage(customerId, entry) {
+  async function addImage(customerId, entry, appointmentId = null) {
     const blob = await compressImage(entry.blob, entry.type);
     const dataUrl = await blobToDataURL(blob);
     const supabase = getClient();
     const row = { customer_id: parseInt(customerId), name: entry.name, type: entry.type || blob.type, data_url: dataUrl };
+    if (appointmentId != null && appointmentId !== '') {
+      const parsedAppointmentId = parseInt(appointmentId, 10);
+      if (!Number.isNaN(parsedAppointmentId)) row.appointment_id = parsedAppointmentId;
+    }
     const res = throwIfError(await supabase.from('images').insert(row).select('id').single());
     return res.data.id;
   }
@@ -665,6 +773,26 @@
     }
     const supabase = getClient();
     const res = throwIfError(await supabase.from('images').select('*').eq('customer_id', numId).order('created_at'));
+    const list = res.data || [];
+    return list.map((row) => {
+      const c = toCamel(row);
+      if (c.dataUrl) {
+        try {
+          c.blob = dataURLToBlob(c.dataUrl, c.type);
+          if (c.blob && c.blob.size > 0) return c;
+        } catch (e) {}
+      }
+      return c;
+    }).filter((c) => c.blob || c.dataUrl);
+  }
+
+  async function getImagesByAppointmentId(appointmentId) {
+    const numId = typeof appointmentId === 'number' ? appointmentId : parseInt(appointmentId, 10);
+    if (appointmentId == null || appointmentId === '' || Number.isNaN(numId)) return [];
+    const supabase = getClient();
+    const res = await supabase.from('images').select('*').eq('appointment_id', numId).order('created_at');
+    if (res.error && isMissingColumnError(res.error)) return [];
+    throwIfError(res);
     const list = res.data || [];
     return list.map((row) => {
       const c = toCamel(row);
@@ -835,6 +963,181 @@
     return (res.data || []).map(toCamel);
   }
 
+  // --- Tradie pipeline helpers (feature-gated by product profile) ---
+  async function createReminder(reminder) {
+    assertJobPipelineFeature('createReminder');
+    const supabase = getClient();
+    const row = toSnake(reminder);
+    row.status = row.status || 'pending';
+    row.created_at = row.created_at || new Date().toISOString();
+    row.updated_at = row.updated_at || new Date().toISOString();
+    const res = throwIfError(await supabase.from('reminders').insert(row).select('id').single());
+    return res.data.id;
+  }
+
+  async function getReminderById(id) {
+    if (!SUPPORTS_JOB_PIPELINE) return null;
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('reminders').select('*').eq('id', parseInt(id, 10)).maybeSingle());
+    return res.data ? toCamel(res.data) : null;
+  }
+
+  async function getRemindersForCustomer(customerId) {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('reminders').select('*').eq('customer_id', parseInt(customerId, 10)).order('due_at'));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getRemindersForAppointment(appointmentId) {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('reminders').select('*').eq('appointment_id', parseInt(appointmentId, 10)).order('due_at'));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getPendingReminders() {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('reminders').select('*').eq('status', 'pending').order('due_at'));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getOverdueReminders() {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    return pending.filter((r) => new Date(r.dueAt) < now);
+  }
+
+  async function getTodayReminders() {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    return pending.filter((r) => {
+      const due = new Date(r.dueAt);
+      return due >= start && due < end;
+    });
+  }
+
+  async function getUpcomingReminders(days = 7) {
+    const pending = await getPendingReminders();
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days + 1);
+    return pending.filter((r) => {
+      const due = new Date(r.dueAt);
+      return due >= start && due < end;
+    });
+  }
+
+  async function getAllReminders() {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('reminders').select('*').order('due_at'));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function updateReminder(updated) {
+    assertJobPipelineFeature('updateReminder');
+    const supabase = getClient();
+    const row = toSnake(updated);
+    row.updated_at = new Date().toISOString();
+    throwIfError(await supabase.from('reminders').update(row).eq('id', parseInt(updated.id, 10)));
+  }
+
+  async function deleteReminder(id) {
+    assertJobPipelineFeature('deleteReminder');
+    const supabase = getClient();
+    throwIfError(await supabase.from('reminders').delete().eq('id', parseInt(id, 10)));
+  }
+
+  const JOB_EVENT_TYPES = ['call', 'sms', 'email', 'site_visit', 'quote_sent', 'invoice_sent', 'payment_received', 'note', 'other'];
+
+  async function createJobEvent(event) {
+    assertJobPipelineFeature('createJobEvent');
+    const supabase = getClient();
+    const row = {
+      appointment_id: parseInt(event.appointmentId, 10),
+      customer_id: parseInt(event.customerId, 10),
+      type: event.type || 'other',
+      note: event.note || null,
+      created_at: new Date().toISOString()
+    };
+    const res = throwIfError(await supabase.from('job_events').insert(row).select('id').single());
+    return res.data.id;
+  }
+
+  async function getJobEventById(id) {
+    if (!SUPPORTS_JOB_PIPELINE) return null;
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('job_events').select('*').eq('id', parseInt(id, 10)).maybeSingle());
+    return res.data ? toCamel(res.data) : null;
+  }
+
+  async function getEventsForAppointment(appointmentId) {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('job_events').select('*').eq('appointment_id', parseInt(appointmentId, 10)).order('created_at', { ascending: false }));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getEventsForCustomer(customerId) {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('job_events').select('*').eq('customer_id', parseInt(customerId, 10)).order('created_at', { ascending: false }));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getRecentEventsForCustomer(customerId, limit = 5) {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('job_events').select('*').eq('customer_id', parseInt(customerId, 10)).order('created_at', { ascending: false }).limit(limit));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getAllJobEvents() {
+    if (!SUPPORTS_JOB_PIPELINE) return [];
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('job_events').select('*').order('created_at', { ascending: false }));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function deleteJobEvent(id) {
+    assertJobPipelineFeature('deleteJobEvent');
+    const supabase = getClient();
+    throwIfError(await supabase.from('job_events').delete().eq('id', parseInt(id, 10)));
+  }
+
+  async function getLastContactTime(customerId) {
+    const events = await getEventsForCustomer(customerId);
+    const contact = events.filter((e) => ['call', 'sms', 'email'].includes(e.type));
+    return contact.length > 0 ? new Date(contact[0].createdAt) : null;
+  }
+
+  async function getStorageStats() {
+    const supabase = getClient();
+    const res = await supabase.from('images').select('id, data_url');
+    if (res.error) return { imageCount: 0, totalBytes: 0, totalMB: '0.00', usagePercent: '0', isWarning: false, isCritical: false };
+    const items = res.data || [];
+    let totalBytes = 0;
+    items.forEach((img) => {
+      if (!img.data_url) return;
+      const base64Len = img.data_url.length - (img.data_url.indexOf(',') + 1);
+      totalBytes += base64Len * 0.75;
+    });
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+    const usagePercent = Math.min(100, (totalBytes / (50 * 1024 * 1024)) * 100).toFixed(1);
+    return {
+      imageCount: items.length,
+      totalBytes,
+      totalMB,
+      usagePercent,
+      isWarning: totalBytes > 40 * 1024 * 1024,
+      isCritical: totalBytes > 45 * 1024 * 1024
+    };
+  }
+
   // --- Recovery (Supabase-only: no localStorage) ---
   async function scanForCorruptedNotes() {
     const notes = await getAllNotes();
@@ -910,6 +1213,8 @@
     const customers = await getAllCustomers();
     const appointments = await getAllAppointments();
     const notes = await getAllNotes();
+    const reminders = await getAllReminders();
+    const jobEvents = await getAllJobEvents();
     const customerNotes = {};
     notes.forEach((n) => {
       const cid = String(n.customerId);
@@ -919,7 +1224,7 @@
     const { imagesSerialized, warning } = await fetchImagesForExportSafe();
     return {
       __meta: {
-        app: 'chikas-db',
+        app: APP_SLUG,
         version: 3,
         exportedAt: new Date().toISOString(),
         warnings: warning ? [warning] : []
@@ -927,7 +1232,9 @@
       customers,
       appointments,
       customerNotes,
-      images: imagesSerialized
+      images: imagesSerialized,
+      reminders,
+      jobEvents
     };
   }
 
@@ -938,6 +1245,8 @@
     const appointments = await getAllAppointments();
     if (progressCallback) progressCallback('Exported ' + appointments.length + ' appointments', 20);
     const notes = await getAllNotes();
+    const reminders = await getAllReminders();
+    const jobEvents = await getAllJobEvents();
     const customerNotes = {};
     notes.forEach((n) => {
       const cid = String(n.customerId);
@@ -950,7 +1259,7 @@
     return {
       blob: new Blob([JSON.stringify({
         __meta: {
-          app: 'chikas-db',
+          app: APP_SLUG,
           version: 3,
           exportedAt: new Date().toISOString(),
           warnings: warning ? [warning] : []
@@ -958,7 +1267,9 @@
         customers,
         appointments,
         customerNotes,
-        images: imagesSerialized
+        images: imagesSerialized,
+        reminders,
+        jobEvents
       }, null, 2)], { type: 'application/json' }),
       customers,
       appointments,
@@ -979,7 +1290,7 @@
     });
     if (progressCallback) progressCallback('Lightweight backup complete!', 100);
     const blob = new Blob([JSON.stringify({
-      __meta: { app: 'chikas-db', version: 3, exportedAt: new Date().toISOString(), backupType: 'lightweight-no-images' },
+      __meta: { app: APP_SLUG, version: 3, exportedAt: new Date().toISOString(), backupType: 'lightweight-no-images' },
       customers,
       appointments,
       customerNotes,
@@ -996,7 +1307,7 @@
     function tryBuildBlob(imagesSubset) {
       const payload = {
         __meta: {
-          app: 'chikas-db',
+          app: APP_SLUG,
           version: 3,
           exportedAt: new Date().toISOString(),
           backupType: 'images-only',
@@ -1075,11 +1386,15 @@
     await deleteByIdBatches('images', 'id');
     await deleteByIdBatches('notes', 'id');
     await deleteByIdBatches('note_versions', 'id');
+    if (SUPPORTS_JOB_PIPELINE) {
+      await deleteByIdBatches('reminders', 'id');
+      await deleteByIdBatches('job_events', 'id');
+    }
   }
 
   async function importAllData(payload, options = {}) {
     const mode = options.mode || 'replace';
-    const { customers = [], appointments = [], images = [], customerNotes = {} } = payload || {};
+    const { customers = [], appointments = [], images = [], customerNotes = {}, reminders = [] } = payload || {};
     const hasImportedCustomers = Array.isArray(customers) && customers.length > 0;
     if (mode === 'replace') await clearAllStores();
     const supabase = getClient();
@@ -1423,6 +1738,21 @@
       // Image rows can be very large due to data_url payloads.
       await insertRowsAdaptive('images', imageRows, 8);
     }
+
+    if (SUPPORTS_JOB_PIPELINE && Array.isArray(reminders) && reminders.length > 0) {
+      for (const reminder of reminders) {
+        const mappedCustomerId = resolveImportedCustomerId(reminder.customerId);
+        if (mappedCustomerId == null) continue;
+        const row = toSnake({
+          ...reminder,
+          customerId: mappedCustomerId
+        });
+        delete row.id;
+        row.created_at = row.created_at || new Date().toISOString();
+        row.updated_at = row.updated_at || new Date().toISOString();
+        throwIfError(await supabase.from('reminders').insert(row));
+      }
+    }
   }
 
   const dbAPI = {
@@ -1432,16 +1762,24 @@
     onAuthStateChange,
     claimUnownedData,
     deleteMyData,
+    dbName: productConfig.dbName || profileConfig.dbName || 'crm-db',
+    storagePrefix: STORAGE_PREFIX,
     createCustomer,
     updateCustomer,
     getCustomerById,
     getAllCustomers,
     getRecentCustomers,
     getAllAppointments,
+    getAppointmentsByStatus,
+    getAppointmentsGroupedByStatus,
+    getUnpaidJobs,
+    getNeedsInvoiceJobs,
+    computePaymentStatus,
     searchCustomers,
     addImages,
     addImage,
     getImagesByCustomerId,
+    getImagesByAppointmentId,
     deleteImage,
     createAppointment,
     updateAppointment,
@@ -1464,6 +1802,27 @@
     updateNote,
     deleteNote,
     getAllNotes,
+    createReminder,
+    getReminderById,
+    getRemindersForCustomer,
+    getRemindersForAppointment,
+    getAllReminders,
+    getPendingReminders,
+    getOverdueReminders,
+    getTodayReminders,
+    getUpcomingReminders,
+    updateReminder,
+    deleteReminder,
+    createJobEvent,
+    getJobEventById,
+    getEventsForAppointment,
+    getEventsForCustomer,
+    getRecentEventsForCustomer,
+    getAllJobEvents,
+    deleteJobEvent,
+    getLastContactTime,
+    getStorageStats,
+    JOB_EVENT_TYPES,
     scanForCorruptedNotes,
     recoverCorruptedNotes,
     restoreNotesFromBackup,

@@ -15,57 +15,66 @@ function has(content, pattern) {
 }
 
 const files = {
-  adapterHairdresser: 'js/db-supabase.js',
-  adapterTradie: 'js/dbSupabase.js',
-  app: 'js/app.js'
+  adapter: 'js/db-supabase.js',
+  app: 'js/app.js',
+  index: 'index.html',
+  hairdresserProfile: 'js/products/hairdresser/profile.js',
+  tradieProfile: 'js/products/tradie/profile.js'
 };
 
 const content = {
-  hairdresser: read(files.adapterHairdresser),
-  tradie: read(files.adapterTradie),
-  app: read(files.app)
+  adapter: read(files.adapter),
+  app: read(files.app),
+  index: read(files.index),
+  hairdresserProfile: read(files.hairdresserProfile),
+  tradieProfile: read(files.tradieProfile)
 };
 
 const checks = [
   {
     id: 'api.createNote',
-    desc: 'createNote exists in both adapters',
-    test: () => has(content.hairdresser, /function\s+createNote\s*\(/) && has(content.tradie, /function\s+createNote\s*\(/)
+    desc: 'createNote exists in canonical adapter',
+    test: () => has(content.adapter, /function\s+createNote\s*\(/)
   },
   {
     id: 'api.updateNote',
-    desc: 'updateNote exists in both adapters',
-    test: () => has(content.hairdresser, /function\s+updateNote\s*\(/) && has(content.tradie, /function\s+updateNote\s*\(/)
+    desc: 'updateNote exists in canonical adapter',
+    test: () => has(content.adapter, /function\s+updateNote\s*\(/)
   },
   {
     id: 'api.restoreNoteToPreviousVersion',
-    desc: 'restoreNoteToPreviousVersion exists in both adapters',
-    test: () => has(content.hairdresser, /function\s+restoreNoteToPreviousVersion\s*\(/) && has(content.tradie, /function\s+restoreNoteToPreviousVersion\s*\(/)
+    desc: 'restoreNoteToPreviousVersion exists in canonical adapter',
+    test: () => has(content.adapter, /function\s+restoreNoteToPreviousVersion\s*\(/)
   },
   {
     id: 'api.importAllData',
-    desc: 'importAllData exists in both adapters',
-    test: () => has(content.hairdresser, /function\s+importAllData\s*\(/) && has(content.tradie, /function\s+importAllData\s*\(/)
+    desc: 'importAllData exists in canonical adapter',
+    test: () => has(content.adapter, /function\s+importAllData\s*\(/)
   },
   {
     id: 'api.recovery',
-    desc: 'recoverCorruptedNotes and restoreNotesFromBackup exist in both adapters',
-    test: () => has(content.hairdresser, /function\s+recoverCorruptedNotes\s*\(/) && has(content.tradie, /function\s+recoverCorruptedNotes\s*\(/) && has(content.hairdresser, /function\s+restoreNotesFromBackup\s*\(/) && has(content.tradie, /function\s+restoreNotesFromBackup\s*\(/)
+    desc: 'recoverCorruptedNotes and restoreNotesFromBackup exist in canonical adapter',
+    test: () => has(content.adapter, /function\s+recoverCorruptedNotes\s*\(/) && has(content.adapter, /function\s+restoreNotesFromBackup\s*\(/)
   },
   {
-    id: 'contract.noteType.textValue.hairdresser',
-    desc: 'hairdresser adapter handles note_type and text_value',
-    test: () => has(content.hairdresser, /note_type/) && has(content.hairdresser, /text_value/)
-  },
-  {
-    id: 'contract.noteType.textValue.tradie',
-    desc: 'tradie adapter handles note_type and text_value',
-    test: () => has(content.tradie, /note_type/) && has(content.tradie, /text_value/)
+    id: 'contract.noteType.textValue',
+    desc: 'canonical adapter handles note_type and text_value',
+    test: () => has(content.adapter, /note_type/) && has(content.adapter, /text_value/)
   },
   {
     id: 'contract.noteTypeInference',
-    desc: 'both adapters infer note type',
-    test: () => has(content.hairdresser, /inferNoteType/) && has(content.tradie, /inferNoteType/)
+    desc: 'canonical adapter infers note type',
+    test: () => has(content.adapter, /inferNoteType/)
+  },
+  {
+    id: 'contract.singleSupabaseAdapterPath',
+    desc: 'index.html uses a single Supabase adapter path (db-supabase)',
+    test: () => has(content.index, /moduleName\s*=\s*'db-supabase'/) && !has(content.index, /dbSupabase/)
+  },
+  {
+    id: 'contract.productSchemaConfig',
+    desc: 'both product profiles define supabase schema config',
+    test: () => has(content.hairdresserProfile, /supabaseSchema:\s*'hairdresser'/) && has(content.tradieProfile, /supabaseSchema:\s*'tradie'/)
   },
   {
     id: 'guardrail.appBoundaryMarker',
