@@ -1,31 +1,52 @@
 -- Add explicit typed note payload fields for notes and note_versions.
 -- Safe to run multiple times. Applies to both hairdresser and tradie schemas.
+--
+-- PHASES
+--  1) Schema additions
+--  2) Deterministic backfill / recovery
+--  3) Invariant gate (fail-fast before strict constraints)
+--  4) Constraint enforcement + NOT NULL strictness
 
 BEGIN;
 
 DO $$
 DECLARE
+  target_schemas_raw text := COALESCE(NULLIF(current_setting('app.notes_migration_schemas', true), ''), 'hairdresser,tradie');
   target_schema text;
   notes_has_content boolean;
   versions_has_content boolean;
+  notes_invalid_type_count bigint;
+  notes_payload_xor_fail_count bigint;
+  versions_invalid_type_count bigint;
+  versions_payload_xor_fail_count bigint;
 BEGIN
   FOR target_schema IN
-    SELECT schema_name
-    FROM information_schema.schemata
-    WHERE schema_name IN ('hairdresser', 'tradie')
+    SELECT s.schema_name
+    FROM information_schema.schemata s
+    JOIN (
+      SELECT DISTINCT BTRIM(value) AS schema_name
+      FROM regexp_split_to_table(target_schemas_raw, ',') AS value
+      WHERE BTRIM(value) <> ''
+    ) cfg ON cfg.schema_name = s.schema_name
   LOOP
+    -- =============================
+    -- Phase 1: schema add
+    -- =============================
     EXECUTE format('ALTER TABLE %I.notes ADD COLUMN IF NOT EXISTS text_value text', target_schema);
     EXECUTE format('ALTER TABLE %I.notes ADD COLUMN IF NOT EXISTS note_type text', target_schema);
     EXECUTE format('ALTER TABLE %I.note_versions ADD COLUMN IF NOT EXISTS text_value text', target_schema);
     EXECUTE format('ALTER TABLE %I.note_versions ADD COLUMN IF NOT EXISTS note_type text', target_schema);
 
-    SELECT EXISTS (
+    -- =============================
+    -- Phase 2: deterministic backfill / recovery
+    -- =============================
+    notes_has_content := EXISTS (
       SELECT 1
       FROM information_schema.columns
       WHERE table_schema = target_schema
         AND table_name = 'notes'
         AND column_name = 'content'
-    ) INTO notes_has_content;
+    );
 
     IF notes_has_content THEN
       EXECUTE format($sql$
@@ -37,13 +58,13 @@ BEGIN
       $sql$, target_schema);
     END IF;
 
-    SELECT EXISTS (
+    versions_has_content := EXISTS (
       SELECT 1
       FROM information_schema.columns
       WHERE table_schema = target_schema
         AND table_name = 'note_versions'
         AND column_name = 'content'
-    ) INTO versions_has_content;
+    );
 
     IF versions_has_content THEN
       EXECUTE format($sql$
@@ -185,6 +206,65 @@ BEGIN
       WHERE note_type = 'svg'
     $sql$, target_schema);
 
+    -- =============================
+    -- Phase 3: invariant gate before strictness
+    -- =============================
+    EXECUTE format($sql$
+      SELECT COUNT(*)
+      FROM %I.notes
+      WHERE note_type NOT IN ('text', 'svg')
+         OR note_type IS NULL
+    $sql$, target_schema)
+    INTO notes_invalid_type_count;
+
+    EXECUTE format($sql$
+      SELECT COUNT(*)
+      FROM %I.notes
+      WHERE NOT (
+        (note_type = 'svg' AND svg IS NOT NULL AND BTRIM(svg) <> '' AND (text_value IS NULL OR BTRIM(text_value) = ''))
+        OR
+        (note_type = 'text' AND text_value IS NOT NULL AND BTRIM(text_value) <> '' AND (svg IS NULL OR BTRIM(svg) = ''))
+      )
+    $sql$, target_schema)
+    INTO notes_payload_xor_fail_count;
+
+    EXECUTE format($sql$
+      SELECT COUNT(*)
+      FROM %I.note_versions
+      WHERE note_type NOT IN ('text', 'svg')
+         OR note_type IS NULL
+    $sql$, target_schema)
+    INTO versions_invalid_type_count;
+
+    EXECUTE format($sql$
+      SELECT COUNT(*)
+      FROM %I.note_versions
+      WHERE NOT (
+        (note_type = 'svg' AND svg IS NOT NULL AND BTRIM(svg) <> '' AND (text_value IS NULL OR BTRIM(text_value) = ''))
+        OR
+        (note_type = 'text' AND text_value IS NOT NULL AND BTRIM(text_value) <> '' AND (svg IS NULL OR BTRIM(svg) = ''))
+      )
+    $sql$, target_schema)
+    INTO versions_payload_xor_fail_count;
+
+    IF notes_invalid_type_count > 0
+      OR notes_payload_xor_fail_count > 0
+      OR versions_invalid_type_count > 0
+      OR versions_payload_xor_fail_count > 0 THEN
+      RAISE EXCEPTION USING
+        MESSAGE = format(
+          'Typed note invariant gate failed for schema=%s (notes_invalid=%s, notes_xor_fail=%s, versions_invalid=%s, versions_xor_fail=%s). Stop before strict constraints and run validation scripts.',
+          target_schema,
+          notes_invalid_type_count,
+          notes_payload_xor_fail_count,
+          versions_invalid_type_count,
+          versions_payload_xor_fail_count
+        );
+    END IF;
+
+    -- =============================
+    -- Phase 4: constraint enforcement + strictness
+    -- =============================
     IF NOT EXISTS (
       SELECT 1
       FROM pg_constraint c

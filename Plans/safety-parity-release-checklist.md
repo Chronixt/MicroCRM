@@ -43,6 +43,14 @@ Prevent cross-product routing mistakes, schema mis-targeting, and accidental des
      - `SHOW_ENV_BANNER=false`
      - `ALLOW_DESTRUCTIVE_WIPE=false`
      - `ENABLE_AUTO_CLAIM_UNOWNED_DATA=false`
+7. Notes typed-payload migration gates (required when `010_notes_text_value_note_type.sql` is in scope):
+   - Run `supabase/validation/010_notes_typed_payload_precheck.sql`
+   - Run `supabase/migrations/010_notes_text_value_note_type.sql` in rehearsal first
+   - Run `supabase/validation/010_notes_typed_payload_postcheck.sql`
+   - Attach machine-readable evidence table (`check_name`, `schema_name`, `row_count`, `status`, `details`)
+8. Run adapter parity gate:
+   - `npm run test:notes-parity`
+   - Release is blocked if any gate fails.
 
 ## Production Smoke Test (Immediately After Deploy)
 
@@ -55,6 +63,10 @@ Prevent cross-product routing mistakes, schema mis-targeting, and accidental des
 7. Confirm "Delete My Data" exists (not "Wipe All Data").
 8. Confirm "Sign Out" button exists and works.
 9. Confirm no dev banner unless intentionally enabled.
+10. Note typed-payload smoke checks:
+   - Create text note and verify only `text_value` is populated.
+   - Create svg note and verify only `svg` is populated.
+   - Restore previous version and verify typed payload remains valid.
 
 ## Data Isolation Verification (Weekly / Before Major Merge)
 
@@ -64,6 +76,20 @@ Prevent cross-product routing mistakes, schema mis-targeting, and accidental des
 4. Confirm cross-product isolation:
    - Same login in Hairdresser cannot see Tradie records.
    - Same login in Tradie cannot see Hairdresser records.
+
+## Mandatory Rehearsal and Rollout Order (Typed Notes)
+
+When typed-note migration is in scope, rollout order is fixed:
+
+1. Dev sandbox rehearsal (`hairdresser_sandbox_admin`)
+2. Hairdresser rehearsal
+3. Tradie rehearsal
+4. Production cutover window with operator + reviewer sign-off
+
+Use:
+
+- `Plans/notes-typed-payload-rehearsal-runbook.md`
+- `Plans/notes-typed-payload-contract-checklist.md`
 
 ## SQL Spot Checks
 
@@ -92,6 +118,7 @@ Rollback immediately if any of these occur after deploy:
 3. Users cannot see their own existing data.
 4. Users can see other users' data.
 5. Destructive wipe option appears in production.
+6. Typed payload check fails (`note_type` invalid/null or xor failures in `notes`/`note_versions`).
 
 ## Emergency Response (If Data Risk Is Suspected)
 
