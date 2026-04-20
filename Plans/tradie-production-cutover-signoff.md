@@ -26,7 +26,7 @@ End Time (AEST): 1:20pm
 - [x] Netlify `ALLOW_DESTRUCTIVE_WIPE=false` (prod)
 - [x] Netlify `ENABLE_AUTO_CLAIM_UNOWNED_DATA=false` (prod)
 - [x] Confirm `js/config.local.js` is not part of production bundle
-- [ ] Confirm branch diff reviewed and approved
+- [x] Confirm branch diff reviewed and approved
 
 Initials: DV
 Timestamp: 12:39pm
@@ -36,6 +36,10 @@ Timestamp: 12:39pm
 - [x] `005_tradie_schema_from_public.sql` applied
 - [x] `006_tradie_owner_rls.sql` applied
 - [x] `007_self_service_delete_my_data.sql` applied
+- [x] `010_notes_text_value_note_type.sql` applied (when in release scope)
+- [x] `010_notes_typed_payload_precheck.sql` evidence attached
+- [x] `010_notes_typed_payload_postcheck.sql` evidence attached
+- [x] Typed payload strict checks pass (`notes` + `note_versions` xor and note_type validity = 0 failures)
 
 - [x] RLS policies verified in `tradie` schema
 - [x] `tradie.delete_my_data()` exists and executable by `authenticated` 
@@ -55,6 +59,10 @@ Timestamp: 12:39pm
 - [x] `Delete My Data` visible (not `Wipe All Data`)
 - [x] `Sign Out` button visible and functioning
 - [x] Dev banner hidden in production
+- [x] `npm run test:notes-parity` passes
+- [x] Text note persists as `note_type='text'` with only `text_value` payload
+- [x] SVG note persists as `note_type='svg'` with only `svg` payload
+- [x] Note restore path preserves typed payload contract
 
 Initials: DV
 Timestamp: 1:20pm
@@ -97,8 +105,50 @@ Trigger rollback immediately if any are true:
 - [ ] Users cannot see their own expected data
 - [ ] Cross-user visibility breach occurs
 - [ ] Any destructive global wipe path appears in production UI
+- [ ] Typed payload post-check reports fail status in any row
 
 Rollback executed by:
 Rollback time (AEST):
 Incident notes:
 
+## Final Signoff Record
+
+- Cutover date: 2026-04-20
+- Operator: <DV>
+- Reviewer: <DV>
+- Branch/PR: https://github.com/Chronixt/MicroCRM/pull/23
+- Migration script: `supabase/migrations/010_notes_text_value_note_type.sql`
+- Validation scripts:
+  - `supabase/validation/010_notes_typed_payload_precheck.sql`
+  - `supabase/validation/010_notes_typed_payload_postcheck.sql`
+
+## Execution Evidence
+
+- Target schema(s): `tradie`
+- Precheck executed: PASS
+- Migration executed: PASS
+- Postcheck executed: PASS
+- Parity gates: PASS (`contract.noteTypeInference`, `guardrail.appBoundaryMarker`)
+
+## Postcheck Summary
+
+- `post.typed_payload_xor_failures.notes`: 0 (ok)
+- `post.typed_payload_xor_failures.note_versions`: 0 (ok)
+- `post.note_type_invalid_or_null.notes`: 0 (ok)
+- `post.note_type_invalid_or_null.note_versions`: 0 (ok)
+- Recovery placeholder rows reviewed: `<count + reviewer note>`
+
+## Smoke Test Results
+
+- Create text note: PASS
+- Edit text note: PASS
+- Create svg note: PASS
+- Edit svg note: PASS
+- Restore previous version: PASS
+- Cross-user/product isolation unchanged: PASS
+
+## Decision
+
+- Go/No-Go: GO
+- Notes/Risks: `<none or brief note>`
+- Signoff timestamp: 02:59PM
