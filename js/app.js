@@ -1631,6 +1631,9 @@
       .replace(/'/g, '&#39;');
   }
 
+  // NOTE_CONTRACT_GUARDRAIL:
+  // During first-pass stability hardening, note payload typing rules are owned by DB adapters.
+  // Do not introduce new note persistence branching here until adapter parity gates pass.
   function isSerializedTextNoteSvg(svgValue) {
     return typeof svgValue === 'string' && svgValue.indexOf('data-note-type="text"') !== -1;
   }
@@ -11714,6 +11717,80 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
   window.toggleNoteDebug = () => {
     window.debugNoteCanvas = !window.debugNoteCanvas;
     console.log(`Note canvas debugging ${window.debugNoteCanvas ? 'enabled' : 'disabled'}`);
+  };
+
+  // NOTE_CONTRACT_GUARDRAIL: first-pass integration safety harness.
+  // Run from console in an opened customer context:
+  //   await window.noteContractSmoke.run()
+  window.noteContractSmoke = {
+    run: async () => {
+      const report = {
+        ok: false,
+        steps: [],
+        errors: []
+      };
+      const pushStep = (name, ok, details = '') => {
+        report.steps.push({ name, ok, details });
+      };
+
+      try {
+        const queryId = new URLSearchParams(window.location.search).get('id');
+        const cidRaw = (typeof getCurrentCustomerId === 'function' ? getCurrentCustomerId() : null) || queryId;
+        const customerId = parseInt(cidRaw, 10);
+        if (Number.isNaN(customerId) || customerId <= 0) {
+          throw new Error('Open a real customer context first (valid ?id=...).');
+        }
+
+        const marker = `note-contract-${Date.now()}`;
+        const textPayload = `${marker}-text`;
+        const svgPayload = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="64" viewBox="0 0 240 64"><text x="8" y="36">${marker}-svg</text></svg>`;
+
+        const noteId = await CrmDB.createNote({
+          customerId,
+          noteType: 'text',
+          text: textPayload,
+          date: formatDateYYYYMMDD(new Date()),
+          noteNumber: 9999
+        });
+        pushStep('create text note', true, `noteId=${noteId}`);
+
+        await CrmDB.updateNote({
+          id: noteId,
+          customerId,
+          noteType: 'svg',
+          svg: svgPayload,
+          editedDate: new Date().toISOString()
+        });
+        pushStep('update text->svg', true);
+
+        const previous = await CrmDB.getNotePreviousVersion(noteId);
+        if (!previous) {
+          throw new Error('No previous version found after update.');
+        }
+        pushStep('version snapshot exists', true);
+
+        await CrmDB.restoreNoteToPreviousVersion(noteId);
+        pushStep('restore previous version', true);
+
+        const notes = await CrmDB.getNotesByCustomerId(customerId);
+        const restored = notes.find((n) => String(n.id) === String(noteId));
+        const restoredText = restored ? (restored.text ?? restored.textValue ?? restored.content ?? '') : '';
+        if (!restored || String(restoredText).indexOf(textPayload) === -1) {
+          throw new Error('Restore validation failed: expected text payload after restore.');
+        }
+        pushStep('post-restore payload check', true);
+
+        await CrmDB.deleteNote(noteId);
+        pushStep('cleanup delete', true);
+
+        report.ok = true;
+        return report;
+      } catch (err) {
+        report.errors.push(err && err.message ? err.message : String(err));
+        report.steps.forEach((s) => { if (s.ok !== true) s.ok = false; });
+        return report;
+      }
+    }
   };
 
   // Function to retroactively mark migrated notes with the isMigrated flag

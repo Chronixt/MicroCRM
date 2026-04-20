@@ -394,6 +394,22 @@ This document provides a comprehensive testing plan for all new features impleme
 
 ---
 
+## Typed Notes Contract Regression (Release Blocking)
+
+| Test Case | Steps | Expected Result | Pass/Fail |
+|-----------|-------|-----------------|-----------|
+| Text note create | Create a text note | `note_type='text'`, `text_value` populated, `svg` null/blank | |
+| SVG note create | Create an svg/canvas note | `note_type='svg'`, `svg` populated, `text_value` null/blank | |
+| Text note edit | Edit existing text note | Row remains typed as `text`; payload xor remains valid | |
+| SVG note edit | Edit existing svg note | Row remains typed as `svg`; payload xor remains valid | |
+| Type switch text→svg | Convert note from text to svg | Type changes correctly; only svg payload remains | |
+| Type switch svg→text | Convert note from svg to text | Type changes correctly; only text payload remains | |
+| Version snapshot integrity | Edit a note, then inspect latest note_versions row | Snapshot preserves previous note type and payload semantics | |
+| Restore previous version | Restore a changed note | Restored row satisfies typed payload xor contract | |
+| Backup/import roundtrip | Export data, re-import in rehearsal | Note types and payload integrity preserved | |
+
+---
+
 ## Sign-Off
 
 | Phase | Tested By | Date | Status |
