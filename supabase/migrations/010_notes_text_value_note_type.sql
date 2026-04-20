@@ -209,43 +209,41 @@ BEGIN
     -- =============================
     -- Phase 3: invariant gate before strictness
     -- =============================
-    EXECUTE format($sql$
+    EXECUTE format('SET LOCAL search_path TO %I, public', target_schema);
+
+    notes_invalid_type_count := (
       SELECT COUNT(*)
-      FROM %I.notes
+      FROM notes
       WHERE note_type NOT IN ('text', 'svg')
          OR note_type IS NULL
-    $sql$, target_schema)
-    INTO notes_invalid_type_count;
+    );
 
-    EXECUTE format($sql$
+    notes_payload_xor_fail_count := (
       SELECT COUNT(*)
-      FROM %I.notes
+      FROM notes
       WHERE NOT (
         (note_type = 'svg' AND svg IS NOT NULL AND BTRIM(svg) <> '' AND (text_value IS NULL OR BTRIM(text_value) = ''))
         OR
         (note_type = 'text' AND text_value IS NOT NULL AND BTRIM(text_value) <> '' AND (svg IS NULL OR BTRIM(svg) = ''))
       )
-    $sql$, target_schema)
-    INTO notes_payload_xor_fail_count;
+    );
 
-    EXECUTE format($sql$
+    versions_invalid_type_count := (
       SELECT COUNT(*)
-      FROM %I.note_versions
+      FROM note_versions
       WHERE note_type NOT IN ('text', 'svg')
          OR note_type IS NULL
-    $sql$, target_schema)
-    INTO versions_invalid_type_count;
+    );
 
-    EXECUTE format($sql$
+    versions_payload_xor_fail_count := (
       SELECT COUNT(*)
-      FROM %I.note_versions
+      FROM note_versions
       WHERE NOT (
         (note_type = 'svg' AND svg IS NOT NULL AND BTRIM(svg) <> '' AND (text_value IS NULL OR BTRIM(text_value) = ''))
         OR
         (note_type = 'text' AND text_value IS NOT NULL AND BTRIM(text_value) <> '' AND (svg IS NULL OR BTRIM(svg) = ''))
       )
-    $sql$, target_schema)
-    INTO versions_payload_xor_fail_count;
+    );
 
     IF notes_invalid_type_count > 0
       OR notes_payload_xor_fail_count > 0
