@@ -25,8 +25,11 @@ BEGIN
     FROM regexp_split_to_table(target_schemas_raw, ',') AS value
     WHERE BTRIM(value) <> ''
   LOOP
-    SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = s)
-    INTO has_schema;
+    has_schema := EXISTS (
+      SELECT 1
+      FROM information_schema.schemata
+      WHERE schema_name = s
+    );
 
     INSERT INTO _notes_postcheck_results(check_name, schema_name, row_count, status, details)
     VALUES (
@@ -41,15 +44,15 @@ BEGIN
       CONTINUE;
     END IF;
 
-    SELECT EXISTS (
+    has_notes := EXISTS (
       SELECT 1 FROM information_schema.tables
       WHERE table_schema = s AND table_name = 'notes'
-    ) INTO has_notes;
+    );
 
-    SELECT EXISTS (
+    has_versions := EXISTS (
       SELECT 1 FROM information_schema.tables
       WHERE table_schema = s AND table_name = 'note_versions'
-    ) INTO has_versions;
+    );
 
     INSERT INTO _notes_postcheck_results(check_name, schema_name, row_count, status, details)
     VALUES

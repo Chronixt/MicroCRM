@@ -112,3 +112,45 @@ Trigger rollback immediately if any are true:
 Rollback executed by:
 Rollback time (AEST):
 Incident notes:
+
+## Final Signoff Record
+
+- Cutover date: 2026-04-20
+- Operator: <DV>
+- Reviewer: <DV>
+- Branch/PR: https://github.com/Chronixt/MicroCRM/pull/22
+- Migration script: `supabase/migrations/010_notes_text_value_note_type.sql`
+- Validation scripts:
+  - `supabase/validation/010_notes_typed_payload_precheck.sql`
+  - `supabase/validation/010_notes_typed_payload_postcheck.sql`
+
+## Execution Evidence
+
+- Target schema(s): `<hairdresser>`
+- Precheck executed: PASS
+- Migration executed: PASS
+- Postcheck executed: PASS
+- Parity gates: PASS (`contract.noteTypeInference`, `guardrail.appBoundaryMarker`)
+
+## Postcheck Summary
+
+- `post.typed_payload_xor_failures.notes`: 0 (ok)
+- `post.typed_payload_xor_failures.note_versions`: 0 (ok)
+- `post.note_type_invalid_or_null.notes`: 0 (ok)
+- `post.note_type_invalid_or_null.note_versions`: 0 (ok)
+- Recovery placeholder rows reviewed: `<count + reviewer note>`
+
+## Smoke Test Results
+
+- Create text note: PASS
+- Edit text note: PASS
+- Create svg note: PASS
+- Edit svg note: PASS
+- Restore previous version: PASS
+- Cross-user/product isolation unchanged: PASS
+
+## Decision
+
+- Go/No-Go: GO
+- Notes/Risks: `<none or brief note>`
+- Signoff timestamp: 02:59PM

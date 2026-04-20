@@ -26,8 +26,11 @@ BEGIN
     FROM regexp_split_to_table(target_schemas_raw, ',') AS value
     WHERE BTRIM(value) <> ''
   LOOP
-    SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = s)
-    INTO has_notes;
+    has_notes := EXISTS (
+      SELECT 1
+      FROM information_schema.schemata
+      WHERE schema_name = s
+    );
 
     INSERT INTO _notes_precheck_results(check_name, schema_name, row_count, status, details)
     VALUES (
@@ -42,15 +45,15 @@ BEGIN
       CONTINUE;
     END IF;
 
-    SELECT EXISTS (
+    has_notes := EXISTS (
       SELECT 1 FROM information_schema.tables
       WHERE table_schema = s AND table_name = 'notes'
-    ) INTO has_notes;
+    );
 
-    SELECT EXISTS (
+    has_versions := EXISTS (
       SELECT 1 FROM information_schema.tables
       WHERE table_schema = s AND table_name = 'note_versions'
-    ) INTO has_versions;
+    );
 
     INSERT INTO _notes_precheck_results(check_name, schema_name, row_count, status, details)
     VALUES
@@ -70,10 +73,10 @@ BEGIN
       );
 
     IF has_notes THEN
-      SELECT EXISTS (
+      notes_has_note_type := EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = s AND table_name = 'notes' AND column_name = 'note_type'
-      ) INTO notes_has_note_type;
+      );
 
       EXECUTE format($sql$
         INSERT INTO _notes_precheck_results(check_name, schema_name, row_count, status, details)
@@ -114,10 +117,10 @@ BEGIN
     END IF;
 
     IF has_versions THEN
-      SELECT EXISTS (
+      versions_has_note_type := EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = s AND table_name = 'note_versions' AND column_name = 'note_type'
-      ) INTO versions_has_note_type;
+      );
 
       EXECUTE format($sql$
         INSERT INTO _notes_precheck_results(check_name, schema_name, row_count, status, details)
