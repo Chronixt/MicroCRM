@@ -81,6 +81,22 @@ Run this only if you want to migrate existing “address in social_media_name”
 
 Policies are set to allow all operations for `anon`. That’s fine for a single-user app with one anon key. When you add Supabase Auth (e.g. login), you can add policies that use `auth.uid()` so each user only sees their own data.
 
+## Typed Notes Migration Validation
+
+For migration `010_notes_text_value_note_type.sql`, run validation in this order:
+
+1. `supabase/validation/010_notes_typed_payload_precheck.sql`
+2. `supabase/migrations/010_notes_text_value_note_type.sql`
+3. `supabase/validation/010_notes_typed_payload_postcheck.sql`
+
+Validation output format is machine-readable:
+
+- `check_name`
+- `schema_name`
+- `row_count`
+- `status`
+- `details`
+
 ## If you get “EXECUTE FUNCTION” errors
 
 Older Postgres may not support `EXECUTE FUNCTION`. Replace it with `EXECUTE PROCEDURE` in the trigger definitions in `schema.sql` and run again.
