@@ -36,6 +36,10 @@ Timestamp: 12:39pm
 - [x] `005_tradie_schema_from_public.sql` applied
 - [x] `006_tradie_owner_rls.sql` applied
 - [x] `007_self_service_delete_my_data.sql` applied
+- [x] `010_notes_text_value_note_type.sql` applied (when in release scope)
+- [x] `010_notes_typed_payload_precheck.sql` evidence attached
+- [x] `010_notes_typed_payload_postcheck.sql` evidence attached
+- [x] Typed payload strict checks pass (`notes` + `note_versions` xor and note_type validity = 0 failures)
 
 - [x] RLS policies verified in `tradie` schema
 - [x] `tradie.delete_my_data()` exists and executable by `authenticated` 
@@ -55,6 +59,10 @@ Timestamp: 12:39pm
 - [x] `Delete My Data` visible (not `Wipe All Data`)
 - [x] `Sign Out` button visible and functioning
 - [x] Dev banner hidden in production
+- [x] `npm run test:notes-parity` passes
+- [x] Text note persists as `note_type='text'` with only `text_value` payload
+- [x] SVG note persists as `note_type='svg'` with only `svg` payload
+- [x] Note restore path preserves typed payload contract
 
 Initials: DV
 Timestamp: 1:20pm
@@ -97,6 +105,7 @@ Trigger rollback immediately if any are true:
 - [ ] Users cannot see their own expected data
 - [ ] Cross-user visibility breach occurs
 - [ ] Any destructive global wipe path appears in production UI
+- [ ] Typed payload post-check reports fail status in any row
 
 Rollback executed by:
 Rollback time (AEST):
