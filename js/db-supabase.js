@@ -11,18 +11,23 @@
   const APP_SLUG = productConfig.appSlug || profileConfig.appSlug || 'crm';
   const STORAGE_PREFIX = productConfig.storagePrefix || profileConfig.storagePrefix || 'crm_';
   const SUPPORTS_JOB_PIPELINE = !!FEATURE_FLAGS.jobPipeline;
-  const APPOINTMENT_COLUMNS = [
+  const APPOINTMENT_BASE_COLUMNS = [
     'customer_id',
     'title',
     'start',
     'end',
+    'created_at'
+  ];
+  const APPOINTMENT_PIPELINE_COLUMNS = [
     'status',
     'address',
     'quoted_amount',
     'invoice_amount',
-    'paid_amount',
-    'created_at'
+    'paid_amount'
   ];
+  const APPOINTMENT_COLUMNS = SUPPORTS_JOB_PIPELINE
+    ? APPOINTMENT_BASE_COLUMNS.concat(APPOINTMENT_PIPELINE_COLUMNS)
+    : APPOINTMENT_BASE_COLUMNS;
   var cachedClient = null;
   let cachedTypedNoteColumns = null;
   let cachedTypedNoteVersionColumns = null;
@@ -515,16 +520,18 @@
       title: appointment.title || null,
       created_at: appointment.createdAt || new Date().toISOString()
     };
-    const optionalMap = {
-      status: 'status',
-      address: 'address',
-      quotedAmount: 'quoted_amount',
-      invoiceAmount: 'invoice_amount',
-      paidAmount: 'paid_amount'
-    };
-    Object.keys(optionalMap).forEach((k) => {
-      if (appointment[k] !== undefined) row[optionalMap[k]] = appointment[k];
-    });
+    if (SUPPORTS_JOB_PIPELINE) {
+      const optionalMap = {
+        status: 'status',
+        address: 'address',
+        quotedAmount: 'quoted_amount',
+        invoiceAmount: 'invoice_amount',
+        paidAmount: 'paid_amount'
+      };
+      Object.keys(optionalMap).forEach((k) => {
+        if (appointment[k] !== undefined) row[optionalMap[k]] = appointment[k];
+      });
+    }
     return row;
   }
 
