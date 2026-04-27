@@ -28,6 +28,18 @@ Last updated: 2026-04-20
 2. Extract note recovery/debug UI handlers into a separate debug/recovery module.
 3. Keep `js/app.js` as orchestration/wiring only.
 
+## Progress Update (2026-04-27)
+
+- Added `js/notesRuntime.js` and moved typed-note helper cluster there:
+  - `isSerializedTextNoteSvg`
+  - `extractTextFromSerializedTextNoteSvg`
+  - `getNoteTextValue`
+  - `getNoteTypeValue`
+  - `isNoteQueuedForSync`
+  - `serializeTextNoteToSvg`
+- `index.html` now loads `js/notesRuntime.js` before `js/app.js`.
+- `js/app.js` keeps existing function names as delegating wrappers for zero behavior-change migration.
+
 ## Success Criteria for Next Pass
 
 - No note persistence rule logic remains in `js/app.js`.
