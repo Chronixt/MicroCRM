@@ -22,6 +22,13 @@ jobs:
             const repo = context.repo.repo;
             const pr = context.payload.pull_request;
 
+            // Allow standard propagation PRs from main -> product branches.
+            // We still block tool paths for all other source branches.
+            if (pr.head && pr.head.ref === 'main') {
+              core.info('Skipping tool-path block for base=<product>, compare=main sync PR.');
+              return;
+            }
+
             const files = await github.paginate(
               github.rest.pulls.listFiles,
               {
