@@ -23,6 +23,15 @@ These rules are mandatory for any coding agent working in this repository.
    - `main` -> `tradie-crm`
 4. Do not skip the `main` integration step unless explicitly instructed by repository owner.
 
+## Tools File Policy
+
+1. Tooling/artifact files belong under `tools/` where possible.
+2. Tool-only files may be merged into `main`.
+3. Tool-only files must not be included in product PRs with base:
+   - `hairdresser-crm`
+   - `tradie-crm`
+4. CI workflow `.github/workflows/block-tools-on-product-pr.yml` enforces this.
+
 ## Pre-Commit Guard
 
 Before any commit, agents must verify current branch:
