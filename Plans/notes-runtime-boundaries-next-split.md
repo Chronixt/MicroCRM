@@ -47,6 +47,10 @@ Last updated: 2026-04-20
 - Extracted note recovery/debug UI handlers into `js/notesRecoveryUi.js`.
 - `index.html` now loads `js/notesRecoveryUi.js` before `js/app.js`.
 - `js/app.js` now delegates recovery handler binding via `window.NoteRecoveryUI.bindHandlers({ escapeHtml })`.
+- Extracted note offline-queue and local-cache helpers into `js/notesRuntime.js`:
+  - `readNoteOfflineQueue`, `writeNoteOfflineQueue`, `enqueueNoteOfflineOp`
+  - `getLocalNotesForCustomer`, `upsertLocalCustomerNote`, `removeLocalCustomerNote`
+- `js/app.js` now delegates those helpers to runtime wrappers using schema-prefixed storage keys.
 
 ## Success Criteria for Next Pass
 
