@@ -9535,9 +9535,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         `;
         editButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
-          // Use text overlay for text-based notes, canvas for SVG notes
+          // Use text overlay for text-based notes, canvas for SVG notes.
+          // Be defensive: render/edit as text when text payload exists but SVG payload is empty.
           const noteText = getNoteTextValue(noteData);
-          const isTextNote = getNoteTypeValue(noteData) === 'text';
+          const hasTextPayload = typeof noteText === 'string' && noteText.trim().length > 0;
+          const hasSvgPayload = typeof noteData.svg === 'string' && noteData.svg.trim().length > 0;
+          const isTextNote = getNoteTypeValue(noteData) === 'text' || (hasTextPayload && !hasSvgPayload);
           if (isTextNote) {
             textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
           } else {
@@ -9643,9 +9646,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         overflow-y: auto;
       `;
 
-      // Check if this is a text-based note or SVG-based note
+      // Check if this is a text-based note or SVG-based note.
+      // Be defensive against payload drift: if text exists and SVG is empty, treat as text.
       const noteText = getNoteTextValue(noteData);
-      const isTextNote = getNoteTypeValue(noteData) === 'text';
+      const hasTextPayload = typeof noteText === 'string' && noteText.trim().length > 0;
+      const hasSvgPayload = typeof noteData.svg === 'string' && noteData.svg.trim().length > 0;
+      const isTextNote = getNoteTypeValue(noteData) === 'text' || (hasTextPayload && !hasSvgPayload);
       
       let contentContainer;
       
@@ -9665,7 +9671,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           white-space: pre-wrap;
           word-wrap: break-word;
         `;
-        contentContainer.textContent = noteText;
+        contentContainer.textContent = noteText || '(No text payload)';
       } else {
         // Render SVG-based note (legacy handwriting)
         contentContainer = document.createElement('div');
