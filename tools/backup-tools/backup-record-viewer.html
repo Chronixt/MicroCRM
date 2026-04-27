@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Record Viewer - CRMicro</title>
+    <style>
+        :root {
+            --bg1: #0f172a;
+            --bg2: #1e293b;
+            --panel: rgba(255, 255, 255, 0.08);
+            --line: rgba(255, 255, 255, 0.15);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #22d3ee;
+            --warn: #f59e0b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            color: var(--text);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(145deg, var(--bg1), var(--bg2));
+            min-height: 100vh;
+            padding: 18px;
+        }
+        .wrap {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 14px;
+        }
+        .panel {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            border-radius: 14px;
+            padding: 14px;
+            backdrop-filter: blur(8px);
+        }
+        h1, h2, h3 { margin-top: 0; }
+        h1 { font-size: 1.45rem; margin-bottom: 8px; }
+        h2 { font-size: 1.1rem; margin-bottom: 8px; }
+        h3 { font-size: 0.98rem; margin-bottom: 8px; }
+        p { margin: 0 0 8px; color: var(--muted); }
+        .controls {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        input, button, select {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+            padding: 9px 10px;
+            font-size: 0.92rem;
+        }
+        input::placeholder { color: #9ca3af; }
+        button { cursor: pointer; font-weight: 700; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .status { font-size: 0.88rem; color: var(--muted); margin-bottom: 8px; }
+        .status.warn { color: #fde68a; }
+        .status.good { color: #86efac; }
+        .results {
+            max-height: 64vh;
+            overflow: auto;
+            display: grid;
+            gap: 8px;
+        }
+        .analyzer {
+            margin-top: 10px;
+            border-top: 1px dashed var(--line);
+            padding-top: 10px;
+        }
+        .analyzer-list {
+            margin-top: 8px;
+            max-height: clamp(380px, 58vh, 760px);
+            overflow: auto;
+            display: grid;
+            gap: 8px;
+        }
+        .analyzer-item {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 8px;
+            background: rgba(245, 158, 11, 0.08);
+        }
+        .analyzer-item .title {
+            font-weight: 700;
+        }
+        .mini.hit-red {
+            color: #fca5a5;
+            font-weight: 700;
+        }
+        .analysis-box {
+            margin-top: 8px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+            background: rgba(34, 211, 238, 0.08);
+        }
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .analysis-item {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.14);
+        }
+        .analysis-item .k {
+            color: var(--muted);
+            font-size: 0.78rem;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .analysis-item .v {
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+        .analysis-list {
+            max-height: 180px;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.16);
+            padding: 6px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.84rem;
+        }
+        .result-item {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.16);
+        }
+        .result-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+        }
+        .result-name { font-weight: 700; }
+        .mini {
+            color: var(--muted);
+            font-size: 0.82rem;
+            margin-top: 4px;
+            word-break: break-word;
+        }
+        .open-btn {
+            width: auto;
+            padding: 6px 10px;
+            background: rgba(34, 211, 238, 0.15);
+            border-color: rgba(34, 211, 238, 0.35);
+            color: #d1fae5;
+        }
+        .profile-empty {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .meta-item {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.16);
+            font-size: 0.86rem;
+        }
+        .meta-item .k { color: var(--muted); display: block; margin-bottom: 3px; }
+        .section {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: rgba(0, 0, 0, 0.14);
+        }
+        .notes {
+            display: grid;
+            gap: 10px;
+        }
+        .note {
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .note.note-hit {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5);
+            background: rgba(239, 68, 68, 0.08);
+        }
+        .note-meta {
+            color: var(--muted);
+            font-size: 0.8rem;
+            margin-bottom: 6px;
+        }
+        .note-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.9rem;
+        }
+        .svg-wrap {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 6px;
+            background: transparent;
+        }
+        .svg-preview {
+            width: 100%;
+            display: block;
+            border: 0;
+            background: transparent;
+            min-height: 140px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86rem;
+        }
+        th, td {
+            border: 1px solid var(--line);
+            text-align: left;
+            padding: 6px;
+        }
+        th { color: var(--muted); }
+        .images {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 8px;
+        }
+        .img-card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.18);
+        }
+        .img-card img {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            display: block;
+        }
+        .img-meta {
+            font-size: 0.75rem;
+            color: var(--muted);
+            padding: 5px;
+            word-break: break-word;
+        }
+        .mono { font-family: Consolas, Menlo, Monaco, monospace; }
+        .top-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.88rem;
+        }
+        @media (max-width: 980px) {
+            .wrap { grid-template-columns: 1fr; }
+            .results { max-height: 35vh; }
+            .analyzer-list { max-height: 52vh; }
+        }
+    </style>
+</head>
+<body>
+    <a class="top-link" href="backup-options.html">Back to backup options</a>
+    <div class="wrap">
+        <section class="panel">
+            <h1>Backup Record Viewer</h1>
+            <p>Load one backup JSON, search customers, then open a mini profile with notes/appointments/images.</p>
+            <div class="controls">
+                <input id="backup-file" type="file" accept=".json,application/json">
+                <div class="row">
+                    <input id="filter-id" type="text" placeholder="Customer ID">
+                    <input id="filter-first" type="text" placeholder="First name">
+                </div>
+                <div class="row">
+                    <input id="filter-last" type="text" placeholder="Last name">
+                    <input id="filter-any" type="text" placeholder="Any text (phone, suburb, notes...)">
+                </div>
+                <div class="row">
+                    <button id="search-btn" disabled>Search</button>
+                    <button id="clear-btn">Clear Filters</button>
+                </div>
+            </div>
+            <div id="status" class="status">Choose a backup JSON file to begin.</div>
+            <div id="results" class="results"></div>
+            <div class="analyzer">
+                <h3>Potential Missing Notes</h3>
+                <p>Flags appointments where no note <span class="mono">date</span> exists within N days after appointment date.</p>
+                <div class="row">
+                    <input id="gap-days" type="number" min="1" max="14" value="3" placeholder="Days window">
+                    <button id="analyze-btn" disabled>Run Analyzer</button>
+                </div>
+                <div class="row">
+                    <select id="analyzer-sort">
+                        <option value="missing_desc">Sort: Missing count (high to low)</option>
+                        <option value="appt_newest">Sort: Appointment date (newest first)</option>
+                        <option value="appt_oldest">Sort: Appointment date (oldest first)</option>
+                    </select>
+                    <div></div>
+                </div>
+                <div class="row">
+                    <label class="mini" style="display:flex; align-items:center; gap:8px; color:var(--text);">
+                        <input id="filter-near-hit-only" type="checkbox" style="width:auto; margin:0;">
+                        Only show customers with nearby-note hit
+                    </label>
+                    <div></div>
+                </div>
+                <div id="analyzer-status" class="status">Load a backup file to enable analyzer.</div>
+                <div id="analysis-box" class="analysis-box" style="display:none;"></div>
+                <div id="analyzer-list" class="analyzer-list"></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Customer Profile</h2>
+            <div id="profile" class="profile-empty">No customer selected yet.</div>
+        </section>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const backupFileInput = document.getElementById('backup-file');
+            const filterIdEl = document.getElementById('filter-id');
+            const filterFirstEl = document.getElementById('filter-first');
+            const filterLastEl = document.getElementById('filter-last');
+            const filterAnyEl = document.getElementById('filter-any');
+            const searchBtn = document.getElementById('search-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const statusEl = document.getElementById('status');
+            const resultsEl = document.getElementById('results');
+            const profileEl = document.getElementById('profile');
+            const gapDaysEl = document.getElementById('gap-days');
+            const analyzeBtn = document.getElementById('analyze-btn');
+            const analyzerSortEl = document.getElementById('analyzer-sort');
+            const filterNearHitOnlyEl = document.getElementById('filter-near-hit-only');
+            const analyzerStatusEl = document.getElementById('analyzer-status');
+            const analysisBoxEl = document.getElementById('analysis-box');
+            const analyzerListEl = document.getElementById('analyzer-list');
+
+            let loaded = null;
+            let currentProfileCustomer = null;
+            let currentProfileOptions = {};
+            let profileShowHitOnly = false;
+
+            backupFileInput.addEventListener('change', async function () {
+                const file = backupFileInput.files && backupFileInput.files[0];
+                if (!file) return;
+                try {
+                    setStatus('Loading backup...');
+                    const text = await file.text();
+                    const raw = JSON.parse(text);
+                    loaded = normalizeBackup(raw, file.name);
+                    searchBtn.disabled = false;
+                    analyzeBtn.disabled = false;
+                    setStatus(
+                        'Loaded ' + loaded.fileName + ' | customers: ' + loaded.customers.length +
+                        ', notes: ' + loaded.noteCount + ', appointments: ' + loaded.appointments.length +
+                        ', images: ' + loaded.images.length
+                    );
+                    runSearch();
+                } catch (err) {
+                    loaded = null;
+                    searchBtn.disabled = true;
+                    analyzeBtn.disabled = true;
+                    resultsEl.innerHTML = '';
+                    analyzerListEl.innerHTML = '';
+                    analysisBoxEl.style.display = 'none';
+                    analysisBoxEl.innerHTML = '';
+                    setAnalyzerStatus('Load a backup file to enable analyzer.');
+                    profileEl.innerHTML = '<div class="profile-empty">No customer selected yet.</div>';
+                    setStatus('Failed to load backup: ' + err.message, true);
+                }
+            });
+
+            searchBtn.addEventListener('click', runSearch);
+            analyzeBtn.addEventListener('click', runMissingNotesAnalyzer);
+            [filterIdEl, filterFirstEl, filterLastEl, filterAnyEl].forEach(function (el) {
+                el.addEventListener('keydown', function (evt) {
+                    if (evt.key === 'Enter') runSearch();
+                });
+            });
+
+            clearBtn.addEventListener('click', function () {
+                filterIdEl.value = '';
+                filterFirstEl.value = '';
+                filterLastEl.value = '';
+                filterAnyEl.value = '';
+                if (loaded) runSearch();
+            });
+            gapDaysEl.addEventListener('keydown', function (evt) {
+                if (evt.key === 'Enter') runMissingNotesAnalyzer();
+            });
+            analyzerSortEl.addEventListener('change', function () {
+                if (loaded) runMissingNotesAnalyzer();
+            });
+            filterNearHitOnlyEl.addEventListener('change', function () {
+                if (loaded) runMissingNotesAnalyzer();
+            });
+
+            function setStatus(message, isWarn) {
+                statusEl.textContent = message;
+                statusEl.className = isWarn ? 'status warn' : 'status';
+            }
+
+            function setAnalyzerStatus(message, level) {
+                analyzerStatusEl.textContent = message;
+                analyzerStatusEl.className = level === 'warn'
+                    ? 'status warn'
+                    : (level === 'good' ? 'status good' : 'status');
+            }
+
+            function normalizeBackup(raw, fileName) {
+                const customers = Array.isArray(raw && raw.customers) ? raw.customers : [];
+                const appointments = Array.isArray(raw && raw.appointments) ? raw.appointments : [];
+                const images = Array.isArray(raw && raw.images) ? raw.images : [];
+                const customerNotes = raw && raw.customerNotes && typeof raw.customerNotes === 'object'
+                    ? raw.customerNotes
+                    : {};
+
+                const notesByCustomerId = new Map();
+                Object.keys(customerNotes).forEach(function (customerId) {
+                    const list = Array.isArray(customerNotes[customerId]) ? customerNotes[customerId] : [];
+                    notesByCustomerId.set(String(customerId), list);
+                });
+
+                const appointmentsByCustomerId = new Map();
+                appointments.forEach(function (appt) {
+                    const key = String(appt && appt.customerId != null ? appt.customerId : '');
+                    if (!key) return;
+                    if (!appointmentsByCustomerId.has(key)) appointmentsByCustomerId.set(key, []);
+                    appointmentsByCustomerId.get(key).push(appt);
+                });
+
+                const imagesByCustomerId = new Map();
+                images.forEach(function (img) {
+                    const key = String(img && img.customerId != null ? img.customerId : '');
+                    if (!key) return;
+                    if (!imagesByCustomerId.has(key)) imagesByCustomerId.set(key, []);
+                    imagesByCustomerId.get(key).push(img);
+                });
+
+                return {
+                    fileName: fileName,
+                    customers: customers,
+                    appointments: appointments,
+                    images: images,
+                    notesByCustomerId: notesByCustomerId,
+                    appointmentsByCustomerId: appointmentsByCustomerId,
+                    imagesByCustomerId: imagesByCustomerId,
+                    noteCount: countNotes(notesByCustomerId)
+                };
+            }
+
+            function countNotes(notesByCustomerId) {
+                let sum = 0;
+                notesByCustomerId.forEach(function (list) { sum += list.length; });
+                return sum;
+            }
+
+            function runSearch() {
+                if (!loaded) return;
+                const qId = norm(filterIdEl.value);
+                const qFirst = norm(filterFirstEl.value);
+                const qLast = norm(filterLastEl.value);
+                const qAny = norm(filterAnyEl.value);
+
+                const matches = loaded.customers.map(function (customer) {
+                    return { customer: customer, score: scoreCustomer(customer, qId, qFirst, qLast, qAny) };
+                }).filter(function (entry) {
+                    return entry.score > 0;
+                }).sort(function (a, b) {
+                    return b.score - a.score;
+                });
+
+                renderResults(matches);
+                setStatus('Found ' + matches.length + ' matching customer(s).');
+            }
+
+            function runMissingNotesAnalyzer() {
+                if (!loaded) {
+                    setAnalyzerStatus('Load a backup file first.', 'warn');
+                    return;
+                }
+                const daysWindowRaw = parseInt(String(gapDaysEl.value || '3'), 10);
+                const daysWindow = Number.isFinite(daysWindowRaw) && daysWindowRaw > 0 ? daysWindowRaw : 3;
+                const nearNoteWindowDays = 10;
+                gapDaysEl.value = String(daysWindow);
+
+                const flagged = [];
+                const missingByDate = new Map();
+                loaded.customers.forEach(function (customer) {
+                    const customerId = String(customer && customer.id != null ? customer.id : '');
+                    if (!customerId) return;
+
+                    const appointments = getAppointmentsForCustomerId(customerId);
+                    if (!appointments.length) return;
+                    const appointmentDateMsList = appointments
+                        .map(extractAppointmentDateMs)
+                        .filter(function (v) { return v !== null; })
+                        .sort(function (a, b) { return a - b; });
+
+                    const notes = getNotesForCustomerId(customerId);
+                    const noteDateMsList = notes.map(extractNoteDateMs).filter(function (v) { return v !== null; });
+
+                    let missingCount = 0;
+                    const missingExamples = [];
+                    const missingDateKeys = [];
+                    let latestMissingApptMs = null;
+                    let earliestMissingApptMs = null;
+                    appointments.forEach(function (appt) {
+                        const apptDateMs = extractAppointmentDateMs(appt);
+                        if (apptDateMs === null) return;
+
+                        const hasNearbyNote = noteDateMsList.some(function (noteMs) {
+                            const diffDays = Math.floor((noteMs - apptDateMs) / 86400000);
+                            return diffDays >= 0 && diffDays <= daysWindow;
+                        });
+                        if (!hasNearbyNote) {
+                            missingCount += 1;
+                            latestMissingApptMs = latestMissingApptMs === null
+                                ? apptDateMs
+                                : Math.max(latestMissingApptMs, apptDateMs);
+                            earliestMissingApptMs = earliestMissingApptMs === null
+                                ? apptDateMs
+                                : Math.min(earliestMissingApptMs, apptDateMs);
+                            const missingDateKey = formatDateKeyFromRaw(appt && (appt.start || appt.date || appt.createdAt || ''));
+                            if (missingDateKey) missingDateKeys.push(missingDateKey);
+                            const dateKey = formatDateKeyFromRaw(appt && (appt.start || appt.date || appt.createdAt || ''));
+                            if (dateKey) {
+                                missingByDate.set(dateKey, (missingByDate.get(dateKey) || 0) + 1);
+                            }
+                            if (missingExamples.length < 5) {
+                                missingExamples.push(appt && (appt.start || appt.date || appt.createdAt || 'unknown date'));
+                            }
+                        }
+                    });
+
+                    if (missingCount > 0) {
+                        const nearNoteInfo = findNoteDatesNearMissingDates(
+                            missingDateKeys,
+                            noteDateMsList,
+                            appointmentDateMsList,
+                            nearNoteWindowDays
+                        );
+                        flagged.push({
+                            customer: customer,
+                            customerId: customerId,
+                            missingCount: missingCount,
+                            totalAppointments: appointments.length,
+                            noteCount: notes.length,
+                            latestMissingApptMs: latestMissingApptMs,
+                            earliestMissingApptMs: earliestMissingApptMs,
+                            nearNoteWindowDays: nearNoteWindowDays,
+                            nearNoteDates: nearNoteInfo.nearNoteDates,
+                            missingToNearNotePairs: nearNoteInfo.pairs,
+                            sampleDates: missingExamples
+                        });
+                    }
+                });
+
+                sortAnalyzerRows(flagged);
+                renderAnalysisBox(missingByDate, daysWindow);
+                renderAnalyzerResults(flagged, daysWindow);
+            }
+
+            function sortAnalyzerRows(flagged) {
+                const mode = String(analyzerSortEl && analyzerSortEl.value || 'missing_desc');
+                if (mode === 'appt_newest') {
+                    flagged.sort(function (a, b) {
+                        return (b.latestMissingApptMs || 0) - (a.latestMissingApptMs || 0);
+                    });
+                    return;
+                }
+                if (mode === 'appt_oldest') {
+                    flagged.sort(function (a, b) {
+                        return (a.earliestMissingApptMs || 0) - (b.earliestMissingApptMs || 0);
+                    });
+                    return;
+                }
+                flagged.sort(function (a, b) {
+                    if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
+                    return (b.latestMissingApptMs || 0) - (a.latestMissingApptMs || 0);
+                });
+            }
+
+            function renderAnalyzerResults(flagged, daysWindow) {
+                if (!flagged.length) {
+                    analyzerListEl.innerHTML = '';
+                    analysisBoxEl.style.display = 'none';
+                    analysisBoxEl.innerHTML = '';
+                    setAnalyzerStatus('No potential gaps found within ' + daysWindow + '-day window.', 'good');
+                    return;
+                }
+
+                const visibleRows = filterNearHitOnlyEl && filterNearHitOnlyEl.checked
+                    ? flagged.filter(function (row) {
+                        return row.missingToNearNotePairs && row.missingToNearNotePairs.length > 0;
+                    })
+                    : flagged;
+
+                if (!visibleRows.length) {
+                    analyzerListEl.innerHTML = '<div class="analyzer-item">No rows match the current filter.</div>';
+                    setAnalyzerStatus(
+                        'Flagged ' + flagged.length + ' customer(s), but 0 match "nearby-note hit" filter.',
+                        'warn'
+                    );
+                    return;
+                }
+
+                analyzerListEl.innerHTML = visibleRows.slice(0, 300).map(function (row) {
+                    const name = formatName(row.customer);
+                    const sampleText = row.sampleDates.length ? row.sampleDates.join(', ') : 'n/a';
+                    const nearDatesText = row.nearNoteDates && row.nearNoteDates.length
+                        ? row.nearNoteDates.join(', ')
+                        : '';
+                    const pairText = row.missingToNearNotePairs && row.missingToNearNotePairs.length
+                        ? row.missingToNearNotePairs.join(' | ')
+                        : '';
+                    return (
+                        '<div class="analyzer-item">' +
+                            '<div class="result-top">' +
+                                '<div class="title">' + escapeHtml(name) + '</div>' +
+                                '<button class="open-btn" data-customer-id="' + escapeHtml(row.customerId) + '" data-hit-note-dates="' + escapeHtml((row.nearNoteDates || []).join('|')) + '" data-hit-pairs="' + escapeHtml(encodeURIComponent(JSON.stringify(row.missingToNearNotePairs || []))) + '">Open</button>' +
+                            '</div>' +
+                            '<div class="mini mono">customerId: ' + escapeHtml(row.customerId) + '</div>' +
+                            '<div class="mini">Potential missing notes: <strong>' + row.missingCount + '</strong> / ' + row.totalAppointments + ' appointments | Notes on file: ' + row.noteCount + '</div>' +
+                            '<div class="mini">Example appointment dates with no nearby note: ' + escapeHtml(sampleText) + '</div>' +
+                            (
+                                nearDatesText
+                                    ? '<div class="mini">Has note date(s) within ' + row.nearNoteWindowDays + ' days of potential missed appointment date: ' + escapeHtml(nearDatesText) + '</div>'
+                                    : '<div class="mini">No note dates found within ' + row.nearNoteWindowDays + ' days of potential missed appointment date(s).</div>'
+                            ) +
+                            (
+                                pairText
+                                    ? '<div class="mini hit-red">Potential missed appointment date -> nearby note date(s): ' + escapeHtml(pairText) + '</div>'
+                                    : ''
+                            ) +
+                        '</div>'
+                    );
+                }).join('');
+
+                analyzerListEl.querySelectorAll('.open-btn').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        const id = btn.getAttribute('data-customer-id') || '';
+                        const hitDatesRaw = btn.getAttribute('data-hit-note-dates') || '';
+                        const hitPairsRaw = btn.getAttribute('data-hit-pairs') || '';
+                        const hitDates = hitDatesRaw
+                            ? hitDatesRaw.split('|').map(function (d) { return String(d || '').trim(); }).filter(Boolean)
+                            : [];
+                        const hitPairs = parseEncodedJsonArray(hitPairsRaw);
+                        const customer = loaded && loaded.customers.find(function (c) { return String(c.id) === id; });
+                        if (customer) renderProfile(customer, {
+                            highlightNoteDateKeys: hitDates,
+                            hitDatePairs: hitPairs
+                        });
+                    });
+                });
+
+                setAnalyzerStatus(
+                    'Showing ' + Math.min(visibleRows.length, 300) + ' of ' + visibleRows.length +
+                    ' visible row(s). Total flagged: ' + flagged.length + ' using a ' + daysWindow + '-day post-appointment note window.',
+                    'warn'
+                );
+            }
+
+            function renderAnalysisBox(missingByDate, daysWindow) {
+                if (!missingByDate || missingByDate.size === 0) {
+                    analysisBoxEl.style.display = 'none';
+                    analysisBoxEl.innerHTML = '';
+                    return;
+                }
+
+                const rows = Array.from(missingByDate.entries()).sort(function (a, b) {
+                    if (a[0] < b[0]) return 1;
+                    if (a[0] > b[0]) return -1;
+                    return 0;
+                });
+
+                const totalMissing = rows.reduce(function (sum, row) { return sum + row[1]; }, 0);
+                const activeDays = rows.length;
+                const avgPerDay = activeDays ? (totalMissing / activeDays) : 0;
+
+                let peakDate = rows[0][0];
+                let peakCount = rows[0][1];
+                rows.forEach(function (row) {
+                    if (row[1] > peakCount) {
+                        peakDate = row[0];
+                        peakCount = row[1];
+                    }
+                });
+
+                const listText = rows.map(function (row) {
+                    return row[0] + ' -> ' + row[1] + ' potential missing';
+                }).join('\n');
+
+                analysisBoxEl.innerHTML =
+                    '<div class="analysis-grid">' +
+                        '<div class="analysis-item"><span class="k">Average potential missing / day</span><span class="v">' + avgPerDay.toFixed(2) + '</span></div>' +
+                        '<div class="analysis-item"><span class="k">Highest date (count)</span><span class="v">' + escapeHtml(peakDate) + ' (' + peakCount + ')</span></div>' +
+                        '<div class="analysis-item"><span class="k">Total potential missing</span><span class="v">' + totalMissing + '</span></div>' +
+                        '<div class="analysis-item"><span class="k">Days with at least 1 potential missing</span><span class="v">' + activeDays + '</span></div>' +
+                    '</div>' +
+                    '<details>' +
+                        '<summary class="mono">Expanded: all dates and counts</summary>' +
+                        '<div class="analysis-list mono">' + escapeHtml(listText) + '</div>' +
+                    '</details>';
+                analysisBoxEl.style.display = 'block';
+            }
+
+            function scoreCustomer(customer, qId, qFirst, qLast, qAny) {
+                const id = String((customer && customer.id) != null ? customer.id : '');
+                const first = norm(customer && (customer.firstName || customer.firstname || customer.first_name));
+                const last = norm(customer && (customer.lastName || customer.lastname || customer.last_name));
+                const haystack = norm([
+                    id,
+                    customer && customer.contactNumber,
+                    customer && customer.socialMediaName,
+                    customer && customer.referralNotes,
+                    customer && customer.referralType,
+                    customer && customer.addressLine1,
+                    customer && customer.addressLine2,
+                    customer && customer.suburb,
+                    customer && customer.state,
+                    customer && customer.postcode,
+                    customer && customer.country
+                ].join(' '));
+
+                let score = 1;
+                if (qId) {
+                    if (id === qId) score += 200;
+                    else if (id.indexOf(qId) >= 0) score += 80;
+                    else return 0;
+                }
+                if (qFirst) {
+                    if (first === qFirst) score += 120;
+                    else if (first.indexOf(qFirst) >= 0) score += 50;
+                    else return 0;
+                }
+                if (qLast) {
+                    if (last === qLast) score += 120;
+                    else if (last.indexOf(qLast) >= 0) score += 50;
+                    else return 0;
+                }
+                if (qAny) {
+                    if (haystack.indexOf(qAny) >= 0 || first.indexOf(qAny) >= 0 || last.indexOf(qAny) >= 0) score += 30;
+                    else return 0;
+                }
+                if (!qId && !qFirst && !qLast && !qAny) score = 1;
+                return score;
+            }
+
+            function renderResults(matches) {
+                if (!matches.length) {
+                    resultsEl.innerHTML = '<div class="result-item">No matches found.</div>';
+                    profileEl.innerHTML = '<div class="profile-empty">No customer selected yet.</div>';
+                    return;
+                }
+
+                const shown = matches.slice(0, 250);
+                resultsEl.innerHTML = shown.map(function (entry, idx) {
+                    const c = entry.customer || {};
+                    const name = formatName(c);
+                    const id = String(c.id != null ? c.id : '');
+                    const notes = getNotesForCustomerId(id).length;
+                    const appts = getAppointmentsForCustomerId(id).length;
+                    const images = getImagesForCustomerId(id).length;
+                    return (
+                        '<div class="result-item">' +
+                            '<div class="result-top">' +
+                                '<div class="result-name">' + escapeHtml(name) + '</div>' +
+                                '<button class="open-btn" data-customer-id="' + escapeHtml(id) + '">Open</button>' +
+                            '</div>' +
+                            '<div class="mini mono">customerId: ' + escapeHtml(id || 'n/a') + '</div>' +
+                            '<div class="mini">Notes: ' + notes + ' | Appointments: ' + appts + ' | Images: ' + images + '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+
+                resultsEl.querySelectorAll('.open-btn').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        const id = btn.getAttribute('data-customer-id') || '';
+                        const customer = loaded.customers.find(function (c) { return String(c.id) === id; });
+                        if (customer) renderProfile(customer);
+                    });
+                });
+
+                const firstCustomer = shown[0] && shown[0].customer;
+                if (firstCustomer) renderProfile(firstCustomer);
+            }
+
+            function renderProfile(customer, options) {
+                currentProfileCustomer = customer || null;
+                currentProfileOptions = options || {};
+                const opts = options || {};
+                const highlightSet = new Set((opts.highlightNoteDateKeys || []).map(function (d) {
+                    return String(d || '').slice(0, 10);
+                }));
+                const noteDateToMissingMap = buildNoteDateToMissingMap(opts.hitDatePairs || []);
+                const id = String(customer && customer.id != null ? customer.id : '');
+                const notes = getNotesForCustomerId(id);
+                const appointments = getAppointmentsForCustomerId(id).slice().sort(sortByDateSafe);
+                const images = getImagesForCustomerId(id);
+                const name = formatName(customer);
+                const canFilterHit = highlightSet.size > 0;
+                const visibleNotes = profileShowHitOnly && canFilterHit
+                    ? notes.filter(function (note) { return isNoteHit(note, highlightSet); })
+                    : notes;
+
+                const topMeta = [
+                    item('Customer ID', id || 'n/a'),
+                    item('Name', name),
+                    item('Contact', customer && customer.contactNumber || ''),
+                    item('Social', customer && customer.socialMediaName || ''),
+                    item('Referral Type', customer && customer.referralType || ''),
+                    item('Suburb', customer && customer.suburb || ''),
+                    item('State', customer && customer.state || ''),
+                    item('Postcode', customer && customer.postcode || '')
+                ].join('');
+
+                const notesHtml = visibleNotes.length
+                    ? '<div class="notes">' + visibleNotes.map(function (note) {
+                        return renderNote(note, highlightSet, noteDateToMissingMap);
+                    }).join('') + '</div>'
+                    : '<div class="profile-empty">No notes for this customer.</div>';
+                const noteFilterHtml = canFilterHit
+                    ? (
+                        '<label class="mini" style="display:flex; align-items:center; gap:8px; color:var(--text); margin-bottom:8px;">' +
+                            '<input id="profile-hit-only" type="checkbox" style="width:auto; margin:0;" ' + (profileShowHitOnly ? 'checked' : '') + '>' +
+                            'Only show HIT notes' +
+                        '</label>'
+                    )
+                    : '';
+
+                const apptsHtml = appointments.length
+                    ? (
+                        '<table>' +
+                            '<thead><tr><th>Start</th><th>End</th><th>Title</th></tr></thead>' +
+                            '<tbody>' +
+                            appointments.map(function (a) {
+                                return '<tr><td>' + escapeHtml(a.start || a.date || '') + '</td><td>' + escapeHtml(a.end || a.time || '') + '</td><td>' + escapeHtml(a.title || a.service || '') + '</td></tr>';
+                            }).join('') +
+                            '</tbody>' +
+                        '</table>'
+                    )
+                    : '<div class="profile-empty">No appointments for this customer.</div>';
+
+                const imagesHtml = images.length
+                    ? '<div class="images">' + images.slice(0, 48).map(renderImage).join('') + '</div>'
+                    : '<div class="profile-empty">No images for this customer.</div>';
+
+                profileEl.innerHTML =
+                    '<h3>' + escapeHtml(name) + '</h3>' +
+                    '<div class="meta-grid">' + topMeta + '</div>' +
+                    '<div class="section"><h3>Notes (' + visibleNotes.length + ' shown of ' + notes.length + ')</h3>' + noteFilterHtml + notesHtml + '</div>' +
+                    '<div class="section"><h3>Appointments (' + appointments.length + ')</h3>' + apptsHtml + '</div>' +
+                    '<div class="section"><h3>Images (' + images.length + ')</h3>' + imagesHtml + '</div>';
+
+                const hitOnlyCheckbox = document.getElementById('profile-hit-only');
+                if (hitOnlyCheckbox) {
+                    hitOnlyCheckbox.addEventListener('change', function () {
+                        profileShowHitOnly = !!hitOnlyCheckbox.checked;
+                        if (currentProfileCustomer) {
+                            renderProfile(currentProfileCustomer, currentProfileOptions);
+                        }
+                    });
+                }
+            }
+
+            function renderNote(note, highlightSet, noteDateToMissingMap) {
+                const meta = [
+                    note && note.id != null ? ('noteId: ' + note.id) : null,
+                    note && note.createdAt ? ('createdAt: ' + note.createdAt) : null,
+                    note && note.editedDate ? ('editedDate: ' + note.editedDate) : null,
+                    note && note.noteType ? ('type: ' + note.noteType) : null
+                ].filter(Boolean).join(' | ');
+                const noteDateKey = formatDateKeyFromRaw(note && (note.date || note.createdAt || note.editedDate || ''));
+                const isHit = !!(highlightSet && highlightSet.size && noteDateKey && highlightSet.has(noteDateKey));
+                const hitMissingDates = isHit && noteDateToMissingMap && noteDateToMissingMap.get
+                    ? (noteDateToMissingMap.get(noteDateKey) || [])
+                    : [];
+                const hitPairMeta = isHit
+                    ? (
+                        'Potential missed appointment date(s): ' +
+                        (hitMissingDates.length ? hitMissingDates.join(', ') : 'n/a') +
+                        ' | Matched note date: ' + (noteDateKey || 'n/a')
+                    )
+                    : '';
+
+                const svgMarkup = extractSvgMarkupFromNoteObject(note);
+                const content = svgMarkup
+                    ? (
+                        '<div class="svg-wrap"><img class="svg-preview" alt="Rendered SVG note" src="' +
+                        escapeHtml('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgMarkup)) +
+                        '"></div>'
+                    )
+                    : '<div class="note-text">' + escapeHtml(extractNoteText(note) || '[empty note]') + '</div>';
+
+                return (
+                    '<div class="note' + (isHit ? ' note-hit' : '') + '">' +
+                        '<div class="note-meta mono">' + escapeHtml(meta || 'No metadata') + (isHit ? ' | HIT' : '') + '</div>' +
+                        (isHit ? '<div class="note-meta mono" style="color:#fecaca;">' + escapeHtml(hitPairMeta) + '</div>' : '') +
+                        content +
+                    '</div>'
+                );
+            }
+
+            function isNoteHit(note, highlightSet) {
+                if (!highlightSet || !highlightSet.size) return false;
+                const noteDateKey = formatDateKeyFromRaw(note && (note.date || note.createdAt || note.editedDate || ''));
+                return !!(noteDateKey && highlightSet.has(noteDateKey));
+            }
+
+            function parseEncodedJsonArray(value) {
+                const raw = String(value || '').trim();
+                if (!raw) return [];
+                try {
+                    const decoded = decodeURIComponent(raw);
+                    const parsed = JSON.parse(decoded);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (err) {
+                    return [];
+                }
+            }
+
+            function buildNoteDateToMissingMap(pairs) {
+                const map = new Map();
+                (pairs || []).forEach(function (entry) {
+                    const text = String(entry || '');
+                    if (!text) return;
+                    const parts = text.split('->');
+                    if (parts.length < 2) return;
+                    const missingDate = String(parts[0] || '').trim().slice(0, 10);
+                    const noteDates = String(parts.slice(1).join('->') || '')
+                        .split('/')
+                        .map(function (d) { return String(d || '').trim().slice(0, 10); })
+                        .filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d); });
+                    noteDates.forEach(function (noteDate) {
+                        if (!map.has(noteDate)) map.set(noteDate, new Set());
+                        if (missingDate) map.get(noteDate).add(missingDate);
+                    });
+                });
+
+                const out = new Map();
+                map.forEach(function (set, key) {
+                    out.set(key, Array.from(set).sort());
+                });
+                return out;
+            }
+
+            function renderImage(img) {
+                const src = img && img.dataUrl ? String(img.dataUrl) : '';
+                const name = img && img.name ? String(img.name) : '';
+                const created = img && img.createdAt ? String(img.createdAt) : '';
+                return (
+                    '<div class="img-card">' +
+                        (src ? '<img src="' + escapeHtml(src) + '" alt="Customer image">' : '<div class="img-meta">No image data</div>') +
+                        '<div class="img-meta">' + escapeHtml(name) + '<br>' + escapeHtml(created) + '</div>' +
+                    '</div>'
+                );
+            }
+
+            function getNotesForCustomerId(customerId) {
+                if (!loaded) return [];
+                const key = String(customerId || '');
+                return loaded.notesByCustomerId.get(key) || [];
+            }
+
+            function getAppointmentsForCustomerId(customerId) {
+                if (!loaded) return [];
+                const key = String(customerId || '');
+                return loaded.appointmentsByCustomerId.get(key) || [];
+            }
+
+            function getImagesForCustomerId(customerId) {
+                if (!loaded) return [];
+                const key = String(customerId || '');
+                return loaded.imagesByCustomerId.get(key) || [];
+            }
+
+            function sortByDateSafe(a, b) {
+                const aVal = Date.parse(String(a && (a.start || a.date || a.createdAt || ''))) || 0;
+                const bVal = Date.parse(String(b && (b.start || b.date || b.createdAt || ''))) || 0;
+                return bVal - aVal;
+            }
+
+            function extractAppointmentDateMs(appt) {
+                const raw = String(appt && (appt.start || appt.date || appt.createdAt || '')).trim();
+                if (!raw) return null;
+                const dateOnly = raw.slice(0, 10);
+                const ms = Date.parse(dateOnly + 'T00:00:00Z');
+                return Number.isFinite(ms) ? ms : null;
+            }
+
+            function extractNoteDateMs(note) {
+                const raw = String(note && (note.date || note.createdAt || note.editedDate || '')).trim();
+                if (!raw) return null;
+                const dateOnly = raw.slice(0, 10);
+                const ms = Date.parse(dateOnly + 'T00:00:00Z');
+                return Number.isFinite(ms) ? ms : null;
+            }
+
+            function formatDateKeyFromRaw(rawValue) {
+                const raw = String(rawValue || '').trim();
+                if (!raw) return '';
+                const dateOnly = raw.slice(0, 10);
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return '';
+                return dateOnly;
+            }
+
+            function formatDateKeyFromMs(ms) {
+                if (!Number.isFinite(ms)) return '';
+                return new Date(ms).toISOString().slice(0, 10);
+            }
+
+            function findNoteDatesNearMissingDates(missingDateKeys, noteDateMsList, appointmentDateMsList, windowDays) {
+                if (!missingDateKeys || !missingDateKeys.length) {
+                    return { nearNoteDates: [], pairs: [] };
+                }
+                if (!noteDateMsList || !noteDateMsList.length) {
+                    return { nearNoteDates: [], pairs: [] };
+                }
+
+                const windowMs = windowDays * 86400000;
+                const perMissingCandidates = [];
+                const noteDateToMissingCount = new Map();
+                const pairs = [];
+
+                missingDateKeys.forEach(function (missingDateKey) {
+                    const missingMs = Date.parse(String(missingDateKey) + 'T00:00:00Z');
+                    if (!Number.isFinite(missingMs)) return;
+                    const nextApptMs = findNextAppointmentAfter(missingMs, appointmentDateMsList || []);
+
+                    const candidates = noteDateMsList
+                        .map(function (noteMs) {
+                            return {
+                                noteMs: noteMs,
+                                diff: Math.abs(noteMs - missingMs)
+                            };
+                        })
+                        .filter(function (entry) {
+                            return entry.diff <= windowMs;
+                        })
+                        .filter(function (entry) {
+                            // New rule: if another appointment happens before this note date,
+                            // treat this note as belonging to the later appointment and disregard it.
+                            if (!Number.isFinite(nextApptMs)) return true;
+                            return entry.noteMs <= nextApptMs;
+                        })
+                        .sort(function (a, b) {
+                            return a.diff - b.diff;
+                        })
+                        .slice(0, 2)
+                        .map(function (entry) {
+                            return formatDateKeyFromMs(entry.noteMs);
+                        })
+                        .filter(Boolean)
+                        .filter(function (d, idx, arr) {
+                            return arr.indexOf(d) === idx;
+                        });
+
+                    if (candidates.length) {
+                        perMissingCandidates.push({
+                            missingDateKey: missingDateKey,
+                            candidates: candidates
+                        });
+                        candidates.forEach(function (d) {
+                            noteDateToMissingCount.set(d, (noteDateToMissingCount.get(d) || 0) + 1);
+                        });
+                    }
+                });
+
+                // Only keep note dates that map to more than one potential-missing appointment.
+                const qualifyingNoteDates = new Set();
+                noteDateToMissingCount.forEach(function (count, noteDate) {
+                    if (count > 1) qualifyingNoteDates.add(noteDate);
+                });
+
+                const nearDates = new Set();
+                perMissingCandidates.forEach(function (row) {
+                    const kept = row.candidates.filter(function (d) {
+                        return qualifyingNoteDates.has(d);
+                    });
+                    kept.forEach(function (d) { nearDates.add(d); });
+                    if (kept.length && pairs.length < 8) {
+                        pairs.push(row.missingDateKey + ' -> ' + kept.join('/'));
+                    }
+                });
+
+                return {
+                    nearNoteDates: Array.from(nearDates).sort().reverse().slice(0, 8),
+                    pairs: pairs
+                };
+            }
+
+            function findNextAppointmentAfter(missingMs, appointmentDateMsList) {
+                for (let i = 0; i < appointmentDateMsList.length; i += 1) {
+                    const apptMs = appointmentDateMsList[i];
+                    if (Number.isFinite(apptMs) && apptMs > missingMs) return apptMs;
+                }
+                return null;
+            }
+
+            function formatName(customer) {
+                const first = String(customer && (customer.firstName || customer.firstname || customer.first_name) || '').trim();
+                const last = String(customer && (customer.lastName || customer.lastname || customer.last_name) || '').trim();
+                const full = (first + ' ' + last).trim();
+                return full || 'Unknown';
+            }
+
+            function extractNoteText(note) {
+                const baseText = note && (note.textValue || note.text || note.content);
+                if (baseText != null && baseText !== '') return String(baseText);
+                return '';
+            }
+
+            function extractSvgMarkupFromNoteObject(note) {
+                if (!note || typeof note !== 'object') return '';
+
+                const directSvg = extractSvgMarkup(note.svg);
+                if (directSvg) return sanitizeSvgMarkup(directSvg);
+
+                const text = extractNoteText(note);
+                const svgFromText = extractSvgMarkup(text);
+                if (svgFromText) return sanitizeSvgMarkup(svgFromText);
+
+                const parsed = tryParseJson(text);
+                if (parsed) {
+                    const nested = findFirstSvgString(parsed);
+                    const nestedSvg = extractSvgMarkup(nested);
+                    if (nestedSvg) return sanitizeSvgMarkup(nestedSvg);
+                }
+                return '';
+            }
+
+            function extractSvgMarkup(inputValue) {
+                const input = String(inputValue || '').trim();
+                if (!input) return '';
+
+                if (/^data:image\/svg\+xml/i.test(input)) {
+                    return decodeSvgDataUrl(input);
+                }
+
+                const decoded = decodeHtmlEntities(input);
+                const match = decoded.match(/<svg[\s\S]*<\/svg>/i);
+                return match ? match[0] : '';
+            }
+
+            function decodeSvgDataUrl(dataUrl) {
+                const comma = dataUrl.indexOf(',');
+                if (comma < 0) return '';
+                const header = dataUrl.slice(0, comma);
+                const payload = dataUrl.slice(comma + 1);
+                try {
+                    if (/;base64/i.test(header)) return atob(payload);
+                    return decodeURIComponent(payload);
+                } catch (err) {
+                    return '';
+                }
+            }
+
+            function decodeHtmlEntities(value) {
+                const ta = document.createElement('textarea');
+                ta.innerHTML = String(value || '');
+                return ta.value;
+            }
+
+            function sanitizeSvgMarkup(markup) {
+                let out = String(markup || '');
+                out = out.replace(/(href|xlink:href|src)\s*=\s*(['"])file:[^'"]*\2/gi, '$1=$2$2');
+                out = out.replace(/url\(\s*['"]?file:[^)]+['"]?\s*\)/gi, 'none');
+                return out;
+            }
+
+            function tryParseJson(value) {
+                const text = String(value || '').trim();
+                if (!text || (text[0] !== '{' && text[0] !== '[')) return null;
+                try { return JSON.parse(text); } catch (err) { return null; }
+            }
+
+            function findFirstSvgString(value) {
+                if (!value) return '';
+                if (typeof value === 'string') {
+                    if (/<svg[\s\S]*<\/svg>/i.test(value) || /^data:image\/svg\+xml/i.test(value)) return value;
+                    return '';
+                }
+                if (Array.isArray(value)) {
+                    for (let i = 0; i < value.length; i += 1) {
+                        const nested = findFirstSvgString(value[i]);
+                        if (nested) return nested;
+                    }
+                    return '';
+                }
+                if (typeof value === 'object') {
+                    const priority = ['svg', 'svgMarkup', 'svgDataUrl'];
+                    for (let i = 0; i < priority.length; i += 1) {
+                        const key = priority[i];
+                        if (Object.prototype.hasOwnProperty.call(value, key)) {
+                            const nestedPriority = findFirstSvgString(value[key]);
+                            if (nestedPriority) return nestedPriority;
+                        }
+                    }
+                    const keys = Object.keys(value);
+                    for (let i = 0; i < keys.length; i += 1) {
+                        const nestedAny = findFirstSvgString(value[keys[i]]);
+                        if (nestedAny) return nestedAny;
+                    }
+                }
+                return '';
+            }
+
+            function norm(value) {
+                return String(value || '').trim().toLowerCase();
+            }
+
+            function item(k, v) {
+                return '<div class="meta-item"><span class="k">' + escapeHtml(k) + '</span>' + escapeHtml(String(v || '')) + '</div>';
+            }
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+        })();
+    </script>
+</body>
+</html>
