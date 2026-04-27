@@ -11018,27 +11018,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
   // Function to retroactively mark migrated notes with the isMigrated flag
   function markExistingMigratedNotes() {
-    try {
-      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      let updatedCount = 0;
-      
-      Object.keys(existingNotes).forEach(customerId => {
-        const customerNotes = existingNotes[customerId];
-        customerNotes.forEach(note => {
-          // If note has SVG content but no isMigrated flag, mark it as migrated
-          if (note.svg && typeof note.svg === 'string' && note.isMigrated !== true) {
-            if (note.svg.includes('<svg') && note.svg.includes('<text')) {
-              note.isMigrated = true;
-              updatedCount++;
-            }
-          }
-        });
-      });
-      
-      if (updatedCount > 0) {
-        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-      }
-    } catch (error) {
+    if (window.NoteMigrationRuntime && typeof window.NoteMigrationRuntime.markExistingMigratedNotes === 'function') {
+      window.NoteMigrationRuntime.markExistingMigratedNotes({ storageKey: 'customerNotes' });
     }
   }
 
@@ -11047,202 +11028,29 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
   // Migration function to convert old notesHtml to new SVG notes system
   async function migrateOldNotes() {
-    try {
-      
-      // Get all customers from the database
-      const customers = await CrmDB.getAllCustomers();
-      let migratedCount = 0;
-      
-      for (const customer of customers) {
-        if (customer.notesHtml && customer.notesHtml.trim() !== '' && customer.notesHtml !== '<p><br></p>') {
-          
-          // Convert HTML notes to SVG
-          const svgContent = convertHtmlNotesToSVG(customer.notesHtml);
-          
-          // Create a note entry for the old notes
-          const noteData = {
-            id: Date.now() + Math.random(), // Unique ID
-            svg: svgContent,
-            date: customer.createdAt ? formatDateYYYYMMDD(new Date(customer.createdAt)) : formatDateYYYYMMDD(new Date()),
-            noteNumber: 1, // First note for this customer
-            isMigrated: true // Flag to identify migrated notes
-          };
-          
-          // Get existing notes for this customer
-          const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-          if (!existingNotes[customer.id]) {
-            existingNotes[customer.id] = [];
-          }
-          
-          // Add the migrated note
-          existingNotes[customer.id].push(noteData);
-          
-          // Save back to localStorage
-          localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
-          
-          // Remove the old notesHtml from the customer record
-          const updatedCustomer = { ...customer };
-          delete updatedCustomer.notesHtml;
-          await CrmDB.updateCustomer(updatedCustomer);
-          
-          migratedCount++;
-        }
-      }
-      
-      
-      if (migratedCount > 0) {
-        // Show a notification to the user
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-          position: fixed;
-          top: 20px;
-          right: 20px;
-          background: var(--brand);
-          color: white;
-          padding: 12px 20px;
-          border-radius: 8px;
-          z-index: 10000;
-          font-size: 14px;
-          font-weight: 600;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
-        notification.textContent = `Migrated ${migratedCount} customers' notes to new system`;
-        document.body.appendChild(notification);
-        
-        // Remove notification after 5 seconds
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-          }
-        }, 5000);
-      }
-      
-    } catch (error) {
+    if (window.NoteMigrationRuntime && typeof window.NoteMigrationRuntime.migrateOldNotes === 'function') {
+      await window.NoteMigrationRuntime.migrateOldNotes({
+        CrmDB,
+        formatDateYYYYMMDD,
+        storageKey: 'customerNotes'
+      });
     }
   }
 
   // Convert old HTML notes to SVG format
   function convertHtmlNotesToSVG(htmlContent) {
-    // Create a temporary div to parse the HTML
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = htmlContent;
-    
-    // Extract text content and basic styling
-    const textContent = tempDiv.textContent || tempDiv.innerText || '';
-    
-    if (!textContent.trim()) {
-      return ''; // Return empty if no content
+    if (window.NoteMigrationRuntime && typeof window.NoteMigrationRuntime.convertHtmlNotesToSVG === 'function') {
+      return window.NoteMigrationRuntime.convertHtmlNotesToSVG(htmlContent);
     }
-    
-    // Calculate dynamic height based on text content
-    const lines = textContent.split('\n').filter(line => line.trim());
-    const lineHeight = 20;
-    const padding = 20;
-    const minHeight = 60;
-    const calculatedHeight = Math.max(minHeight, (lines.length * lineHeight) + padding);
-    
-    // Create SVG with the text content
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '400');
-    svg.setAttribute('height', calculatedHeight);
-    svg.setAttribute('viewBox', `0 0 400 ${calculatedHeight}`);
-    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    
-    // Create text element
-    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    text.setAttribute('x', '10');
-    text.setAttribute('y', '30');
-    text.setAttribute('font-family', 'Arial, sans-serif');
-    text.setAttribute('font-size', '16');
-    text.setAttribute('fill', '#ffffff');
-    text.setAttribute('white-space', 'pre-wrap');
-    
-    // Handle line breaks and wrap long lines
-    const allLines = textContent.split('\n');
-    const maxCharsPerLine = 50; // Approximate characters per line
-    let processedLines = [];
-    
-    allLines.forEach(line => {
-      if (line.trim()) {
-        // If line is too long, wrap it
-        if (line.length > maxCharsPerLine) {
-          const words = line.split(' ');
-          let currentLine = '';
-          
-          words.forEach(word => {
-            if ((currentLine + ' ' + word).length > maxCharsPerLine && currentLine.length > 0) {
-              processedLines.push(currentLine.trim());
-              currentLine = word;
-            } else {
-              currentLine += (currentLine.length > 0 ? ' ' : '') + word;
-            }
-          });
-          
-          if (currentLine.trim()) {
-            processedLines.push(currentLine.trim());
-          }
-        } else {
-          processedLines.push(line.trim());
-        }
-      }
-    });
-    
-    // Create tspan elements for each processed line
-    processedLines.forEach((line, index) => {
-      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
-      tspan.setAttribute('x', '10');
-      tspan.setAttribute('dy', index === 0 ? '0' : '20');
-      tspan.textContent = line;
-      text.appendChild(tspan);
-    });
-    
-    svg.appendChild(text);
-    
-    return new XMLSerializer().serializeToString(svg);
+    return '';
   }
 
   // Load existing notes for a customer
   async function loadExistingNotes(customerId) {
-    try {
-      // Use hybrid loading to get notes from both localStorage and IndexedDB
-      const allNotes = await fullscreenNotesCanvas.loadNotesHybrid(customerId);
-      
-      const notesList = document.querySelector('.notes-list');
-      if (!notesList) {
-        return;
-      }
-      
-      // Clear existing notes
-      notesList.innerHTML = '';
-      
-      // Add all notes to UI (already properly numbered by loadNotesHybrid)
-      allNotes.forEach((noteData) => {
-        fullscreenNotesCanvas.addNoteToUI(noteData);
-      });
-      
-      console.log(`Loaded ${allNotes.length} notes using hybrid storage`);
-      
-    } catch (error) {
-      console.error('Error loading notes with hybrid storage:', error);
-      
-      // Fallback to localStorage only
-      console.log('Falling back to localStorage-only loading...');
-      const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      const customerNotes = existingNotes[customerId] || [];
-      
-      const notesList = document.querySelector('.notes-list');
-      if (!notesList) {
-        return;
-      }
-      
-      // Clear existing notes
-      notesList.innerHTML = '';
-      
-      // Ensure proper note numbering and add each note
-      customerNotes.forEach((noteData, index) => {
-        // Ensure note has correct number (1-based indexing)
-        noteData.noteNumber = index + 1;
-        fullscreenNotesCanvas.addNoteToUI(noteData);
+    if (window.NoteMigrationRuntime && typeof window.NoteMigrationRuntime.loadExistingNotes === 'function') {
+      await window.NoteMigrationRuntime.loadExistingNotes(customerId, {
+        fullscreenNotesCanvas,
+        storageKey: 'customerNotes'
       });
     }
   }
