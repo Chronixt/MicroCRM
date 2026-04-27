@@ -1641,6 +1641,10 @@
   function getNoteTypeValue(note) {
     return noteRuntime.getNoteTypeValue ? noteRuntime.getNoteTypeValue(note) : 'svg';
   }
+  function shouldRenderAsText(note) {
+    if (noteRuntime.shouldRenderAsText) return noteRuntime.shouldRenderAsText(note);
+    return getNoteTypeValue(note) === 'text';
+  }
   function isNoteQueuedForSync(note) {
     return noteRuntime.isNoteQueuedForSync ? noteRuntime.isNoteQueuedForSync(note) : !!(note && note.queuedSync === true);
   }
@@ -9538,9 +9542,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Use text overlay for text-based notes, canvas for SVG notes.
           // Be defensive: render/edit as text when text payload exists but SVG payload is empty.
           const noteText = getNoteTextValue(noteData);
-          const hasTextPayload = typeof noteText === 'string' && noteText.trim().length > 0;
-          const hasSvgPayload = typeof noteData.svg === 'string' && noteData.svg.trim().length > 0;
-          const isTextNote = getNoteTypeValue(noteData) === 'text' || (hasTextPayload && !hasSvgPayload);
+          const isTextNote = shouldRenderAsText(noteData);
           if (isTextNote) {
             textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
           } else {
@@ -9649,9 +9651,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       // Check if this is a text-based note or SVG-based note.
       // Be defensive against payload drift: if text exists and SVG is empty, treat as text.
       const noteText = getNoteTextValue(noteData);
-      const hasTextPayload = typeof noteText === 'string' && noteText.trim().length > 0;
-      const hasSvgPayload = typeof noteData.svg === 'string' && noteData.svg.trim().length > 0;
-      const isTextNote = getNoteTypeValue(noteData) === 'text' || (hasTextPayload && !hasSvgPayload);
+      const isTextNote = shouldRenderAsText(noteData);
       
       let contentContainer;
       

@@ -48,6 +48,19 @@
     return 'svg';
   }
 
+  function hasTextPayload(note) {
+    const noteText = getNoteTextValue(note);
+    return typeof noteText === 'string' && noteText.trim().length > 0;
+  }
+
+  function hasSvgPayload(note) {
+    return typeof note?.svg === 'string' && note.svg.trim().length > 0;
+  }
+
+  function shouldRenderAsText(note) {
+    return getNoteTypeValue(note) === 'text' || (hasTextPayload(note) && !hasSvgPayload(note));
+  }
+
   function isNoteQueuedForSync(note) {
     return !!(note && note.queuedSync === true);
   }
@@ -281,6 +294,9 @@
     extractTextFromSerializedTextNoteSvg,
     getNoteTextValue,
     getNoteTypeValue,
+    hasTextPayload,
+    hasSvgPayload,
+    shouldRenderAsText,
     isNoteQueuedForSync,
     serializeTextNoteToSvg,
     parseNoteDateValue,
