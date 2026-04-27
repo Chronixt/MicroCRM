@@ -4,6 +4,9 @@
 *.xlsx
 node_modules/
 www/
+test-results/
+playwright-report/
+blob-report/
 
 # Keep core project JSON config tracked
 !/package.json

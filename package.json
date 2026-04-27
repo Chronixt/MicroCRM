@@ -10,7 +10,10 @@
     "native:doctor": "npx cap doctor",
     "test:adapter-entrypoints": "node scripts/enforce-single-supabase-adapter-path.js",
     "test:notes-parity": "node scripts/note-contract-parity-check.js",
-    "test:supabase-adapter-smoke": "node scripts/supabase-adapter-smoke-check.js"
+    "test:supabase-adapter-smoke": "node scripts/supabase-adapter-smoke-check.js",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^7.0.1",
@@ -19,6 +22,8 @@
     "postgres": "^3.4.8"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.4.3"
+    "@capacitor/cli": "^7.4.3",
+    "@playwright/test": "^1.59.1",
+    "http-server": "^14.1.1"
   }
 }
