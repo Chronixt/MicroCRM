@@ -1238,6 +1238,47 @@
     return window.location.hash.replace(/^#/, '') || '/';
   }
 
+  function setTestId(selector, testId, scope = document) {
+    scope.querySelector(selector)?.setAttribute('data-testid', testId);
+  }
+
+  function setTestIds(selector, testId, scope = document) {
+    scope.querySelectorAll(selector).forEach((el) => {
+      el.setAttribute('data-testid', testId);
+    });
+  }
+
+  function applyE2ETestIds(scope = document) {
+    setTestIds('a[href="#/add"]', 'nav-new-customer', scope);
+    setTestIds('a[href="#/find"]', 'nav-customers', scope);
+    setTestIds('a[href="#/backup"]', 'nav-backup', scope);
+    setTestId('#new-form', 'new-customer-form', scope);
+    setTestId('#customer-form', 'edit-customer-form', scope);
+    setTestIds('input[name="firstName"]', 'customer-first-name', scope);
+    setTestIds('input[name="lastName"]', 'customer-last-name', scope);
+    setTestIds('input[name="contactNumber"]', 'customer-contact-number', scope);
+    setTestIds('input[name="addressLine1"]', 'customer-address-line1', scope);
+    setTestIds('input[name="addressLine2"]', 'customer-address-line2', scope);
+    setTestIds('input[name="suburb"]', 'customer-suburb', scope);
+    setTestIds('input[name="state"]', 'customer-state', scope);
+    setTestIds('input[name="postcode"]', 'customer-postcode', scope);
+    setTestIds('input[name="country"]', 'customer-country', scope);
+    setTestId('#save-btn', 'save-customer-button', scope);
+    setTestId('#search', 'customer-search', scope);
+    setTestId('#results', 'customer-results', scope);
+    setTestId('#recents', 'recent-customers', scope);
+    setTestId('#all-customers-list', 'all-customers-list', scope);
+    setTestId('.customer-title', 'customer-title', scope);
+    setTestId('#edit-btn', 'edit-customer-button', scope);
+    setTestId('.detail-list .detail-item:first-child .detail-value', 'customer-contact-value', scope);
+    setTestIds('.add-note-btn', 'add-note-button', scope);
+    setTestIds('.notes-list', 'notes-list', scope);
+    setTestId('#export-btn', 'backup-export-full', scope);
+    setTestId('#export-lite-btn', 'backup-export-data-only', scope);
+    setTestId('#download-btn', 'backup-download', scope);
+    setTestId('#backup-status', 'backup-status', scope);
+  }
+
   // Global image cache cleanup
   function cleanupAllImageCaches() {
     // Clean up any existing image caches
@@ -1262,6 +1303,7 @@
     
     appRoot.innerHTML = '';
     await view({ query });
+    applyE2ETestIds(appRoot);
     const contentEl = appRoot.querySelector('.content');
     if (contentEl) {
       contentEl.scrollTo({ top: 0, behavior: 'auto' });
@@ -8109,6 +8151,7 @@
 
       const cancelBtn = document.createElement('button');
       cancelBtn.textContent = 'Cancel';
+      cancelBtn.setAttribute('data-testid', 'cancel-note-button');
       cancelBtn.style.cssText = `
         background: rgba(255,255,255,0.1);
         border: 1px solid rgba(255,255,255,0.2);
@@ -8134,6 +8177,7 @@
 
       const saveBtn = document.createElement('button');
       saveBtn.textContent = 'Save';
+      saveBtn.setAttribute('data-testid', 'save-note-button');
       saveBtn.style.cssText = `
         background: var(--brand);
         border: none;
@@ -9401,6 +9445,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       const noteElement = document.createElement('div');
       noteElement.className = 'note-entry';
+      noteElement.setAttribute('data-testid', 'note-entry');
       noteElement.style.cssText = `
         border: 1px solid rgba(255,255,255,0.1);
         border-radius: 8px;
@@ -9527,6 +9572,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const editButton = document.createElement('button');
         editButton.textContent = '✏️';
         editButton.title = 'Edit Note';
+        editButton.setAttribute('data-testid', 'edit-note-button');
         editButton.style.cssText = `
           background: rgba(255,255,255,0.1);
           border: 1px solid rgba(255,255,255,0.2);
@@ -9659,6 +9705,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Render text-based note
         contentContainer = document.createElement('div');
         contentContainer.className = 'text-note-content';
+        contentContainer.setAttribute('data-testid', 'text-note-content');
         contentContainer.style.cssText = `
           max-width: 100%;
           border: 1px solid rgba(255,255,255,0.1);
@@ -10168,6 +10215,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       const cancelBtn = document.createElement('button');
       cancelBtn.textContent = 'Cancel';
+      cancelBtn.setAttribute('data-testid', 'cancel-note-button');
       cancelBtn.style.cssText = `
         background: rgba(255,255,255,0.1);
         border: none;
@@ -10181,6 +10229,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       const saveBtn = document.createElement('button');
       saveBtn.textContent = 'Save';
+      saveBtn.setAttribute('data-testid', 'save-note-button');
       saveBtn.style.cssText = `
         background: var(--brand);
         border: none;
@@ -10208,6 +10257,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       this.textarea = document.createElement('textarea');
       this.textarea.placeholder = 'Type your note here...';
+      this.textarea.setAttribute('data-testid', 'note-textarea');
       this.textarea.style.cssText = `
         flex: 1;
         width: 100%;
