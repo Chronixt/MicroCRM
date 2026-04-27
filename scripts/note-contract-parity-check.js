@@ -80,6 +80,11 @@ const checks = [
     id: 'guardrail.appBoundaryMarker',
     desc: 'app.js includes note boundary guardrail marker',
     test: () => has(content.app, /NOTE_CONTRACT_GUARDRAIL/)
+  },
+  {
+    id: 'ui.textNoteRenderFallback',
+    desc: 'app.js uses defensive text-note rendering fallback for text payload without svg',
+    test: () => has(content.app, /shouldRenderAsText\s*\(/)
   }
 ];
 

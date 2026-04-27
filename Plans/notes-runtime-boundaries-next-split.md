@@ -60,6 +60,8 @@ Last updated: 2026-04-20
   - `migrateOldNotes`
   - `loadExistingNotes`
 - `js/app.js` now delegates those migration/load paths via runtime wrappers.
+- Added defensive render-mode helper in runtime: `shouldRenderAsText(note)` to prevent blank text-note containers when text payload exists and `svg` is empty/inconsistent.
+- Added parity gate coverage for this regression path in `scripts/note-contract-parity-check.js` (`ui.textNoteRenderFallback`).
 
 ## Success Criteria for Next Pass
 
