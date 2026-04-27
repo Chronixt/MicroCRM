@@ -8,6 +8,7 @@
     "native:open:android": "npx cap open android",
     "native:open:ios": "npx cap open ios",
     "native:doctor": "npx cap doctor",
+    "test:adapter-entrypoints": "node scripts/enforce-single-supabase-adapter-path.js",
     "test:notes-parity": "node scripts/note-contract-parity-check.js",
     "test:supabase-adapter-smoke": "node scripts/supabase-adapter-smoke-check.js"
   },

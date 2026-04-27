@@ -1,0 +1,1568 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Notes SVG Gallery</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0b0b;
+      --panel: #161616;
+      --text: #f2f2f2;
+      --muted: #a9a9a9;
+      --border: #2f2f2f;
+      --accent: #42d392;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top right, #1c1c1c, var(--bg) 45%);
+      color: var(--text);
+      font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+    }
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(11, 11, 11, 0.92);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 220px auto;
+      gap: 10px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    input, select {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #111;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .count {
+      align-self: center;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .pager-wrap {
+      max-width: 1400px;
+      margin: 8px auto 0;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .pages a, .btn {
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      border-radius: 8px;
+      text-decoration: none;
+      background: #141414;
+    }
+    .pages .current {
+      color: var(--accent);
+      font-weight: 600;
+      padding: 4px 8px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+    }
+    .grid {
+      max-width: 1400px;
+      margin: 14px auto;
+      padding: 0 12px 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      min-height: 340px;
+    }
+    .svg-wrap {
+      min-height: 190px;
+      max-height: 260px;
+      background: #000;
+      display: grid;
+      place-items: center;
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .svg-wrap img {
+      max-width: 100%;
+      max-height: 240px;
+      background: #000;
+    }
+    .meta {
+      padding: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      display: grid;
+      gap: 4px;
+      word-break: break-word;
+    }
+    .meta strong { color: var(--accent); font-weight: 600; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="controls">
+      <input id="q" placeholder="Filter this page by file, customer id, source, row id, date..." />
+      <select id="source">
+        <option value=''>All sources</option><option value='notes'>notes</option>
+      </select>
+      <div class="count" id="count"></div>
+    </div>
+    <div class="pager-wrap">
+      <span>Showing rows 301-400 of 1417</span>
+      <a href='gallery-p3.html' class='btn'>Prev</a>
+      <a href='gallery-p5.html' class='btn'>Next</a>
+      <span class="pages"><a href='gallery.html'>Page 1</a> <a href='gallery-p2.html'>Page 2</a> <a href='gallery-p3.html'>Page 3</a> <span class='current'>Page 4</span> <a href='gallery-p5.html'>Page 5</a> <a href='gallery-p6.html'>Page 6</a> <a href='gallery-p7.html'>Page 7</a> <a href='gallery-p8.html'>Page 8</a> <a href='gallery-p9.html'>Page 9</a> <a href='gallery-p10.html'>Page 10</a> <a href='gallery-p11.html'>Page 11</a> <a href='gallery-p12.html'>Page 12</a> <a href='gallery-p13.html'>Page 13</a> <a href='gallery-p14.html'>Page 14</a> <a href='gallery-p15.html'>Page 15</a></span>
+    </div>
+  </header>
+
+  <main class="grid" id="grid">
+    <article class="card" data-source="notes" data-customer="1565" data-row="1381">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1381_cust-1565.svg" alt="notes_1381_cust-1565.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1381_cust-1565.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1381</div>
+        <div><strong>Customer:</strong> 1565</div>
+        <div><strong>Date:</strong> 2025-10-27</div>
+        <div><strong>Created:</strong> 2025-10-27 09:20:35.599+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1285" data-row="1108">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1108_cust-1285.svg" alt="notes_1108_cust-1285.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1108_cust-1285.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1108</div>
+        <div><strong>Customer:</strong> 1285</div>
+        <div><strong>Date:</strong> 2025-10-27</div>
+        <div><strong>Created:</strong> 2025-10-27 09:23:28.996+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1200" data-row="1031">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1031_cust-1200.svg" alt="notes_1031_cust-1200.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1031_cust-1200.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1031</div>
+        <div><strong>Customer:</strong> 1200</div>
+        <div><strong>Date:</strong> 2025-10-27</div>
+        <div><strong>Created:</strong> 2025-10-27 09:31:46.627+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1284" data-row="1105">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1105_cust-1284.svg" alt="notes_1105_cust-1284.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1105_cust-1284.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1105</div>
+        <div><strong>Customer:</strong> 1284</div>
+        <div><strong>Date:</strong> 2025-10-27</div>
+        <div><strong>Created:</strong> 2025-10-27 09:33:09.356+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="664" data-row="183">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_183_cust-664.svg" alt="notes_183_cust-664.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_183_cust-664.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 183</div>
+        <div><strong>Customer:</strong> 664</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="704" data-row="203">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_203_cust-704.svg" alt="notes_203_cust-704.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_203_cust-704.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 203</div>
+        <div><strong>Customer:</strong> 704</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="484" data-row="29">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_29_cust-484.svg" alt="notes_29_cust-484.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_29_cust-484.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 29</div>
+        <div><strong>Customer:</strong> 484</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1056" data-row="448">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_448_cust-1056.svg" alt="notes_448_cust-1056.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_448_cust-1056.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 448</div>
+        <div><strong>Customer:</strong> 1056</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="524" data-row="49">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_49_cust-524.svg" alt="notes_49_cust-524.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_49_cust-524.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 49</div>
+        <div><strong>Customer:</strong> 524</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="124" data-row="596">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_596_cust-124.svg" alt="notes_596_cust-124.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_596_cust-124.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 596</div>
+        <div><strong>Customer:</strong> 124</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="164" data-row="619">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_619_cust-164.svg" alt="notes_619_cust-164.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_619_cust-164.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 619</div>
+        <div><strong>Customer:</strong> 164</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="516" data-row="881">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_881_cust-516.svg" alt="notes_881_cust-516.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_881_cust-516.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 881</div>
+        <div><strong>Customer:</strong> 516</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1197" data-row="1028">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1028_cust-1197.svg" alt="notes_1028_cust-1197.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1028_cust-1197.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1028</div>
+        <div><strong>Customer:</strong> 1197</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 02:11:30.616+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1234" data-row="1051">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1051_cust-1234.svg" alt="notes_1051_cust-1234.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1051_cust-1234.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1051</div>
+        <div><strong>Customer:</strong> 1234</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 08:04:38.121+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1557" data-row="1313">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1313_cust-1557.svg" alt="notes_1313_cust-1557.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1313_cust-1557.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1313</div>
+        <div><strong>Customer:</strong> 1557</div>
+        <div><strong>Date:</strong> 2025-10-29</div>
+        <div><strong>Created:</strong> 2025-10-29 08:06:16.832+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="701" data-row="199">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_199_cust-701.svg" alt="notes_199_cust-701.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_199_cust-701.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 199</div>
+        <div><strong>Customer:</strong> 701</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="705" data-row="206">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_206_cust-705.svg" alt="notes_206_cust-705.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_206_cust-705.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 206</div>
+        <div><strong>Customer:</strong> 705</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="708" data-row="216">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_216_cust-708.svg" alt="notes_216_cust-708.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_216_cust-708.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 216</div>
+        <div><strong>Customer:</strong> 708</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="829" data-row="312">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_312_cust-829.svg" alt="notes_312_cust-829.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_312_cust-829.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 312</div>
+        <div><strong>Customer:</strong> 829</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="897" data-row="358">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_358_cust-897.svg" alt="notes_358_cust-897.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_358_cust-897.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 358</div>
+        <div><strong>Customer:</strong> 897</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="521" data-row="45">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_45_cust-521.svg" alt="notes_45_cust-521.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_45_cust-521.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 45</div>
+        <div><strong>Customer:</strong> 521</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="525" data-row="52">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_52_cust-525.svg" alt="notes_52_cust-525.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_52_cust-525.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 52</div>
+        <div><strong>Customer:</strong> 525</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="161" data-row="615">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_615_cust-161.svg" alt="notes_615_cust-161.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_615_cust-161.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 615</div>
+        <div><strong>Customer:</strong> 161</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="528" data-row="62">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_62_cust-528.svg" alt="notes_62_cust-528.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_62_cust-528.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 62</div>
+        <div><strong>Customer:</strong> 528</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="165" data-row="622">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_622_cust-165.svg" alt="notes_622_cust-165.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_622_cust-165.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 622</div>
+        <div><strong>Customer:</strong> 165</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="168" data-row="635">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_635_cust-168.svg" alt="notes_635_cust-168.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_635_cust-168.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 635</div>
+        <div><strong>Customer:</strong> 168</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="289" data-row="735">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_735_cust-289.svg" alt="notes_735_cust-289.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_735_cust-289.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 735</div>
+        <div><strong>Customer:</strong> 289</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="357" data-row="786">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_786_cust-357.svg" alt="notes_786_cust-357.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_786_cust-357.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 786</div>
+        <div><strong>Customer:</strong> 357</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1235" data-row="1054">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1054_cust-1235.svg" alt="notes_1054_cust-1235.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1054_cust-1235.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1054</div>
+        <div><strong>Customer:</strong> 1235</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 00:28:54.532+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1351" data-row="1167">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1167_cust-1351.svg" alt="notes_1167_cust-1351.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1167_cust-1351.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1167</div>
+        <div><strong>Customer:</strong> 1351</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 06:16:13.227+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1238" data-row="1067">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1067_cust-1238.svg" alt="notes_1067_cust-1238.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1067_cust-1238.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1067</div>
+        <div><strong>Customer:</strong> 1238</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 06:20:05.744+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1413" data-row="1218">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1218_cust-1413.svg" alt="notes_1218_cust-1413.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1218_cust-1413.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1218</div>
+        <div><strong>Customer:</strong> 1413</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 06:57:34.824+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1231" data-row="1047">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1047_cust-1231.svg" alt="notes_1047_cust-1231.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1047_cust-1231.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1047</div>
+        <div><strong>Customer:</strong> 1231</div>
+        <div><strong>Date:</strong> 2025-10-31</div>
+        <div><strong>Created:</strong> 2025-10-31 08:55:31.454+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="591" data-row="115">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_115_cust-591.svg" alt="notes_115_cust-591.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_115_cust-591.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 115</div>
+        <div><strong>Customer:</strong> 591</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-01</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="231" data-row="691">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_691_cust-231.svg" alt="notes_691_cust-231.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_691_cust-231.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 691</div>
+        <div><strong>Customer:</strong> 231</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-01</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="706" data-row="210">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_210_cust-706.svg" alt="notes_210_cust-706.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_210_cust-706.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 210</div>
+        <div><strong>Customer:</strong> 706</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="752" data-row="231">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_231_cust-752.svg" alt="notes_231_cust-752.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_231_cust-752.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 231</div>
+        <div><strong>Customer:</strong> 752</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1123" data-row="516">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_516_cust-1123.svg" alt="notes_516_cust-1123.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_516_cust-1123.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 516</div>
+        <div><strong>Customer:</strong> 1123</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="526" data-row="56">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_56_cust-526.svg" alt="notes_56_cust-526.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_56_cust-526.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 56</div>
+        <div><strong>Customer:</strong> 526</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="166" data-row="627">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_627_cust-166.svg" alt="notes_627_cust-166.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_627_cust-166.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 627</div>
+        <div><strong>Customer:</strong> 166</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="212" data-row="652">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_652_cust-212.svg" alt="notes_652_cust-212.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_652_cust-212.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 652</div>
+        <div><strong>Customer:</strong> 212</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="572" data-row="77">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_77_cust-572.svg" alt="notes_77_cust-572.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_77_cust-572.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 77</div>
+        <div><strong>Customer:</strong> 572</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="596" data-row="950">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_950_cust-596.svg" alt="notes_950_cust-596.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_950_cust-596.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 950</div>
+        <div><strong>Customer:</strong> 596</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1236" data-row="1059">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1059_cust-1236.svg" alt="notes_1059_cust-1236.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1059_cust-1236.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1059</div>
+        <div><strong>Customer:</strong> 1236</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:15:39.202+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1298" data-row="1123">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1123_cust-1298.svg" alt="notes_1123_cust-1298.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1123_cust-1298.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1123</div>
+        <div><strong>Customer:</strong> 1298</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 00:21:37.392+00</div>
+        <div><strong>Edited:</strong> 2025-01-11</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1279" data-row="1084">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1084_cust-1279.svg" alt="notes_1084_cust-1279.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1084_cust-1279.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1084</div>
+        <div><strong>Customer:</strong> 1279</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 05:56:52.809+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1510" data-row="1382">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1382_cust-1510.svg" alt="notes_1382_cust-1510.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1382_cust-1510.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1382</div>
+        <div><strong>Customer:</strong> 1510</div>
+        <div><strong>Date:</strong> 2025-11-01</div>
+        <div><strong>Created:</strong> 2025-11-01 06:00:06.003+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1620" data-row="1384">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1384_cust-1620.svg" alt="notes_1384_cust-1620.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1384_cust-1620.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1384</div>
+        <div><strong>Customer:</strong> 1620</div>
+        <div><strong>Date:</strong> 2025-11-02</div>
+        <div><strong>Created:</strong> 2025-11-02 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1124" data-row="518">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_518_cust-1124.svg" alt="notes_518_cust-1124.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_518_cust-1124.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 518</div>
+        <div><strong>Customer:</strong> 1124</div>
+        <div><strong>Date:</strong> 2025-11-02</div>
+        <div><strong>Created:</strong> 2025-11-02 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="597" data-row="952">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_952_cust-597.svg" alt="notes_952_cust-597.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_952_cust-597.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 952</div>
+        <div><strong>Customer:</strong> 597</div>
+        <div><strong>Date:</strong> 2025-11-02</div>
+        <div><strong>Created:</strong> 2025-11-02 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1230" data-row="1046">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1046_cust-1230.svg" alt="notes_1046_cust-1230.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1046_cust-1230.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1046</div>
+        <div><strong>Customer:</strong> 1230</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="579" data-row="106">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_106_cust-579.svg" alt="notes_106_cust-579.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_106_cust-579.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 106</div>
+        <div><strong>Customer:</strong> 579</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1282" data-row="1098">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1098_cust-1282.svg" alt="notes_1098_cust-1282.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1098_cust-1282.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1098</div>
+        <div><strong>Customer:</strong> 1282</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1286" data-row="1113">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1113_cust-1286.svg" alt="notes_1113_cust-1286.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1113_cust-1286.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1113</div>
+        <div><strong>Customer:</strong> 1286</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1335" data-row="1155">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1155_cust-1335.svg" alt="notes_1155_cust-1335.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1155_cust-1335.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1155</div>
+        <div><strong>Customer:</strong> 1335</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1410" data-row="1215">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1215_cust-1410.svg" alt="notes_1215_cust-1410.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1215_cust-1410.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1215</div>
+        <div><strong>Customer:</strong> 1410</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="632" data-row="147">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_147_cust-632.svg" alt="notes_147_cust-632.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_147_cust-632.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 147</div>
+        <div><strong>Customer:</strong> 632</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="700" data-row="198">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_198_cust-700.svg" alt="notes_198_cust-700.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_198_cust-700.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 198</div>
+        <div><strong>Customer:</strong> 700</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="755" data-row="245">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_245_cust-755.svg" alt="notes_245_cust-755.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_245_cust-755.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 245</div>
+        <div><strong>Customer:</strong> 755</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="759" data-row="260">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_260_cust-759.svg" alt="notes_260_cust-759.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_260_cust-759.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 260</div>
+        <div><strong>Customer:</strong> 759</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="812" data-row="301">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_301_cust-812.svg" alt="notes_301_cust-812.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_301_cust-812.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 301</div>
+        <div><strong>Customer:</strong> 812</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="894" data-row="355">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_355_cust-894.svg" alt="notes_355_cust-894.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_355_cust-894.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 355</div>
+        <div><strong>Customer:</strong> 894</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="520" data-row="44">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_44_cust-520.svg" alt="notes_44_cust-520.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_44_cust-520.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 44</div>
+        <div><strong>Customer:</strong> 520</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="160" data-row="614">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_614_cust-160.svg" alt="notes_614_cust-160.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_614_cust-160.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 614</div>
+        <div><strong>Customer:</strong> 160</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="215" data-row="666">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_666_cust-215.svg" alt="notes_666_cust-215.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_666_cust-215.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 666</div>
+        <div><strong>Customer:</strong> 215</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="219" data-row="681">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_681_cust-219.svg" alt="notes_681_cust-219.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_681_cust-219.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 681</div>
+        <div><strong>Customer:</strong> 219</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="272" data-row="723">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_723_cust-272.svg" alt="notes_723_cust-272.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_723_cust-272.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 723</div>
+        <div><strong>Customer:</strong> 272</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="354" data-row="783">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_783_cust-354.svg" alt="notes_783_cust-354.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_783_cust-354.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 783</div>
+        <div><strong>Customer:</strong> 354</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="575" data-row="91">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_91_cust-575.svg" alt="notes_91_cust-575.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_91_cust-575.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 91</div>
+        <div><strong>Customer:</strong> 575</div>
+        <div><strong>Date:</strong> 2025-11-05</div>
+        <div><strong>Created:</strong> 2025-11-05 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1280" data-row="1090">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1090_cust-1280.svg" alt="notes_1090_cust-1280.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1090_cust-1280.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1090</div>
+        <div><strong>Customer:</strong> 1280</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1621" data-row="1385">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1385_cust-1621.svg" alt="notes_1385_cust-1621.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1385_cust-1621.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1385</div>
+        <div><strong>Customer:</strong> 1621</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1623" data-row="1386">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1386_cust-1623.svg" alt="notes_1386_cust-1623.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1386_cust-1623.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1386</div>
+        <div><strong>Customer:</strong> 1623</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="753" data-row="237">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_237_cust-753.svg" alt="notes_237_cust-753.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_237_cust-753.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 237</div>
+        <div><strong>Customer:</strong> 753</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1125" data-row="519">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_519_cust-1125.svg" alt="notes_519_cust-1125.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_519_cust-1125.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 519</div>
+        <div><strong>Customer:</strong> 1125</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1127" data-row="520">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_520_cust-1127.svg" alt="notes_520_cust-1127.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_520_cust-1127.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 520</div>
+        <div><strong>Customer:</strong> 1127</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="213" data-row="658">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_658_cust-213.svg" alt="notes_658_cust-213.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_658_cust-213.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 658</div>
+        <div><strong>Customer:</strong> 213</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="573" data-row="83">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_83_cust-573.svg" alt="notes_83_cust-573.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_83_cust-573.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 83</div>
+        <div><strong>Customer:</strong> 573</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="598" data-row="953">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_953_cust-598.svg" alt="notes_953_cust-598.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_953_cust-598.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 953</div>
+        <div><strong>Customer:</strong> 598</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="600" data-row="954">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_954_cust-600.svg" alt="notes_954_cust-600.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_954_cust-600.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 954</div>
+        <div><strong>Customer:</strong> 600</div>
+        <div><strong>Date:</strong> 2025-11-07</div>
+        <div><strong>Created:</strong> 2025-11-07 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="578" data-row="102">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_102_cust-578.svg" alt="notes_102_cust-578.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_102_cust-578.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 102</div>
+        <div><strong>Customer:</strong> 578</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1237" data-row="1064">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1064_cust-1237.svg" alt="notes_1064_cust-1237.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1064_cust-1237.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1064</div>
+        <div><strong>Customer:</strong> 1237</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1285" data-row="1109">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1109_cust-1285.svg" alt="notes_1109_cust-1285.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1109_cust-1285.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1109</div>
+        <div><strong>Customer:</strong> 1285</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="707" data-row="214">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_214_cust-707.svg" alt="notes_214_cust-707.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_214_cust-707.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 214</div>
+        <div><strong>Customer:</strong> 707</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="758" data-row="256">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_256_cust-758.svg" alt="notes_256_cust-758.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_256_cust-758.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 256</div>
+        <div><strong>Customer:</strong> 758</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="527" data-row="60">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_60_cust-527.svg" alt="notes_60_cust-527.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_60_cust-527.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 60</div>
+        <div><strong>Customer:</strong> 527</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="167" data-row="632">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_632_cust-167.svg" alt="notes_632_cust-167.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_632_cust-167.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 632</div>
+        <div><strong>Customer:</strong> 167</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="218" data-row="677">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_677_cust-218.svg" alt="notes_677_cust-218.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_677_cust-218.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 677</div>
+        <div><strong>Customer:</strong> 218</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> 2025-11-08</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1192" data-row="1017">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1017_cust-1192.svg" alt="notes_1017_cust-1192.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1017_cust-1192.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1017</div>
+        <div><strong>Customer:</strong> 1192</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1431" data-row="1230">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1230_cust-1431.svg" alt="notes_1230_cust-1431.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1230_cust-1431.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1230</div>
+        <div><strong>Customer:</strong> 1431</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1517" data-row="1292">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1292_cust-1517.svg" alt="notes_1292_cust-1517.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1292_cust-1517.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1292</div>
+        <div><strong>Customer:</strong> 1517</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="659" data-row="172">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_172_cust-659.svg" alt="notes_172_cust-659.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_172_cust-659.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 172</div>
+        <div><strong>Customer:</strong> 659</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="479" data-row="18">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_18_cust-479.svg" alt="notes_18_cust-479.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_18_cust-479.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 18</div>
+        <div><strong>Customer:</strong> 479</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="917" data-row="370">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_370_cust-917.svg" alt="notes_370_cust-917.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_370_cust-917.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 370</div>
+        <div><strong>Customer:</strong> 917</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1013" data-row="428">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_428_cust-1013.svg" alt="notes_428_cust-1013.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_428_cust-1013.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 428</div>
+        <div><strong>Customer:</strong> 1013</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="119" data-row="585">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_585_cust-119.svg" alt="notes_585_cust-119.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_585_cust-119.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 585</div>
+        <div><strong>Customer:</strong> 119</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="377" data-row="798">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_798_cust-377.svg" alt="notes_798_cust-377.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_798_cust-377.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 798</div>
+        <div><strong>Customer:</strong> 377</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="473" data-row="860">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_860_cust-473.svg" alt="notes_860_cust-473.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_860_cust-473.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 860</div>
+        <div><strong>Customer:</strong> 473</div>
+        <div><strong>Date:</strong> 2025-11-08</div>
+        <div><strong>Created:</strong> 2025-11-08 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1456" data-row="1252">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1252_cust-1456.svg" alt="notes_1252_cust-1456.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1252_cust-1456.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1252</div>
+        <div><strong>Customer:</strong> 1456</div>
+        <div><strong>Date:</strong> 2025-11-12</div>
+        <div><strong>Created:</strong> 2025-11-12 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1624" data-row="1387">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1387_cust-1624.svg" alt="notes_1387_cust-1624.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1387_cust-1624.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1387</div>
+        <div><strong>Customer:</strong> 1624</div>
+        <div><strong>Date:</strong> 2025-11-12</div>
+        <div><strong>Created:</strong> 2025-11-12 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+    <article class="card" data-source="notes" data-customer="1625" data-row="1389">
+      <div class="svg-wrap">
+        <img loading="lazy" src="./notes_1389_cust-1625.svg" alt="notes_1389_cust-1625.svg" />
+      </div>
+      <div class="meta">
+        <div><strong>File:</strong> notes_1389_cust-1625.svg</div>
+        <div><strong>Source:</strong> notes</div>
+        <div><strong>Row ID:</strong> 1389</div>
+        <div><strong>Customer:</strong> 1625</div>
+        <div><strong>Date:</strong> 2025-11-12</div>
+        <div><strong>Created:</strong> 2025-11-12 00:00:00+00</div>
+        <div><strong>Edited:</strong> null</div>
+      </div>
+    </article>
+  </main>
+
+  <script>
+    (function () {
+      const q = document.getElementById('q');
+      const source = document.getElementById('source');
+      const count = document.getElementById('count');
+      const cards = Array.from(document.querySelectorAll('.card'));
+
+      function apply() {
+        const text = (q.value || '').trim().toLowerCase();
+        const src = source.value;
+        let visible = 0;
+
+        for (const card of cards) {
+          const matchesSource = !src || card.dataset.source === src;
+          const matchesText = !text || card.textContent.toLowerCase().includes(text);
+          const show = matchesSource && matchesText;
+          card.classList.toggle('hidden', !show);
+          if (show) visible++;
+        }
+        count.textContent = visible + ' / ' + cards.length + ' shown (page 4 of 15)';
+      }
+
+      q.addEventListener('input', apply);
+      source.addEventListener('change', apply);
+      apply();
+    })();
+  </script>
+</body>
+</html>
