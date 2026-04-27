@@ -15,7 +15,8 @@ Purpose: release-blocking contract for note payload integrity across both Supaba
 
 ## Operation Gates
 
-For both adapters (`js/db-supabase.js`, `js/dbSupabase.js`), all operations below must satisfy the contract:
+For the canonical adapter (`js/db-supabase.js`), all operations below must satisfy the contract.
+`js/dbSupabase.js` is compatibility shim-only and must not carry business logic:
 
 - `createNote`
 - `updateNote`

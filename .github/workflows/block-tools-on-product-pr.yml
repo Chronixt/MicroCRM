@@ -1,0 +1,71 @@
+name: Block Tool Files On Product PRs
+
+on:
+  pull_request:
+    branches:
+      - hairdresser-crm
+      - tradie-crm
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  block-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if tool-only paths are included
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            // Allow standard propagation PRs from main -> product branches.
+            // We still block tool paths for all other source branches.
+            if (pr.head && pr.head.ref === 'main') {
+              core.info('Skipping tool-path block for base=<product>, compare=main sync PR.');
+              return;
+            }
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner,
+                repo,
+                pull_number: pr.number,
+                per_page: 100
+              }
+            );
+
+            const blockedPatterns = [
+              /^tools\//,
+              /^backup-options\.html$/,
+              /^backup-diff\.html$/,
+              /^backup-record-viewer\.html$/,
+              /^notes_svg_dump\//,
+              /^export-note-svgs\.ps1$/,
+              /^generate-notes-svg-gallery\.ps1$/,
+              /^scripts\/find-duplicate-customers-by-firstname-image\.ps1$/,
+              /^Supabase Snippet Extract Embedded SVG Fields From Notes and Versions\.csv$/
+            ];
+
+            const blocked = files
+              .map(f => f.filename)
+              .filter(name => blockedPatterns.some(re => re.test(name)));
+
+            if (blocked.length > 0) {
+              core.setFailed(
+                [
+                  'Tool-only files are blocked on product-branch PRs.',
+                  'Move these changes to a main-only tools PR instead.',
+                  '',
+                  'Blocked files:',
+                  ...blocked.map(f => `- ${f}`)
+                ].join('\n')
+              );
+            } else {
+              core.info('No blocked tool files detected.');
+            }
+

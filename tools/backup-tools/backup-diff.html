@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Diff Tool - CRMicro</title>
+    <style>
+        :root {
+            --bg-start: #0f172a;
+            --bg-end: #1e293b;
+            --card: rgba(255, 255, 255, 0.08);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --good: #22c55e;
+            --warn: #f59e0b;
+            --bad: #ef4444;
+            --line: rgba(255, 255, 255, 0.14);
+            --accent: #38bdf8;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text);
+            background: linear-gradient(140deg, var(--bg-start), var(--bg-end));
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(8px);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 1.8rem;
+        }
+
+        p {
+            margin-top: 0;
+            color: var(--muted);
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .file-input {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 10px 14px;
+            cursor: pointer;
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .file-input input {
+            display: none;
+        }
+
+        .button {
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin: 8px 0 20px;
+            font-size: 0.95rem;
+            color: var(--muted);
+        }
+
+        .status.error {
+            color: #fecaca;
+        }
+
+        .results {
+            display: none;
+            gap: 18px;
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.15);
+            margin-bottom: 16px;
+        }
+
+        .panel h2, .panel h3 {
+            margin-top: 0;
+        }
+
+        .summary-grid {
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+
+        .summary-card {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .summary-card .name {
+            font-weight: 700;
+            margin-bottom: 8px;
+            word-break: break-word;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            font-size: 0.92rem;
+        }
+
+        .metric .label {
+            color: var(--muted);
+        }
+
+        .metric .value {
+            font-family: Consolas, Menlo, Monaco, monospace;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        th, td {
+            border: 1px solid var(--line);
+            padding: 8px;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .ok {
+            color: var(--good);
+            font-weight: 700;
+        }
+
+        .warn {
+            color: var(--warn);
+            font-weight: 700;
+        }
+
+        .bad {
+            color: var(--bad);
+            font-weight: 700;
+        }
+
+        .mono {
+            font-family: Consolas, Menlo, Monaco, monospace;
+            font-size: 0.85rem;
+        }
+
+        .codebox {
+            margin-top: 10px;
+            max-height: 160px;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .note-extra-list {
+            margin-top: 10px;
+            display: grid;
+            gap: 8px;
+        }
+        .note-extra-item {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 8px;
+        }
+        .note-extra-item strong {
+            color: #bae6fd;
+        }
+        .note-extra-meta {
+            color: var(--muted);
+            font-size: 0.82rem;
+            margin-bottom: 4px;
+        }
+        .note-extra-text {
+            font-size: 0.88rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .name-mismatch-grid {
+            margin-top: 10px;
+            display: grid;
+            gap: 8px;
+        }
+        .name-mismatch-item {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .name-mismatch-columns {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(180px, 1fr));
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .svg-preview-wrap {
+            margin-top: 8px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: transparent;
+            padding: 8px;
+        }
+        .svg-preview {
+            width: 100%;
+            min-height: 140px;
+            border: 0;
+            display: block;
+            background: transparent;
+        }
+
+        a.back-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a class="back-link" href="backup-options.html">Back to backup options</a>
+        <h1>Backup Diff Tool</h1>
+        <p>Load two or more backup JSON files to compare counts and key record differences quickly.</p>
+
+        <div class="controls">
+            <label class="file-input">
+                Add Base File
+                <input id="base-file-input" type="file" accept=".json,application/json">
+            </label>
+            <label class="file-input">
+                Add Target File(s)
+                <input id="target-file-input" type="file" accept=".json,application/json" multiple>
+            </label>
+            <button id="compare-btn" class="button" disabled>Compare</button>
+            <button id="reset-btn" class="button">Reset</button>
+        </div>
+
+        <div id="status" class="status">Select one base backup JSON and at least one target JSON.</div>
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const baseFileInput = document.getElementById('base-file-input');
+            const targetFileInput = document.getElementById('target-file-input');
+            const compareBtn = document.getElementById('compare-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const statusEl = document.getElementById('status');
+            const resultsEl = document.getElementById('results');
+
+            let baseFile = null;
+            let targetFiles = [];
+
+            baseFileInput.addEventListener('change', function () {
+                baseFile = (baseFileInput.files && baseFileInput.files[0]) || null;
+                updateSelectionStatus();
+            });
+
+            targetFileInput.addEventListener('change', function () {
+                targetFiles = Array.from(targetFileInput.files || []);
+                updateSelectionStatus();
+            });
+
+            resetBtn.addEventListener('click', function () {
+                baseFileInput.value = '';
+                targetFileInput.value = '';
+                baseFile = null;
+                targetFiles = [];
+                compareBtn.disabled = true;
+                resultsEl.style.display = 'none';
+                resultsEl.innerHTML = '';
+                setStatus('Select one base backup JSON and at least one target JSON.');
+            });
+
+            compareBtn.addEventListener('click', async function () {
+                if (!baseFile || targetFiles.length < 1) {
+                    setStatus('Please select one base file and at least one target file.', true);
+                    return;
+                }
+
+                try {
+                    compareBtn.disabled = true;
+                    setStatus('Reading files and calculating differences...');
+                    const filesToParse = [baseFile].concat(targetFiles);
+                    const parsed = await Promise.all(filesToParse.map(loadAndNormalize));
+                    renderResults(parsed);
+                    setStatus('Comparison complete.');
+                } catch (err) {
+                    setStatus('Comparison failed: ' + err.message, true);
+                    resultsEl.style.display = 'none';
+                } finally {
+                    compareBtn.disabled = !baseFile || targetFiles.length < 1;
+                }
+            });
+
+            function updateSelectionStatus() {
+                const ready = !!baseFile && targetFiles.length >= 1;
+                compareBtn.disabled = !ready;
+
+                if (!baseFile && targetFiles.length === 0) {
+                    setStatus('Select one base backup JSON and at least one target JSON.');
+                    return;
+                }
+                if (!baseFile) {
+                    setStatus(targetFiles.length + ' target file(s) selected. Add a base file.');
+                    return;
+                }
+                if (targetFiles.length === 0) {
+                    setStatus('Base selected: ' + baseFile.name + '. Add at least one target file.');
+                    return;
+                }
+
+                setStatus(
+                    'Base: ' + baseFile.name + ' | Targets: ' + targetFiles.length + ' file(s) selected.'
+                );
+            }
+
+            function setStatus(message, isError) {
+                statusEl.textContent = message;
+                statusEl.className = isError ? 'status error' : 'status';
+            }
+
+            async function loadAndNormalize(file) {
+                const text = await file.text();
+                let raw;
+                try {
+                    raw = JSON.parse(text);
+                } catch (err) {
+                    throw new Error(file.name + ' is not valid JSON.');
+                }
+
+                const normalized = normalizeBackup(raw);
+                const customerNameLookup = buildCustomerNameLookup(normalized.customers);
+                const datasets = buildDatasetIndex(normalized, customerNameLookup);
+
+                return {
+                    name: file.name,
+                    counts: {
+                        customers: normalized.customers.length,
+                        appointments: normalized.appointments.length,
+                        images: normalized.images.length,
+                        notes: normalized.notes.length
+                    },
+                    datasetIndex: datasets
+                };
+            }
+
+            function normalizeBackup(raw) {
+                const customers = Array.isArray(raw && raw.customers) ? raw.customers : [];
+                const appointments = Array.isArray(raw && raw.appointments) ? raw.appointments : [];
+                const images = Array.isArray(raw && raw.images) ? raw.images : [];
+                const customerNotesRaw = raw && typeof raw.customerNotes === 'object' && raw.customerNotes ? raw.customerNotes : {};
+                const notes = flattenNotes(customerNotesRaw);
+                return { customers, appointments, images, notes };
+            }
+
+            function flattenNotes(customerNotes) {
+                const out = [];
+                Object.keys(customerNotes).forEach(function (customerId) {
+                    const noteList = Array.isArray(customerNotes[customerId]) ? customerNotes[customerId] : [];
+                    for (let i = 0; i < noteList.length; i += 1) {
+                        out.push({
+                            customerId: customerId,
+                            note: noteList[i]
+                        });
+                    }
+                });
+                return out;
+            }
+
+            function buildDatasetIndex(normalized, customerNameLookup) {
+                return {
+                    customers: createSectionIndex(normalized.customers, customerKey),
+                    appointments: createSectionIndex(normalized.appointments, appointmentKey),
+                    images: createSectionIndex(normalized.images, imageKey),
+                    notes: createSectionIndex(normalized.notes, noteKey, function (item) {
+                        return noteDetail(item, customerNameLookup);
+                    })
+                };
+            }
+
+            function buildCustomerNameLookup(customers) {
+                const map = new Map();
+                (customers || []).forEach(function (customer) {
+                    const id = customer && customer.id !== undefined && customer.id !== null ? String(customer.id) : '';
+                    if (!id) return;
+
+                    const firstName = String(
+                        (customer && (customer.firstName || customer.firstname || customer.first_name)) || ''
+                    ).trim();
+                    const lastName = String(
+                        (customer && (customer.lastName || customer.lastname || customer.last_name)) || ''
+                    ).trim();
+
+                    map.set(id, { firstName: firstName, lastName: lastName });
+                });
+                return map;
+            }
+
+            function createSectionIndex(items, keyFn, detailFn) {
+                const keys = new Set();
+                const detailsByKey = new Map();
+                items.forEach(function (item) {
+                    const key = keyFn(item);
+                    keys.add(key);
+                    if (detailFn) {
+                        if (!detailsByKey.has(key)) detailsByKey.set(key, []);
+                        detailsByKey.get(key).push(detailFn(item));
+                    }
+                });
+                return { keys: keys, detailsByKey: detailsByKey };
+            }
+
+            function customerKey(item) {
+                if (item && item.id !== undefined && item.id !== null) return 'id:' + item.id;
+                return 'sig:' + stableSignature(item);
+            }
+
+            function appointmentKey(item) {
+                if (item && item.id !== undefined && item.id !== null) return 'id:' + item.id;
+                return 'sig:' + stableSignature({
+                    customerId: item && item.customerId,
+                    date: item && item.date,
+                    time: item && item.time,
+                    service: item && item.service,
+                    price: item && item.price
+                });
+            }
+
+            function imageKey(item) {
+                if (item && item.id !== undefined && item.id !== null) return 'id:' + item.id;
+                return 'sig:' + stableSignature({
+                    customerId: item && item.customerId,
+                    name: item && item.name,
+                    type: item && item.type,
+                    createdAt: item && item.createdAt,
+                    dataUrlLen: item && typeof item.dataUrl === 'string' ? item.dataUrl.length : null
+                });
+            }
+
+            function noteKey(item) {
+                const note = item && item.note;
+                const notePayload = {
+                    text: String(note && (note.textValue || note.text || note.content || '') || ''),
+                    svg: String(note && note.svg || '')
+                };
+                const svgMarkup = extractSvgMarkupFromNote(notePayload);
+                if (svgMarkup) {
+                    const svgCanonical = canonicalizeSvgForCompare(svgMarkup);
+                    return 'svg:' + hashString(svgCanonical);
+                }
+
+                const textCanonical = String(notePayload.text || '').trim();
+                if (textCanonical) return 'txt:' + hashString(textCanonical);
+                return 'empty:' + hashString(stableSignature(note || {}));
+            }
+
+            function noteDetail(item, customerNameLookup) {
+                const note = item && item.note ? item.note : {};
+                const customerId = item && item.customerId ? String(item.customerId) : '';
+                const customerName = customerNameLookup && customerNameLookup.get
+                    ? customerNameLookup.get(customerId)
+                    : null;
+                return {
+                    customerId: customerId,
+                    customerFirstName: customerName && customerName.firstName ? customerName.firstName : '',
+                    customerLastName: customerName && customerName.lastName ? customerName.lastName : '',
+                    noteId: note.id !== undefined && note.id !== null ? String(note.id) : '',
+                    noteType: String(note.noteType || note.type || ''),
+                    createdAt: String(note.createdAt || note.editedDate || ''),
+                    text: String(note.textValue || note.text || note.content || ''),
+                    svg: String(note.svg || '')
+                };
+            }
+
+            function stableSignature(value) {
+                return JSON.stringify(sortKeys(value));
+            }
+
+            function sortKeys(value) {
+                if (Array.isArray(value)) {
+                    return value.map(sortKeys);
+                }
+                if (!value || typeof value !== 'object') {
+                    return value;
+                }
+                const out = {};
+                Object.keys(value).sort().forEach(function (k) {
+                    out[k] = sortKeys(value[k]);
+                });
+                return out;
+            }
+
+            function compareSections(baseSection, targetSection) {
+                const missingFromTarget = [];
+                const extraInTarget = [];
+
+                baseSection.keys.forEach(function (key) {
+                    if (!targetSection.keys.has(key)) missingFromTarget.push(key);
+                });
+                targetSection.keys.forEach(function (key) {
+                    if (!baseSection.keys.has(key)) extraInTarget.push(key);
+                });
+
+                return {
+                    missingFromTarget: missingFromTarget,
+                    extraInTarget: extraInTarget,
+                    baseDetailsByKey: baseSection.detailsByKey,
+                    extraDetailsByKey: targetSection.detailsByKey
+                };
+            }
+
+            function compareNoteSections(baseSection, targetSection) {
+                const baseDiff = compareSections(baseSection, targetSection);
+                const commonKeys = [];
+                const nameMismatches = [];
+
+                baseSection.keys.forEach(function (key) {
+                    if (targetSection.keys.has(key)) commonKeys.push(key);
+                });
+
+                commonKeys.forEach(function (key) {
+                    if (!/^svg:/.test(key)) return;
+                    const baseNames = uniqueSortedNames(baseSection.detailsByKey.get(key) || []);
+                    const targetNames = uniqueSortedNames(targetSection.detailsByKey.get(key) || []);
+                    if (!sameStringSet(baseNames, targetNames)) {
+                        nameMismatches.push({
+                            key: key,
+                            baseNames: baseNames,
+                            targetNames: targetNames
+                        });
+                    }
+                });
+
+                baseDiff.nameMismatches = nameMismatches;
+                return baseDiff;
+            }
+
+            function renderResults(parsedFiles) {
+                const baseline = parsedFiles[0];
+                const others = parsedFiles.slice(1);
+
+                const summaryCardsHtml = parsedFiles.map(function (item, index) {
+                    return (
+                        '<div class="summary-card">' +
+                            '<div class="name">' + escapeHtml(item.name) + (index === 0 ? ' (baseline)' : '') + '</div>' +
+                            metricRow('Customers', item.counts.customers) +
+                            metricRow('Appointments', item.counts.appointments) +
+                            metricRow('Images', item.counts.images) +
+                            metricRow('Notes', item.counts.notes) +
+                        '</div>'
+                    );
+                }).join('');
+
+                const tableRowsHtml = others.map(function (target) {
+                    const countCells = ['customers', 'appointments', 'images', 'notes'].map(function (k) {
+                        return countDeltaCell(baseline.counts[k], target.counts[k]);
+                    }).join('');
+
+                    return (
+                        '<tr>' +
+                            '<td>' + escapeHtml(target.name) + '</td>' +
+                            countCells +
+                        '</tr>'
+                    );
+                }).join('');
+
+                const detailsHtml = others.map(function (target) {
+                    const sectionDiffs = ['customers', 'appointments', 'images', 'notes'].map(function (section) {
+                        const diff = section === 'notes'
+                            ? compareNoteSections(baseline.datasetIndex[section], target.datasetIndex[section])
+                            : compareSections(baseline.datasetIndex[section], target.datasetIndex[section]);
+                        return renderSectionDiff(section, diff);
+                    }).join('');
+
+                    return (
+                        '<div class="panel">' +
+                            '<h3>Detailed Differences: ' + escapeHtml(target.name) + '</h3>' +
+                            sectionDiffs +
+                        '</div>'
+                    );
+                }).join('');
+
+                resultsEl.innerHTML =
+                    '<div class="panel">' +
+                        '<h2>File Summary</h2>' +
+                        '<div class="summary-grid">' + summaryCardsHtml + '</div>' +
+                    '</div>' +
+                    '<div class="panel">' +
+                        '<h2>Count Delta vs Baseline</h2>' +
+                        '<table>' +
+                            '<thead>' +
+                                '<tr>' +
+                                    '<th>Target File</th>' +
+                                    '<th>Customers</th>' +
+                                    '<th>Appointments</th>' +
+                                    '<th>Images</th>' +
+                                    '<th>Notes</th>' +
+                                '</tr>' +
+                            '</thead>' +
+                            '<tbody>' + tableRowsHtml + '</tbody>' +
+                        '</table>' +
+                    '</div>' +
+                    detailsHtml;
+
+                resultsEl.style.display = 'block';
+            }
+
+            function metricRow(label, value) {
+                return '<div class="metric"><span class="label">' + label + '</span><span class="value">' + value + '</span></div>';
+            }
+
+            function countDeltaCell(base, target) {
+                const delta = target - base;
+                const className = delta === 0 ? 'ok' : (delta > 0 ? 'warn' : 'bad');
+                const sign = delta > 0 ? '+' : '';
+                const value = delta === 0 ? 'Match' : sign + delta;
+                return '<td><span class="' + className + '">' + value + '</span><div class="mono">base ' + base + ' -> target ' + target + '</div></td>';
+            }
+
+            function renderSectionDiff(section, diff) {
+                const missingCount = diff.missingFromTarget.length;
+                const extraCount = diff.extraInTarget.length;
+
+                const statusClass = missingCount === 0 && extraCount === 0 ? 'ok' : 'bad';
+                const statusLabel = missingCount === 0 && extraCount === 0
+                    ? 'No key-level differences'
+                    : ('Missing in target: ' + missingCount + ' | Extra in target: ' + extraCount);
+
+                return (
+                    '<div class="panel">' +
+                        '<h4 style="margin:0 0 8px; text-transform: capitalize;">' + escapeHtml(section) + '</h4>' +
+                        '<div class="' + statusClass + '">' + statusLabel + '</div>' +
+                        renderKeyList('Sample missing keys', diff.missingFromTarget) +
+                        renderKeyList('Sample extra keys', diff.extraInTarget) +
+                        (section === 'notes' ? renderNoteNameMismatches(diff.nameMismatches || []) : '') +
+                        (section === 'notes' ? renderExtraNotes(diff.extraInTarget, diff.extraDetailsByKey) : '') +
+                    '</div>'
+                );
+            }
+
+            function renderNoteNameMismatches(nameMismatches) {
+                if (!nameMismatches.length) return '';
+                const maxRows = 20;
+                const shown = nameMismatches.slice(0, maxRows);
+                const rows = shown.map(function (row, idx) {
+                    const baseNamesText = row.baseNames.length ? row.baseNames.join('\n') : 'None';
+                    const targetNamesText = row.targetNames.length ? row.targetNames.join('\n') : 'None';
+                    return (
+                        '<div class="name-mismatch-item">' +
+                            '<div><strong>Matching SVG #' + (idx + 1) + ' has customer-name mismatch</strong></div>' +
+                            '<div class="name-mismatch-columns">' +
+                                '<div><div class="mono"><strong>Base</strong></div><div class="codebox mono">' + escapeHtml(baseNamesText) + '</div></div>' +
+                                '<div><div class="mono"><strong>Target</strong></div><div class="codebox mono">' + escapeHtml(targetNamesText) + '</div></div>' +
+                            '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+
+                const more = nameMismatches.length > maxRows
+                    ? '<div class="mono" style="margin-top:6px;">... and ' + (nameMismatches.length - maxRows) + ' more SVG/name mismatches</div>'
+                    : '';
+
+                return (
+                    '<div class="mono" style="margin-top:10px;"><strong>Same SVG, different customer names</strong></div>' +
+                    '<div class="name-mismatch-grid">' + rows + '</div>' +
+                    more
+                );
+            }
+
+            function uniqueSortedNames(details) {
+                const set = new Set();
+                (details || []).forEach(function (note) {
+                    set.add(formatCustomerName(note));
+                });
+                return Array.from(set).sort();
+            }
+
+            function sameStringSet(a, b) {
+                if (a.length !== b.length) return false;
+                const aSet = new Set(a);
+                for (let i = 0; i < b.length; i += 1) {
+                    if (!aSet.has(b[i])) return false;
+                }
+                return true;
+            }
+
+            function renderExtraNotes(extraKeys, detailsByKey) {
+                if (!extraKeys.length) return '';
+                const maxNotes = 20;
+                const records = [];
+                extraKeys.forEach(function (key) {
+                    const detailList = detailsByKey && detailsByKey.get ? detailsByKey.get(key) : null;
+                    if (!detailList || !detailList.length) return;
+                    for (let i = 0; i < detailList.length; i += 1) {
+                        records.push(detailList[i]);
+                    }
+                });
+                const shown = records.slice(0, maxNotes);
+                const itemsHtml = shown.map(function (note, idx) {
+                    const header = 'Extra Note #' + (idx + 1);
+                    const customerNameLabel = formatCustomerName(note);
+                    const meta = [
+                        note.customerId ? ('customerId: ' + note.customerId) : 'customerId: n/a',
+                        note.noteId ? ('noteId: ' + note.noteId) : 'noteId: n/a',
+                        note.noteType ? ('type: ' + note.noteType) : 'type: n/a',
+                        note.createdAt ? ('createdAt: ' + note.createdAt) : 'createdAt: n/a'
+                    ].join(' | ');
+                    const text = note.text || '[empty text]';
+                    const renderedContent = renderNoteContent(note);
+                    return (
+                        '<div class="note-extra-item">' +
+                            '<div><strong>' + escapeHtml(header) + '</strong></div>' +
+                            '<div class="note-extra-meta"><strong>Customer: ' + escapeHtml(customerNameLabel) + '</strong></div>' +
+                            '<div class="note-extra-meta mono">' + escapeHtml(meta) + '</div>' +
+                            renderedContent +
+                        '</div>'
+                    );
+                }).join('');
+
+                const more = records.length > maxNotes
+                    ? '<div class="mono" style="margin-top:6px;">... and ' + (records.length - maxNotes) + ' more extra notes</div>'
+                    : '';
+
+                return (
+                    '<div class="mono" style="margin-top:10px;"><strong>Extra notes in target (sample)</strong></div>' +
+                    '<div class="note-extra-list">' + itemsHtml + '</div>' +
+                    more
+                );
+            }
+
+            function formatCustomerName(note) {
+                const firstName = String(note && note.customerFirstName ? note.customerFirstName : '').trim();
+                const lastName = String(note && note.customerLastName ? note.customerLastName : '').trim();
+                const fullName = (firstName + ' ' + lastName).trim();
+                return fullName || 'Unknown';
+            }
+
+            function renderNoteContent(note) {
+                const svgDataUrl = extractSvgDataUrlFromNote(note);
+                const text = note && note.text ? note.text : '';
+                if (!svgDataUrl) {
+                    return '<div class="note-extra-text">' + escapeHtml(text || '[empty text]') + '</div>';
+                }
+                return (
+                    '<div class="svg-preview-wrap">' +
+                        '<img class="svg-preview" alt="SVG note preview" src="' + escapeHtml(svgDataUrl) + '">' +
+                    '</div>' +
+                    '<details style="margin-top:8px;">' +
+                        '<summary class="mono">Show raw note text</summary>' +
+                        '<div class="note-extra-text">' + escapeHtml(text) + '</div>' +
+                    '</details>'
+                );
+            }
+
+            function extractSvgDataUrlFromNote(note) {
+                const svgMarkup = extractSvgMarkupFromNote(note);
+                if (!svgMarkup) return null;
+                return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgMarkup);
+            }
+
+            function extractSvgMarkupFromNote(note) {
+                const directSvg = String(note && note.svg ? note.svg : '');
+                const text = String(note && note.text ? note.text : '');
+
+                const fromDirect = extractSvgMarkup(directSvg);
+                if (fromDirect) return sanitizeSvgMarkup(fromDirect);
+
+                const fromText = extractSvgMarkup(text);
+                if (fromText) return sanitizeSvgMarkup(fromText);
+
+                const parsed = tryParseJson(text);
+                if (parsed) {
+                    const nestedSvg = findFirstSvgString(parsed);
+                    const fromNested = extractSvgMarkup(nestedSvg);
+                    if (fromNested) return sanitizeSvgMarkup(fromNested);
+                }
+                return '';
+            }
+
+            function extractSvgMarkup(inputValue) {
+                const input = String(inputValue || '');
+                if (!input) return '';
+
+                const trimmed = input.trim();
+                if (!trimmed) return '';
+
+                if (/^data:image\/svg\+xml/i.test(trimmed)) {
+                    return decodeSvgDataUrl(trimmed);
+                }
+
+                const decodedEntities = decodeHtmlEntities(trimmed);
+                const svgMatch = decodedEntities.match(/<svg[\s\S]*<\/svg>/i);
+                if (!svgMatch) return '';
+                return svgMatch[0];
+            }
+
+            function decodeHtmlEntities(value) {
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = value;
+                return textarea.value;
+            }
+
+            function sanitizeSvgMarkup(svgMarkup) {
+                let out = String(svgMarkup || '');
+                // file:// cannot be fetched from file:// page contexts in many browsers.
+                out = out.replace(/(href|xlink:href|src)\s*=\s*(['"])file:[^'"]*\2/gi, '$1=$2$2');
+                out = out.replace(/url\(\s*['"]?file:[^)]+['"]?\s*\)/gi, 'none');
+                return out;
+            }
+
+            function decodeSvgDataUrl(dataUrl) {
+                const input = String(dataUrl || '');
+                const commaIndex = input.indexOf(',');
+                if (commaIndex < 0) return '';
+                const header = input.slice(0, commaIndex);
+                const payload = input.slice(commaIndex + 1);
+                try {
+                    if (/;base64/i.test(header)) {
+                        return atob(payload);
+                    }
+                    return decodeURIComponent(payload);
+                } catch (err) {
+                    return '';
+                }
+            }
+
+            function canonicalizeSvgForCompare(svgMarkup) {
+                return String(svgMarkup || '')
+                    .replace(/\r\n/g, '\n')
+                    .replace(/>\s+</g, '><')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+
+            function hashString(value) {
+                let hash = 5381;
+                const input = String(value || '');
+                for (let i = 0; i < input.length; i += 1) {
+                    hash = ((hash << 5) + hash) + input.charCodeAt(i);
+                    hash = hash >>> 0;
+                }
+                return hash.toString(16);
+            }
+
+            function tryParseJson(value) {
+                const input = String(value || '').trim();
+                if (!input) return null;
+                if (input[0] !== '{' && input[0] !== '[') return null;
+                try {
+                    return JSON.parse(input);
+                } catch (err) {
+                    return null;
+                }
+            }
+
+            function findFirstSvgString(value) {
+                if (!value) return '';
+                if (typeof value === 'string') {
+                    if (/<svg[\s\S]*<\/svg>/i.test(value) || /^data:image\/svg\+xml/i.test(value)) {
+                        return value;
+                    }
+                    return '';
+                }
+                if (Array.isArray(value)) {
+                    for (let i = 0; i < value.length; i += 1) {
+                        const foundInArray = findFirstSvgString(value[i]);
+                        if (foundInArray) return foundInArray;
+                    }
+                    return '';
+                }
+                if (typeof value === 'object') {
+                    const prioritized = ['svg', 'svgMarkup', 'svgDataUrl'];
+                    for (let i = 0; i < prioritized.length; i += 1) {
+                        const key = prioritized[i];
+                        if (Object.prototype.hasOwnProperty.call(value, key)) {
+                            const foundPriority = findFirstSvgString(value[key]);
+                            if (foundPriority) return foundPriority;
+                        }
+                    }
+                    const keys = Object.keys(value);
+                    for (let i = 0; i < keys.length; i += 1) {
+                        const found = findFirstSvgString(value[keys[i]]);
+                        if (found) return found;
+                    }
+                }
+                return '';
+            }
+
+            function renderKeyList(label, list) {
+                if (!list.length) return '';
+                const max = 12;
+                const samples = list.slice(0, max);
+                let text = samples.join('\n');
+                if (list.length > max) {
+                    text += '\n... and ' + (list.length - max) + ' more';
+                }
+                return (
+                    '<div class="mono" style="margin-top:8px;"><strong>' + escapeHtml(label) + '</strong></div>' +
+                    '<div class="codebox mono">' + escapeHtml(text) + '</div>'
+                );
+            }
+
+            function escapeHtml(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+        })();
+    </script>
+</body>
+</html>
