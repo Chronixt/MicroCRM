@@ -247,6 +247,34 @@
     }
   }
 
+  function appendNotesHtml(existingHtml, newHtml, timestamp, options = {}) {
+    const escapeHtml = typeof options.escapeHtml === 'function'
+      ? options.escapeHtml
+      : function (value) { return String(value || ''); };
+    const ts = timestamp instanceof Date ? timestamp : new Date();
+    const tsStr = ts.toLocaleString();
+    const block = `<div class="note-entry"><div class="muted" style="font-size:12px;">${escapeHtml(tsStr)}</div>${newHtml}</div>`;
+    if (!existingHtml || existingHtml.trim() === '') return block;
+    return existingHtml + '<hr />' + block;
+  }
+
+  function appendNotesCanvas(existingImageData, newImageData, timestamp) {
+    return newImageData;
+  }
+
+  function isMigratedNoteByContent(noteData) {
+    if (noteData.isMigrated === true) {
+      return true;
+    }
+    if (noteData.svg && typeof noteData.svg === 'string') {
+      if (noteData.svg.includes('<svg') && noteData.svg.includes('<text')) {
+        noteData.isMigrated = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
   window.NoteRuntime = Object.assign({}, window.NoteRuntime || {}, {
     escapeXmlText,
     isSerializedTextNoteSvg,
@@ -268,6 +296,9 @@
     enqueueNoteOfflineOp,
     getLocalNotesForCustomer,
     upsertLocalCustomerNote,
-    removeLocalCustomerNote
+    removeLocalCustomerNote,
+    appendNotesHtml,
+    appendNotesCanvas,
+    isMigratedNoteByContent
   });
 })();
