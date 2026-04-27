@@ -7005,6 +7005,9 @@
   }
 
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
+    if (noteRuntime.appendNotesHtml) {
+      return noteRuntime.appendNotesHtml(existingHtml, newHtml, timestamp, { escapeHtml });
+    }
     const ts = timestamp instanceof Date ? timestamp : new Date();
     const tsStr = ts.toLocaleString();
     const block = `<div class="note-entry"><div class="muted" style="font-size:12px;">${escapeHtml(tsStr)}</div>${newHtml}</div>`;
@@ -7013,12 +7016,7 @@
   }
 
   function appendNotesCanvas(existingImageData, newImageData, timestamp) {
-    const ts = timestamp instanceof Date ? timestamp : new Date();
-    const tsStr = ts.toLocaleString();
-    
-    // For canvas data, we'll create a simple HTML structure with the new image
-    // Since we can't easily combine canvas images, we'll just return the new one
-    // In a more sophisticated implementation, you might want to create a composite image
+    if (noteRuntime.appendNotesCanvas) return noteRuntime.appendNotesCanvas(existingImageData, newImageData, timestamp);
     return newImageData;
   }
 
@@ -7375,22 +7373,7 @@
 
   // Check if a note is a migrated note by content analysis
   function isMigratedNoteByContent(noteData) {
-    // If explicitly flagged as migrated, return true
-    if (noteData.isMigrated === true) {
-      return true;
-    }
-    
-    // If the note has SVG content but no isMigrated flag, it might be an old migrated note
-    // Check if it's SVG content (migrated notes are always SVG)
-    if (noteData.svg && typeof noteData.svg === 'string') {
-      // Check if it contains SVG markup and has text elements (typical of migrated notes)
-      if (noteData.svg.includes('<svg') && noteData.svg.includes('<text')) {
-        // This looks like a migrated note - mark it as such for future reference
-        noteData.isMigrated = true;
-        return true;
-      }
-    }
-    
+    if (noteRuntime.isMigratedNoteByContent) return noteRuntime.isMigratedNoteByContent(noteData);
     return false;
   }
 
@@ -9552,9 +9535,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         `;
         editButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
-          // Use text overlay for text-based notes, canvas for SVG notes
+          // Use text overlay for text-based notes, canvas for SVG notes.
+          // Be defensive: render/edit as text when text payload exists but SVG payload is empty.
           const noteText = getNoteTextValue(noteData);
-          const isTextNote = getNoteTypeValue(noteData) === 'text';
+          const hasTextPayload = typeof noteText === 'string' && noteText.trim().length > 0;
+          const hasSvgPayload = typeof noteData.svg === 'string' && noteData.svg.trim().length > 0;
+          const isTextNote = getNoteTypeValue(noteData) === 'text' || (hasTextPayload && !hasSvgPayload);
           if (isTextNote) {
             textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
           } else {
@@ -9660,9 +9646,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         overflow-y: auto;
       `;
 
-      // Check if this is a text-based note or SVG-based note
+      // Check if this is a text-based note or SVG-based note.
+      // Be defensive against payload drift: if text exists and SVG is empty, treat as text.
       const noteText = getNoteTextValue(noteData);
-      const isTextNote = getNoteTypeValue(noteData) === 'text';
+      const hasTextPayload = typeof noteText === 'string' && noteText.trim().length > 0;
+      const hasSvgPayload = typeof noteData.svg === 'string' && noteData.svg.trim().length > 0;
+      const isTextNote = getNoteTypeValue(noteData) === 'text' || (hasTextPayload && !hasSvgPayload);
       
       let contentContainer;
       
@@ -9682,7 +9671,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           white-space: pre-wrap;
           word-wrap: break-word;
         `;
-        contentContainer.textContent = noteText;
+        contentContainer.textContent = noteText || '(No text payload)';
       } else {
         // Render SVG-based note (legacy handwriting)
         contentContainer = document.createElement('div');
