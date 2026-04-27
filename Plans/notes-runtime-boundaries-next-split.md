@@ -51,6 +51,9 @@ Last updated: 2026-04-20
   - `readNoteOfflineQueue`, `writeNoteOfflineQueue`, `enqueueNoteOfflineOp`
   - `getLocalNotesForCustomer`, `upsertLocalCustomerNote`, `removeLocalCustomerNote`
 - `js/app.js` now delegates those helpers to runtime wrappers using schema-prefixed storage keys.
+- Extracted migration-format helpers into `js/notesRuntime.js`:
+  - `appendNotesHtml`, `appendNotesCanvas`, `isMigratedNoteByContent`
+- `js/app.js` now delegates these helpers via runtime wrappers with fallback parity behavior.
 
 ## Success Criteria for Next Pass
 

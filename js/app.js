@@ -7005,6 +7005,9 @@
   }
 
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
+    if (noteRuntime.appendNotesHtml) {
+      return noteRuntime.appendNotesHtml(existingHtml, newHtml, timestamp, { escapeHtml });
+    }
     const ts = timestamp instanceof Date ? timestamp : new Date();
     const tsStr = ts.toLocaleString();
     const block = `<div class="note-entry"><div class="muted" style="font-size:12px;">${escapeHtml(tsStr)}</div>${newHtml}</div>`;
@@ -7013,12 +7016,7 @@
   }
 
   function appendNotesCanvas(existingImageData, newImageData, timestamp) {
-    const ts = timestamp instanceof Date ? timestamp : new Date();
-    const tsStr = ts.toLocaleString();
-    
-    // For canvas data, we'll create a simple HTML structure with the new image
-    // Since we can't easily combine canvas images, we'll just return the new one
-    // In a more sophisticated implementation, you might want to create a composite image
+    if (noteRuntime.appendNotesCanvas) return noteRuntime.appendNotesCanvas(existingImageData, newImageData, timestamp);
     return newImageData;
   }
 
@@ -7375,22 +7373,7 @@
 
   // Check if a note is a migrated note by content analysis
   function isMigratedNoteByContent(noteData) {
-    // If explicitly flagged as migrated, return true
-    if (noteData.isMigrated === true) {
-      return true;
-    }
-    
-    // If the note has SVG content but no isMigrated flag, it might be an old migrated note
-    // Check if it's SVG content (migrated notes are always SVG)
-    if (noteData.svg && typeof noteData.svg === 'string') {
-      // Check if it contains SVG markup and has text elements (typical of migrated notes)
-      if (noteData.svg.includes('<svg') && noteData.svg.includes('<text')) {
-        // This looks like a migrated note - mark it as such for future reference
-        noteData.isMigrated = true;
-        return true;
-      }
-    }
-    
+    if (noteRuntime.isMigratedNoteByContent) return noteRuntime.isMigratedNoteByContent(noteData);
     return false;
   }
 
