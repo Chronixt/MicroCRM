@@ -44,6 +44,9 @@ Last updated: 2026-04-20
   - `getNotePayloadForSync`, `buildNoteSyncSignature`, `buildDbNoteInputFromAnyNote`
   - `isDbBackedNoteSource`
 - Delegating wrappers in `js/app.js` now pass `formatDateYYYYMMDD` and `normalizeDateTimeToISO` into runtime helpers.
+- Extracted note recovery/debug UI handlers into `js/notesRecoveryUi.js`.
+- `index.html` now loads `js/notesRecoveryUi.js` before `js/app.js`.
+- `js/app.js` now delegates recovery handler binding via `window.NoteRecoveryUI.bindHandlers({ escapeHtml })`.
 
 ## Success Criteria for Next Pass
 
