@@ -186,6 +186,67 @@
       normalized === 'supabase-native';
   }
 
+  function readNoteOfflineQueue(queueKey) {
+    try {
+      const raw = localStorage.getItem(queueKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function writeNoteOfflineQueue(queueKey, queue) {
+    localStorage.setItem(queueKey, JSON.stringify(Array.isArray(queue) ? queue : []));
+  }
+
+  function enqueueNoteOfflineOp(queueKey, op) {
+    const queue = readNoteOfflineQueue(queueKey);
+    queue.push({
+      ...op,
+      opId: op.opId || `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      enqueuedAt: new Date().toISOString()
+    });
+    writeNoteOfflineQueue(queueKey, queue);
+  }
+
+  function getLocalNotesForCustomer(customerId, notesStorageKey = 'customerNotes') {
+    try {
+      const all = JSON.parse(localStorage.getItem(notesStorageKey) || '{}');
+      return Array.isArray(all[String(customerId)]) ? all[String(customerId)] : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function upsertLocalCustomerNote(customerId, note, notesStorageKey = 'customerNotes') {
+    try {
+      const key = String(customerId);
+      const all = JSON.parse(localStorage.getItem(notesStorageKey) || '{}');
+      const arr = Array.isArray(all[key]) ? all[key] : [];
+      const idKey = String(note && note.id != null ? note.id : '');
+      const idx = arr.findIndex((n) => String(n && n.id != null ? n.id : '') === idKey);
+      if (idx >= 0) arr[idx] = { ...arr[idx], ...note };
+      else arr.push(note);
+      all[key] = arr;
+      localStorage.setItem(notesStorageKey, JSON.stringify(all));
+    } catch (error) {
+      console.warn('Failed to upsert local customer note', error);
+    }
+  }
+
+  function removeLocalCustomerNote(customerId, noteId, notesStorageKey = 'customerNotes') {
+    try {
+      const key = String(customerId);
+      const all = JSON.parse(localStorage.getItem(notesStorageKey) || '{}');
+      const arr = Array.isArray(all[key]) ? all[key] : [];
+      all[key] = arr.filter((n) => String(n && n.id != null ? n.id : '') !== String(noteId));
+      localStorage.setItem(notesStorageKey, JSON.stringify(all));
+    } catch (error) {
+      console.warn('Failed to remove local customer note', error);
+    }
+  }
+
   window.NoteRuntime = Object.assign({}, window.NoteRuntime || {}, {
     escapeXmlText,
     isSerializedTextNoteSvg,
@@ -201,6 +262,12 @@
     getNotePayloadForSync,
     buildNoteSyncSignature,
     buildDbNoteInputFromAnyNote,
-    isDbBackedNoteSource
+    isDbBackedNoteSource,
+    readNoteOfflineQueue,
+    writeNoteOfflineQueue,
+    enqueueNoteOfflineOp,
+    getLocalNotesForCustomer,
+    upsertLocalCustomerNote,
+    removeLocalCustomerNote
   });
 })();

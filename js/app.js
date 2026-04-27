@@ -6859,36 +6859,29 @@
   }
 
   function readNoteOfflineQueue() {
-    try {
-      const raw = localStorage.getItem(NOTE_OFFLINE_QUEUE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
+    if (noteRuntime.readNoteOfflineQueue) return noteRuntime.readNoteOfflineQueue(NOTE_OFFLINE_QUEUE_KEY);
+    return [];
   }
 
   function writeNoteOfflineQueue(queue) {
-    localStorage.setItem(NOTE_OFFLINE_QUEUE_KEY, JSON.stringify(Array.isArray(queue) ? queue : []));
+    if (noteRuntime.writeNoteOfflineQueue) {
+      noteRuntime.writeNoteOfflineQueue(NOTE_OFFLINE_QUEUE_KEY, queue);
+    }
   }
 
   function enqueueNoteOfflineOp(op) {
+    if (noteRuntime.enqueueNoteOfflineOp) {
+      noteRuntime.enqueueNoteOfflineOp(NOTE_OFFLINE_QUEUE_KEY, op);
+      return;
+    }
     const queue = readNoteOfflineQueue();
-    queue.push({
-      ...op,
-      opId: op.opId || `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      enqueuedAt: new Date().toISOString()
-    });
+    queue.push(op);
     writeNoteOfflineQueue(queue);
   }
 
   function getLocalNotesForCustomer(customerId) {
-    try {
-      const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      return Array.isArray(all[String(customerId)]) ? all[String(customerId)] : [];
-    } catch (error) {
-      return [];
-    }
+    if (noteRuntime.getLocalNotesForCustomer) return noteRuntime.getLocalNotesForCustomer(customerId, 'customerNotes');
+    return [];
   }
 
   function getNotePayloadForSync(note) {
@@ -6922,30 +6915,14 @@
   }
 
   function upsertLocalCustomerNote(customerId, note) {
-    try {
-      const key = String(customerId);
-      const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      const arr = Array.isArray(all[key]) ? all[key] : [];
-      const idKey = String(note && note.id != null ? note.id : '');
-      const idx = arr.findIndex((n) => String(n && n.id != null ? n.id : '') === idKey);
-      if (idx >= 0) arr[idx] = { ...arr[idx], ...note };
-      else arr.push(note);
-      all[key] = arr;
-      localStorage.setItem('customerNotes', JSON.stringify(all));
-    } catch (error) {
-      console.warn('Failed to upsert local customer note', error);
+    if (noteRuntime.upsertLocalCustomerNote) {
+      noteRuntime.upsertLocalCustomerNote(customerId, note, 'customerNotes');
     }
   }
 
   function removeLocalCustomerNote(customerId, noteId) {
-    try {
-      const key = String(customerId);
-      const all = JSON.parse(localStorage.getItem('customerNotes') || '{}');
-      const arr = Array.isArray(all[key]) ? all[key] : [];
-      all[key] = arr.filter((n) => String(n && n.id != null ? n.id : '') !== String(noteId));
-      localStorage.setItem('customerNotes', JSON.stringify(all));
-    } catch (error) {
-      console.warn('Failed to remove local customer note', error);
+    if (noteRuntime.removeLocalCustomerNote) {
+      noteRuntime.removeLocalCustomerNote(customerId, noteId, 'customerNotes');
     }
   }
 
