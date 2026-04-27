@@ -39,6 +39,11 @@ Last updated: 2026-04-20
   - `serializeTextNoteToSvg`
 - `index.html` now loads `js/notesRuntime.js` before `js/app.js`.
 - `js/app.js` keeps existing function names as delegating wrappers for zero behavior-change migration.
+- Moved note sync helper cluster into `js/notesRuntime.js`:
+  - `parseNoteDateValue`, `noteSortTimestamp`, `noteSortId`, `compareNotesByCreatedDesc`
+  - `getNotePayloadForSync`, `buildNoteSyncSignature`, `buildDbNoteInputFromAnyNote`
+  - `isDbBackedNoteSource`
+- Delegating wrappers in `js/app.js` now pass `formatDateYYYYMMDD` and `normalizeDateTimeToISO` into runtime helpers.
 
 ## Success Criteria for Next Pass
 

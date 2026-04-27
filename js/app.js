@@ -7491,31 +7491,25 @@
   }
 
   function parseNoteDateValue(raw) {
+    if (noteRuntime.parseNoteDateValue) return noteRuntime.parseNoteDateValue(raw);
     if (!raw) return Number.NaN;
-    if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      return new Date(`${raw}T12:00:00.000Z`).getTime();
-    }
     return new Date(raw).getTime();
   }
 
   function noteSortTimestamp(note) {
-    const primary = parseNoteDateValue(note?.date);
-    if (Number.isFinite(primary)) return primary;
+    if (noteRuntime.noteSortTimestamp) return noteRuntime.noteSortTimestamp(note);
     const fallback = parseNoteDateValue(note?.createdAt ?? note?.created_at);
-    if (Number.isFinite(fallback)) return fallback;
-    return Number.NEGATIVE_INFINITY;
+    return Number.isFinite(fallback) ? fallback : Number.NEGATIVE_INFINITY;
   }
 
   function noteSortId(note) {
-    const idNum = Number(note?.id);
-    return Number.isFinite(idNum) ? idNum : Number.NEGATIVE_INFINITY;
+    if (noteRuntime.noteSortId) return noteRuntime.noteSortId(note);
+    return Number.NEGATIVE_INFINITY;
   }
 
   function compareNotesByCreatedDesc(a, b) {
-    const aTime = noteSortTimestamp(a);
-    const bTime = noteSortTimestamp(b);
-    if (aTime !== bTime) return bTime - aTime;
-    return noteSortId(b) - noteSortId(a);
+    if (noteRuntime.compareNotesByCreatedDesc) return noteRuntime.compareNotesByCreatedDesc(a, b);
+    return 0;
   }
 
   const NOTE_OFFLINE_QUEUE_KEY = `${STORAGE_PREFIX}noteOfflineQueue`;
@@ -7566,56 +7560,33 @@
   }
 
   function getNotePayloadForSync(note) {
-    const noteType = getNoteTypeValue(note);
-    const date = formatDateYYYYMMDD(note?.date || new Date());
-    const noteNumber = note?.noteNumber != null ? note.noteNumber : null;
-    const createdAt = note?.createdAt ? (normalizeDateTimeToISO(note.createdAt) || note.createdAt) : null;
-    const editedDate = note?.editedDate ? (normalizeDateTimeToISO(note.editedDate) || note.editedDate) : null;
-    const textValue = getNoteTextValue(note);
-    const svgValue = typeof note?.svg === 'string' ? note.svg : '';
-
-    if (noteType === 'text') {
-      const text = (textValue || '').trim();
-      if (!text) return null;
-      return { noteType: 'text', text, date, noteNumber, createdAt, editedDate, svg: null };
+    if (noteRuntime.getNotePayloadForSync) {
+      return noteRuntime.getNotePayloadForSync(note, {
+        formatDateYYYYMMDD,
+        normalizeDateTimeToISO
+      });
     }
-
-    const svg = (svgValue || '').trim();
-    if (!svg) return null;
-    return { noteType: 'svg', svg, date, noteNumber, createdAt, editedDate, text: '' };
+    return null;
   }
 
   function buildNoteSyncSignature(note) {
-    const payload = getNotePayloadForSync(note);
-    if (!payload) return null;
-    const base = `${payload.noteType}|${payload.date}|${payload.noteNumber ?? ''}`;
-    if (payload.noteType === 'text') {
-      return `${base}|text:${payload.text}`;
+    if (noteRuntime.buildNoteSyncSignature) {
+      return noteRuntime.buildNoteSyncSignature(note, {
+        formatDateYYYYMMDD,
+        normalizeDateTimeToISO
+      });
     }
-    return `${base}|svg:${payload.svg}`;
+    return null;
   }
 
   function buildDbNoteInputFromAnyNote(note, customerId) {
-    const payload = getNotePayloadForSync(note);
-    if (!payload) return null;
-    const numericCustomerId = parseInt(customerId, 10);
-    if (Number.isNaN(numericCustomerId)) return null;
-    const input = {
-      customerId: numericCustomerId,
-      date: payload.date,
-      noteNumber: payload.noteNumber,
-      createdAt: payload.createdAt || new Date().toISOString(),
-      editedDate: payload.editedDate || null,
-      noteType: payload.noteType
-    };
-    if (payload.noteType === 'text') {
-      input.text = payload.text;
-      input.textValue = payload.text;
-      input.svg = null;
-    } else {
-      input.svg = payload.svg;
+    if (noteRuntime.buildDbNoteInputFromAnyNote) {
+      return noteRuntime.buildDbNoteInputFromAnyNote(note, customerId, {
+        formatDateYYYYMMDD,
+        normalizeDateTimeToISO
+      });
     }
-    return input;
+    return null;
   }
 
   function upsertLocalCustomerNote(customerId, note) {
@@ -7720,11 +7691,8 @@
   }
 
   function isDbBackedNoteSource(source) {
-    const normalized = String(source || '').toLowerCase();
-    return normalized === 'indexeddb' ||
-      normalized === 'indexeddb-fallback' ||
-      normalized === 'supabase' ||
-      normalized === 'supabase-native';
+    if (noteRuntime.isDbBackedNoteSource) return noteRuntime.isDbBackedNoteSource(source);
+    return false;
   }
 
   function appendNotesHtml(existingHtml, newHtml, timestamp) {
