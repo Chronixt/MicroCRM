@@ -54,6 +54,12 @@ Last updated: 2026-04-20
 - Extracted migration-format helpers into `js/notesRuntime.js`:
   - `appendNotesHtml`, `appendNotesCanvas`, `isMigratedNoteByContent`
 - `js/app.js` now delegates these helpers via runtime wrappers with fallback parity behavior.
+- Extracted migration/load helpers into `js/notesMigrationRuntime.js`:
+  - `markExistingMigratedNotes`
+  - `convertHtmlNotesToSVG`
+  - `migrateOldNotes`
+  - `loadExistingNotes`
+- `js/app.js` now delegates those migration/load paths via runtime wrappers.
 
 ## Success Criteria for Next Pass
 
