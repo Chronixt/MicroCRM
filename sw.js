@@ -1,5 +1,5 @@
 // CRMicro Service Worker
-const CACHE_NAME = 'crmicro-v1.0.2';
+const CACHE_NAME = 'crmicro-v1.0.3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -7,6 +7,11 @@ const urlsToCache = [
   '/js/productConfig.js',
   '/js/app.js',
   '/js/db.js',
+  '/js/db-supabase.js',
+  '/js/supabaseClient.js',
+  '/js/notesRuntime.js',
+  '/js/notesMigrationRuntime.js',
+  '/js/notesRecoveryUi.js',
   '/assets/beautician-bg.png'
 ];
 
@@ -31,10 +36,30 @@ self.addEventListener('install', (event) => {
 
 // Fetch event - serve from cache when offline, but always check network first for JS/CSS
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+
   const url = new URL(event.request.url);
   const isJS = url.pathname.endsWith('.js');
   const isCSS = url.pathname.endsWith('.css');
-  const isHTML = url.pathname.endsWith('.html') || url.pathname === '/';
+  const isHTML = event.request.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname === '/';
+
+  // For HTML/app shell, prefer network to avoid stale startup bundles.
+  if (isHTML) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
   
   // For JS and CSS files, always try network first to get updates
   if (isJS || isCSS) {
