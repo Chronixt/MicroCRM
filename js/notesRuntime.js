@@ -279,6 +279,9 @@
     if (noteData.isMigrated === true) {
       return true;
     }
+    if (isSerializedTextNoteSvg(noteData.svg)) {
+      return false;
+    }
     if (noteData.svg && typeof noteData.svg === 'string') {
       if (noteData.svg.includes('<svg') && noteData.svg.includes('<text')) {
         noteData.isMigrated = true;
