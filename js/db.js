@@ -1153,11 +1153,15 @@
   }
 
   function getNotesByCustomerId(customerId) {
+    const numericCustomerId = parseInt(customerId, 10);
+    if (Number.isNaN(numericCustomerId)) {
+      return Promise.resolve([]);
+    }
     return runTransaction(['notes'], 'readonly', (notes) => (
       new Promise((resolve, reject) => {
         const results = [];
         const index = notes.index('customerId');
-        const range = IDBKeyRange.only(parseInt(customerId));
+        const range = IDBKeyRange.only(numericCustomerId);
         const req = index.openCursor(range);
         req.onsuccess = (e) => {
           const cursor = e.target.result;
