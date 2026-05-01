@@ -1,4 +1,5 @@
 exports.handler = async function handler() {
+  // Public, browser-safe runtime settings only.
   const config = {
     GIT_BRANCH: process.env.BRANCH || process.env.HEAD || '',
     NETLIFY_BRANCH: process.env.BRANCH || '',
@@ -6,6 +7,8 @@ exports.handler = async function handler() {
     ACTIVE_PRODUCT: process.env.ACTIVE_PRODUCT || '',
     PRODUCT_PROFILE: process.env.PRODUCT_PROFILE || '',
     SUPABASE_URL: process.env.SUPABASE_URL || '',
+    SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '',
+    // Legacy fallback name (safe to keep during migration).
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
     SUPABASE_SCHEMA: process.env.SUPABASE_SCHEMA || '',
     SUPABASE_DEV_SCHEMA: process.env.SUPABASE_DEV_SCHEMA || '',
@@ -21,6 +24,13 @@ exports.handler = async function handler() {
     ADDRESS_LOOKUP_COUNTRY_CODES: process.env.ADDRESS_LOOKUP_COUNTRY_CODES || '',
     GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || ''
   };
+
+  const blockedNamePattern = /(SECRET|SERVICE_ROLE|PRIVATE_KEY|PASSWORD)/i;
+  for (const key of Object.keys(config)) {
+    if (blockedNamePattern.test(key)) {
+      throw new Error(`Unsafe runtime config key detected: ${key}`);
+    }
+  }
 
   const body = `;(function(){\n${Object.entries(config)
     .map(([key, value]) => `window.${key} = ${JSON.stringify(value)};`)
