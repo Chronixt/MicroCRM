@@ -1,4 +1,5 @@
 exports.handler = async function handler() {
+  // Public, browser-safe runtime settings only.
   const config = {
     GIT_BRANCH: process.env.BRANCH || process.env.HEAD || '',
     NETLIFY_BRANCH: process.env.BRANCH || '',
@@ -21,6 +22,13 @@ exports.handler = async function handler() {
     ADDRESS_LOOKUP_COUNTRY_CODES: process.env.ADDRESS_LOOKUP_COUNTRY_CODES || '',
     GOOGLE_PLACES_API_KEY: process.env.GOOGLE_PLACES_API_KEY || ''
   };
+
+  const blockedNamePattern = /(SECRET|SERVICE_ROLE|PRIVATE_KEY|PASSWORD)/i;
+  for (const key of Object.keys(config)) {
+    if (blockedNamePattern.test(key)) {
+      throw new Error(`Unsafe runtime config key detected: ${key}`);
+    }
+  }
 
   const body = `;(function(){\n${Object.entries(config)
     .map(([key, value]) => `window.${key} = ${JSON.stringify(value)};`)
