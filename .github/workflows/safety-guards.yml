@@ -1,0 +1,68 @@
+name: Safety Guards
+
+on:
+  pull_request:
+    branches:
+      - main
+      - hairdresser-crm
+      - tradie-crm
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Block committed credential patterns
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan tracked files for key patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Exclude known templates/examples and generated folders.
+          EXCLUDES=(
+            './node_modules/*'
+            './playwright-report/*'
+            './test-results/*'
+            './js/config.local.example.js'
+          )
+
+          JWT_RE='eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+          GOOGLE_RE='AIza[0-9A-Za-z_-]{20,}'
+          SUPABASE_SECRET_RE='sb_secret_[A-Za-z0-9_-]{20,}'
+          SECRET_VAR_RE='SUPABASE_SECRET_KEY'
+
+          if grep -R -nE --exclude-dir=node_modules --exclude-dir=playwright-report --exclude-dir=test-results --exclude='config.local.example.js' "$JWT_RE|$GOOGLE_RE|$SUPABASE_SECRET_RE|$SECRET_VAR_RE" . ; then
+            echo "Credential-like pattern found in tracked files."
+            exit 1
+          fi
+
+  block-schema-bootstrap-file-edits:
+    name: Block supabase/schema.sql edits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block direct edits to schema bootstrap file
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              { owner, repo, pull_number: pr.number, per_page: 100 }
+            );
+
+            const touched = files.map(f => f.filename);
+            if (touched.includes('supabase/schema.sql')) {
+              core.setFailed([
+                'Direct edits to supabase/schema.sql are blocked.',
+                'Use versioned scripts in supabase/migrations/ for production-safe changes.'
+              ].join('\n'));
+            } else {
+              core.info('No schema bootstrap file edits detected.');
+            }

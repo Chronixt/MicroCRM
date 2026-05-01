@@ -39,8 +39,8 @@
       return cachedClient;
     }
     const url = window.SUPABASE_URL || '';
-    const key = window.SUPABASE_ANON_KEY || '';
-    if (!url || !key) throw new Error('Supabase: SUPABASE_URL and SUPABASE_ANON_KEY must be set when USE_SUPABASE is true.');
+    const key = window.SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_ANON_KEY || '';
+    if (!url || !key) throw new Error('Supabase: SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY) must be set when USE_SUPABASE is true.');
     if (typeof supabase === 'undefined') throw new Error('Supabase: supabase-js not loaded.');
     cachedClient = supabase.createClient(url, key, { db: { schema: SCHEMA } });
     window.SupabaseClient = cachedClient;
