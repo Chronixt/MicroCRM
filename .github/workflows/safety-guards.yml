@@ -33,8 +33,10 @@ jobs:
 
           JWT_RE='eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
           GOOGLE_RE='AIza[0-9A-Za-z_-]{20,}'
+          SUPABASE_SECRET_RE='sb_secret_[A-Za-z0-9_-]{20,}'
+          SECRET_VAR_RE='SUPABASE_SECRET_KEY'
 
-          if grep -R -nE --exclude-dir=node_modules --exclude-dir=playwright-report --exclude-dir=test-results --exclude='config.local.example.js' "$JWT_RE|$GOOGLE_RE" . ; then
+          if grep -R -nE --exclude-dir=node_modules --exclude-dir=playwright-report --exclude-dir=test-results --exclude='config.local.example.js' "$JWT_RE|$GOOGLE_RE|$SUPABASE_SECRET_RE|$SECRET_VAR_RE" . ; then
             echo "Credential-like pattern found in tracked files."
             exit 1
           fi

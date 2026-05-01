@@ -6,7 +6,9 @@
   'use strict';
 
   var SUPABASE_URL = window.SUPABASE_URL || '';
+  var SUPABASE_PUBLISHABLE_KEY = window.SUPABASE_PUBLISHABLE_KEY || '';
   var SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
+  var SUPABASE_CLIENT_KEY = SUPABASE_PUBLISHABLE_KEY || SUPABASE_ANON_KEY;
   var productConfig = window.ProductConfig || {};
   var activeProduct = String(window.ACTIVE_PRODUCT || window.PRODUCT_PROFILE || productConfig.activeProduct || '').toLowerCase();
   var schema =
@@ -22,8 +24,8 @@
     return;
   }
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.warn('Supabase credentials missing. Set SUPABASE_URL and SUPABASE_ANON_KEY.');
+  if (!SUPABASE_URL || !SUPABASE_CLIENT_KEY) {
+    console.warn('Supabase credentials missing. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY).');
     window.SupabaseClient = null;
     return;
   }
@@ -35,7 +37,7 @@
   }
 
   try {
-    window.SupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    window.SupabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_CLIENT_KEY, {
       db: { schema: schema }
     });
     window.__SUPABASE_CLIENT_URL = SUPABASE_URL;

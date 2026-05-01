@@ -7,6 +7,8 @@ exports.handler = async function handler() {
     ACTIVE_PRODUCT: process.env.ACTIVE_PRODUCT || '',
     PRODUCT_PROFILE: process.env.PRODUCT_PROFILE || '',
     SUPABASE_URL: process.env.SUPABASE_URL || '',
+    SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '',
+    // Legacy fallback name (safe to keep during migration).
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
     SUPABASE_SCHEMA: process.env.SUPABASE_SCHEMA || '',
     SUPABASE_DEV_SCHEMA: process.env.SUPABASE_DEV_SCHEMA || '',
