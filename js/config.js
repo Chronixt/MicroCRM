@@ -1,6 +1,6 @@
 /**
  * App configuration. Supabase credentials are loaded from js/config.local.js (gitignored).
- * Copy js/config.local.example.js to js/config.local.js and add your URL and anon key.
+ * Copy js/config.local.example.js to js/config.local.js and add your URL and publishable key.
  * If config.local.js is missing or empty, the app uses IndexedDB.
  */
 (function () {
@@ -49,8 +49,10 @@
   }
 
   window.SUPABASE_URL = window.SUPABASE_URL || '';
+  window.SUPABASE_PUBLISHABLE_KEY = window.SUPABASE_PUBLISHABLE_KEY || '';
   window.SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || '';
-  var hasCredentials = !!(window.SUPABASE_URL && window.SUPABASE_ANON_KEY);
+  var clientKey = window.SUPABASE_PUBLISHABLE_KEY || window.SUPABASE_ANON_KEY;
+  var hasCredentials = !!(window.SUPABASE_URL && clientKey);
   window.USE_SUPABASE = window.USE_SUPABASE !== undefined ? window.USE_SUPABASE : hasCredentials;
   window.REQUIRE_LOGIN = window.REQUIRE_LOGIN !== undefined ? window.REQUIRE_LOGIN : window.USE_SUPABASE;
   window.ADDRESS_LOOKUP_ENABLED = window.ADDRESS_LOOKUP_ENABLED !== undefined ? window.ADDRESS_LOOKUP_ENABLED : false;
