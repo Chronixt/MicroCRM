@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS notes (
   note_type   TEXT NOT NULL CHECK (note_type IN ('text', 'svg')),
   date        DATE,
   note_number INT,
+  is_pinned   BOOLEAN NOT NULL DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW(),
   edited_date DATE,
@@ -96,6 +97,7 @@ CREATE TABLE IF NOT EXISTS notes (
 
 CREATE INDEX IF NOT EXISTS idx_notes_customer_id ON notes (customer_id);
 CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes (created_at);
+CREATE INDEX IF NOT EXISTS idx_notes_customer_pinned ON notes (customer_id, is_pinned);
 
 -- -----------------------------------------------------------------------------
 -- 5. NOTE VERSIONS (version history for notes)
@@ -120,6 +122,7 @@ CREATE INDEX IF NOT EXISTS idx_note_versions_saved_at ON note_versions (saved_at
 
 ALTER TABLE notes ADD COLUMN IF NOT EXISTS text_value TEXT;
 ALTER TABLE notes ADD COLUMN IF NOT EXISTS note_type TEXT;
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS text_value TEXT;
 ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS note_type TEXT;
 
