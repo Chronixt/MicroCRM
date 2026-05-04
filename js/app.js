@@ -7128,6 +7128,24 @@
     });
   });
   window.addEventListener('load', async () => {
+    function showBlockingStartupError(title, message, details) {
+      const safeTitle = String(title || 'Startup error');
+      const safeMessage = String(message || 'The app could not initialize safely.');
+      const safeDetails = details ? String(details) : '';
+      document.body.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:#0b1220;color:#e5e7eb;">
+          <div style="max-width:760px;width:100%;border:1px solid #334155;border-radius:14px;padding:20px;background:#111827;box-shadow:0 18px 40px rgba(0,0,0,0.35);">
+            <h2 style="margin:0 0 10px 0;color:#f59e0b;font-size:22px;">${safeTitle}</h2>
+            <p style="margin:0 0 12px 0;line-height:1.5;">${safeMessage}</p>
+            ${safeDetails ? `<pre style="margin:0 0 14px 0;padding:12px;border-radius:10px;background:#0f172a;border:1px solid #1f2937;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#cbd5e1;">${safeDetails}</pre>` : ''}
+            <button id="startup-reload-btn" style="padding:10px 14px;border:none;border-radius:8px;background:#22d3ee;color:#0f172a;font-weight:700;cursor:pointer;">Reload App</button>
+          </div>
+        </div>
+      `;
+      const reloadBtn = document.getElementById('startup-reload-btn');
+      reloadBtn?.addEventListener('click', () => window.location.reload());
+    }
+
     applyProductMetadata();
     applyProductTheme();
     await initializeStorageDriverLayer();
@@ -7137,6 +7155,24 @@
       return;
     }
     await refreshRuntimeUserInfo();
+
+    if (productConfig.useSupabase) {
+      try {
+        const api = requireDataApi();
+        if (api && typeof api.runRuntimePreflight === 'function') {
+          await api.runRuntimePreflight();
+        }
+      } catch (error) {
+        const details = (error && (error.details || error.message)) || '';
+        showBlockingStartupError(
+          'Schema Mismatch Detected',
+          'The selected product profile does not match the active Supabase schema. This can cause data corruption, so startup was blocked.',
+          details
+        );
+        return;
+      }
+    }
+
     await flushQueuedNoteOperations();
 
     // Check for app lock (tradie edition)

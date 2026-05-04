@@ -31,6 +31,7 @@
   var cachedClient = null;
   let cachedTypedNoteColumns = null;
   let cachedTypedNoteVersionColumns = null;
+  let runtimePreflightPromise = null;
 
   function getClient() {
     if (cachedClient) return cachedClient;
@@ -180,6 +181,52 @@
     if (probe.error) throwIfError(probe);
     cachedTypedNoteVersionColumns = true;
     return true;
+  }
+
+  async function runRuntimePreflight(options) {
+    const force = !!(options && options.force);
+    if (runtimePreflightPromise && !force) return runtimePreflightPromise;
+
+    runtimePreflightPromise = (async () => {
+      const supabase = getClient();
+      const appointmentProbeColumns = APPOINTMENT_COLUMNS.join(',');
+      const appointmentProbe = await supabase
+        .from('appointments')
+        .select(appointmentProbeColumns)
+        .limit(1);
+
+      if (appointmentProbe.error) {
+        if (isMissingColumnError(appointmentProbe.error)) {
+          const modeLabel = SUPPORTS_JOB_PIPELINE ? 'job-pipeline profile' : 'base profile';
+          const err = new Error(
+            `Schema/profile mismatch for appointments (${modeLabel}). Missing one or more required columns: ${appointmentProbeColumns}`
+          );
+          err.code = 'SCHEMA_MISMATCH_APPOINTMENTS';
+          err.details = appointmentProbe.error.message || '';
+          throw err;
+        }
+        throwIfError(appointmentProbe);
+      }
+
+      const hasNotesTyped = await hasTypedNoteColumns();
+      const hasVersionsTyped = await hasTypedNoteVersionColumns();
+
+      return {
+        ok: true,
+        schema: SCHEMA,
+        supportsJobPipeline: SUPPORTS_JOB_PIPELINE,
+        appointmentColumns: APPOINTMENT_COLUMNS.slice(),
+        notesTypedColumnsPresent: hasNotesTyped,
+        noteVersionsTypedColumnsPresent: hasVersionsTyped
+      };
+    })();
+
+    try {
+      return await runtimePreflightPromise;
+    } catch (error) {
+      runtimePreflightPromise = null;
+      throw error;
+    }
   }
 
   function dataURLToBlob(dataUrl, fallbackType) {
@@ -1767,6 +1814,7 @@
     signInWithPassword,
     signOut,
     onAuthStateChange,
+    runRuntimePreflight,
     claimUnownedData,
     deleteMyData,
     dbName: productConfig.dbName || profileConfig.dbName || 'crm-db',
