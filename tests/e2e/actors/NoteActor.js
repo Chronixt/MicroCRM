@@ -15,6 +15,15 @@ class NoteActor {
     await this.expectSingleNoteWithText(text);
   }
 
+  async createTextNoteOnly(text) {
+    await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
+    await this.page.getByTestId('add-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeVisible();
+    await this.page.getByTestId('note-textarea').fill(text);
+    await this.page.getByTestId('save-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeHidden();
+  }
+
   async createTextNotePinned(text) {
     await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
     await this.page.getByTestId('add-note-button').click();
@@ -49,6 +58,12 @@ class NoteActor {
     await this.page.getByTestId('pin-note-button').first().click();
   }
 
+  async pinRegularNoteByNumber(noteNumber) {
+    const note = this.page.getByTestId('note-entry').filter({ hasText: `Note ${noteNumber} -` });
+    await expect(note).toHaveCount(1);
+    await note.getByTestId('pin-note-button').click();
+  }
+
   async unpinFirstPinnedNote() {
     await this.page.getByTestId('unpin-note-button').first().click();
   }
@@ -79,6 +94,19 @@ class NoteActor {
 
   async expectPinnedCount(count) {
     await expect(this.page.getByTestId('pinned-note-entry')).toHaveCount(count);
+  }
+
+  async expectRegularNoteHeaders(noteNumbers) {
+    await expect(this.page.getByTestId('note-entry')).toHaveCount(noteNumbers.length);
+    const headers = await this.page.getByTestId('note-entry').locator('.note-header').allTextContents();
+    for (const noteNumber of noteNumbers) {
+      expect(headers.some((text) => text.includes(`Note ${noteNumber} -`))).toBe(true);
+    }
+  }
+
+  async expectPinnedEditHeader(noteNumber) {
+    const pinned = this.page.getByTestId('pinned-note-entry').filter({ hasText: `Note ${noteNumber} -` });
+    await expect(pinned).toHaveCount(1);
   }
 
   async expectPinLimitDisabledForNewNote() {
