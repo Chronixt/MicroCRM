@@ -21,3 +21,22 @@ test('text note toolbar formats bold text and bullet lists', async ({ page }) =>
   await notes.expectFormattedTextNote();
   await app.assertNoFatalErrors();
 });
+
+test('text note editor continues bullet and numbered lists on enter', async ({ page }) => {
+  const app = new AppActor(page);
+  const customers = new CustomerActor(page);
+  const notes = new NoteActor(page);
+  const stamp = Date.now();
+  const customer = {
+    firstName: 'List',
+    lastName: `Continue ${stamp}`,
+    contactNumber: `0445${String(stamp).slice(-6)}`,
+    addressLine1: `${String(stamp).slice(-3)} List Street`
+  };
+
+  await app.openClean();
+  await customers.createCustomer(customer);
+  await notes.createAutoContinuedListNote();
+  await notes.expectAutoContinuedListNote();
+  await app.assertNoFatalErrors();
+});

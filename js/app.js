@@ -10817,6 +10817,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
           this.handleSave();
+          return;
+        }
+        if (this.handleListContinuationKeydown(e)) {
+          return;
         }
         // Escape to cancel
         if (e.key === 'Escape') {
@@ -10846,6 +10850,55 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.previewContent.querySelectorAll('code').forEach((code) => {
         code.style.cssText = 'background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:1px 4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.92em;';
       });
+    }
+
+    handleListContinuationKeydown(e) {
+      if (!this.textarea || e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
+        return false;
+      }
+
+      const textarea = this.textarea;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      if (start !== end) return false;
+
+      const value = textarea.value;
+      const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+      const currentLine = value.slice(lineStart, start);
+      const unorderedMatch = currentLine.match(/^(\s*)([-*])\s*(.*)$/);
+      const orderedMatch = currentLine.match(/^(\s*)(\d+)([.)])\s*(.*)$/);
+      if (!unorderedMatch && !orderedMatch) return false;
+
+      e.preventDefault();
+
+      if (unorderedMatch) {
+        const [, indent, marker, content] = unorderedMatch;
+        if (!content.trim()) {
+          textarea.value = value.slice(0, lineStart) + value.slice(start);
+          textarea.setSelectionRange(lineStart, lineStart);
+        } else {
+          const insertion = `\n${indent}${marker} `;
+          textarea.value = value.slice(0, start) + insertion + value.slice(start);
+          const nextCursor = start + insertion.length;
+          textarea.setSelectionRange(nextCursor, nextCursor);
+        }
+      } else {
+        const [, indent, number, punctuation, content] = orderedMatch;
+        if (!content.trim()) {
+          textarea.value = value.slice(0, lineStart) + value.slice(start);
+          textarea.setSelectionRange(lineStart, lineStart);
+        } else {
+          const nextNumber = Number(number) + 1;
+          const insertion = `\n${indent}${nextNumber}${punctuation} `;
+          textarea.value = value.slice(0, start) + insertion + value.slice(start);
+          const nextCursor = start + insertion.length;
+          textarea.setSelectionRange(nextCursor, nextCursor);
+        }
+      }
+
+      textarea.focus();
+      this.updateFormattingPreview();
+      return true;
     }
 
     createFormattingToolbar() {
