@@ -1698,6 +1698,12 @@
   function serializeTextNoteToSvg(textValue) {
     return noteRuntime.serializeTextNoteToSvg ? noteRuntime.serializeTextNoteToSvg(textValue) : '';
   }
+  function renderFormattedTextNoteHtml(textValue) {
+    if (noteRuntime.renderFormattedTextNoteHtml) return noteRuntime.renderFormattedTextNoteHtml(textValue);
+    const div = document.createElement('div');
+    div.textContent = String(textValue || '');
+    return div.innerHTML;
+  }
   const PINNED_NOTES_LIMIT = 5;
 
   function getStableNoteNumber(note) {
@@ -9696,10 +9702,20 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           color: var(--text);
           font-size: 15px;
           line-height: 1.6;
-          white-space: pre-wrap;
+          white-space: normal;
           word-wrap: break-word;
         `;
-        contentContainer.textContent = noteText || '(No text payload)';
+        contentContainer.innerHTML = noteText ? renderFormattedTextNoteHtml(noteText) : '(No text payload)';
+        contentContainer.querySelectorAll('ul, ol').forEach((list) => {
+          list.style.margin = '0 0 0 20px';
+          list.style.padding = '0';
+        });
+        contentContainer.querySelectorAll('li').forEach((item) => {
+          item.style.margin = '4px 0';
+        });
+        contentContainer.querySelectorAll('code').forEach((code) => {
+          code.style.cssText = 'background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:1px 4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.92em;';
+        });
         return contentContainer;
       }
 
@@ -10575,6 +10591,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.onSaveCallback = null;
       this.pinCheckbox = null;
       this.pinStatus = null;
+      this.previewContainer = null;
+      this.previewContent = null;
     }
 
     show(customerId = null, editingNote = null) {
@@ -10689,6 +10707,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         min-height: 0;
       `;
 
+      const formatToolbar = this.createFormattingToolbar();
+      textareaContainer.appendChild(formatToolbar);
+
       this.textarea = document.createElement('textarea');
       this.textarea.placeholder = 'Type your note here...';
       this.textarea.setAttribute('data-testid', 'note-textarea');
@@ -10728,19 +10749,78 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       textareaContainer.appendChild(this.textarea);
 
+      const previewContainer = document.createElement('div');
+      previewContainer.setAttribute('data-testid', 'note-format-preview');
+      previewContainer.style.cssText = `
+        margin-top: 12px;
+        flex: 0 0 34%;
+        min-height: 120px;
+        max-height: 34%;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 12px;
+        background: rgba(255,255,255,0.035);
+        overflow: hidden;
+      `;
+
+      const previewHeader = document.createElement('div');
+      previewHeader.textContent = 'Preview';
+      previewHeader.style.cssText = `
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      `;
+
+      this.previewContent = document.createElement('div');
+      this.previewContent.style.cssText = `
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 16px;
+        color: var(--text);
+        font-size: 15px;
+        line-height: 1.6;
+        word-wrap: break-word;
+      `;
+
+      previewContainer.appendChild(previewHeader);
+      previewContainer.appendChild(this.previewContent);
+      this.previewContainer = previewContainer;
+      textareaContainer.appendChild(previewContainer);
+
       this.overlay.appendChild(header);
       this.overlay.appendChild(textareaContainer);
 
       // Event listeners
       cancelBtn.addEventListener('click', () => this.hide());
       saveBtn.addEventListener('click', () => this.handleSave());
+      this.textarea.addEventListener('input', () => this.updateFormattingPreview());
       
       // Handle keyboard shortcuts
       this.textarea.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+          e.preventDefault();
+          this.applyTextFormat('bold');
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          this.applyTextFormat('italic');
+          return;
+        }
         // Ctrl/Cmd + Enter to save
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
           this.handleSave();
+          return;
+        }
+        if (this.handleListContinuationKeydown(e)) {
+          return;
         }
         // Escape to cancel
         if (e.key === 'Escape') {
@@ -10750,7 +10830,168 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       });
 
       document.body.appendChild(this.overlay);
+      this.updateFormattingPreview();
       configurePinCheckbox(this.pinCheckbox, this.pinStatus, this.customerId, this.editingNote);
+    }
+
+    updateFormattingPreview() {
+      if (!this.previewContent || !this.textarea) return;
+      const text = this.textarea.value;
+      this.previewContent.innerHTML = text.trim()
+        ? renderFormattedTextNoteHtml(text)
+        : '<span style="color:var(--muted);">Formatting preview appears here.</span>';
+      this.previewContent.querySelectorAll('ul, ol').forEach((list) => {
+        list.style.margin = '0 0 0 20px';
+        list.style.padding = '0';
+      });
+      this.previewContent.querySelectorAll('li').forEach((item) => {
+        item.style.margin = '4px 0';
+      });
+      this.previewContent.querySelectorAll('code').forEach((code) => {
+        code.style.cssText = 'background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:1px 4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.92em;';
+      });
+    }
+
+    handleListContinuationKeydown(e) {
+      if (!this.textarea || e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
+        return false;
+      }
+
+      const textarea = this.textarea;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      if (start !== end) return false;
+
+      const value = textarea.value;
+      const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+      const currentLine = value.slice(lineStart, start);
+      const unorderedMatch = currentLine.match(/^(\s*)([-*])\s+(.*)$/);
+      const orderedMatch = currentLine.match(/^(\s*)(\d+)([.)])\s+(.*)$/);
+      if (!unorderedMatch && !orderedMatch) return false;
+
+      e.preventDefault();
+
+      if (unorderedMatch) {
+        const [, indent, marker, content] = unorderedMatch;
+        if (!content.trim()) {
+          textarea.value = value.slice(0, lineStart) + value.slice(start);
+          textarea.setSelectionRange(lineStart, lineStart);
+        } else {
+          const insertion = `\n${indent}${marker} `;
+          textarea.value = value.slice(0, start) + insertion + value.slice(start);
+          const nextCursor = start + insertion.length;
+          textarea.setSelectionRange(nextCursor, nextCursor);
+        }
+      } else {
+        const [, indent, number, punctuation, content] = orderedMatch;
+        if (!content.trim()) {
+          textarea.value = value.slice(0, lineStart) + value.slice(start);
+          textarea.setSelectionRange(lineStart, lineStart);
+        } else {
+          const nextNumber = Number(number) + 1;
+          const insertion = `\n${indent}${nextNumber}${punctuation} `;
+          textarea.value = value.slice(0, start) + insertion + value.slice(start);
+          const nextCursor = start + insertion.length;
+          textarea.setSelectionRange(nextCursor, nextCursor);
+        }
+      }
+
+      textarea.focus();
+      this.updateFormattingPreview();
+      return true;
+    }
+
+    createFormattingToolbar() {
+      const toolbar = document.createElement('div');
+      toolbar.setAttribute('data-testid', 'note-format-toolbar');
+      toolbar.style.cssText = `
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+        flex-shrink: 0;
+      `;
+
+      const buttons = [
+        { label: 'B', title: 'Bold', action: 'bold', testId: 'note-format-bold', fontWeight: '700' },
+        { label: 'I', title: 'Italic', action: 'italic', testId: 'note-format-italic', fontStyle: 'italic' },
+        { label: '•', title: 'Bullet list', action: 'bullet', testId: 'note-format-bullet' },
+        { label: '1.', title: 'Numbered list', action: 'numbered', testId: 'note-format-numbered' }
+      ];
+
+      buttons.forEach((config) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = config.label;
+        button.title = config.title;
+        button.setAttribute('data-testid', config.testId);
+        button.style.cssText = `
+          min-width: 36px;
+          height: 34px;
+          border-radius: 6px;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(255,255,255,0.08);
+          color: var(--text);
+          cursor: pointer;
+          font-size: 15px;
+          font-weight: ${config.fontWeight || '600'};
+          font-style: ${config.fontStyle || 'normal'};
+          line-height: 1;
+        `;
+        button.addEventListener('click', () => this.applyTextFormat(config.action));
+        button.addEventListener('mouseenter', () => {
+          button.style.background = 'rgba(255,255,255,0.14)';
+        });
+        button.addEventListener('mouseleave', () => {
+          button.style.background = 'rgba(255,255,255,0.08)';
+        });
+        toolbar.appendChild(button);
+      });
+
+      return toolbar;
+    }
+
+    applyTextFormat(action) {
+      if (!this.textarea) return;
+      const textarea = this.textarea;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      const selected = value.slice(start, end);
+
+      const replaceSelection = (replacement, nextStart, nextEnd) => {
+        textarea.value = value.slice(0, start) + replacement + value.slice(end);
+        textarea.focus();
+        textarea.setSelectionRange(nextStart, nextEnd);
+        this.updateFormattingPreview();
+      };
+
+      if (action === 'bold' || action === 'italic') {
+        const marker = action === 'bold' ? '**' : '*';
+        const fallback = action === 'bold' ? 'bold text' : 'italic text';
+        const innerText = selected || fallback;
+        const replacement = `${marker}${innerText}${marker}`;
+        const innerStart = start + marker.length;
+        replaceSelection(replacement, innerStart, innerStart + innerText.length);
+        return;
+      }
+
+      if (action === 'bullet' || action === 'numbered') {
+        const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+        const lineEndSearch = value.indexOf('\n', end);
+        const lineEnd = lineEndSearch === -1 ? value.length : lineEndSearch;
+        const block = value.slice(lineStart, lineEnd);
+        const lines = block.length > 0 ? block.split('\n') : [''];
+        const formatted = lines.map((line, index) => {
+          const clean = line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, '');
+          return action === 'bullet' ? `- ${clean}` : `${index + 1}. ${clean}`;
+        }).join('\n');
+        textarea.value = value.slice(0, lineStart) + formatted + value.slice(lineEnd);
+        textarea.focus();
+        textarea.setSelectionRange(lineStart, lineStart + formatted.length);
+        this.updateFormattingPreview();
+      }
     }
 
     extractTextFromSVG(svgString) {
@@ -10977,6 +11218,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.customerId = null;
       this.pinCheckbox = null;
       this.pinStatus = null;
+      this.previewContainer = null;
+      this.previewContent = null;
     }
   }
 

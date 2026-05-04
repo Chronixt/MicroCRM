@@ -11,6 +11,75 @@
       .replace(/'/g, '&#39;');
   }
 
+  function escapeHtmlText(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderFormattedInlineText(value) {
+    let html = escapeHtmlText(value);
+    const codePlaceholders = [];
+    html = html.replace(/`([^`]+)`/g, function (_match, code) {
+      const token = `@@NOTE_CODE_${codePlaceholders.length}@@`;
+      codePlaceholders.push(`<code>${code}</code>`);
+      return token;
+    });
+    html = html
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+    codePlaceholders.forEach(function (replacement, index) {
+      html = html.replace(`@@NOTE_CODE_${index}@@`, replacement);
+    });
+    return html;
+  }
+
+  function renderFormattedTextNoteHtml(textValue) {
+    const text = String(textValue || '').replace(/\r\n/g, '\n');
+    if (!text.trim()) return escapeHtmlText(text);
+    const lines = text.split('\n');
+    const htmlParts = [];
+    let openList = null;
+
+    function closeList() {
+      if (openList) {
+        htmlParts.push(`</${openList}>`);
+        openList = null;
+      }
+    }
+
+    lines.forEach(function (line) {
+      const unorderedMatch = line.match(/^\s*[-*]\s+(.+)$/);
+      const orderedMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+
+      if (unorderedMatch || orderedMatch) {
+        const listType = unorderedMatch ? 'ul' : 'ol';
+        if (openList !== listType) {
+          closeList();
+          htmlParts.push(`<${listType}>`);
+          openList = listType;
+        }
+        htmlParts.push(`<li>${renderFormattedInlineText((unorderedMatch || orderedMatch)[1])}</li>`);
+        return;
+      }
+
+      closeList();
+      if (line.trim() === '') {
+        htmlParts.push('<br>');
+      } else {
+        htmlParts.push(`<div>${renderFormattedInlineText(line)}</div>`);
+      }
+    });
+
+    closeList();
+    return htmlParts.join('');
+  }
+
   function isSerializedTextNoteSvg(svgValue) {
     return typeof svgValue === 'string' && svgValue.indexOf('data-note-type="text"') !== -1;
   }
@@ -299,6 +368,8 @@
 
   window.NoteRuntime = Object.assign({}, window.NoteRuntime || {}, {
     escapeXmlText,
+    escapeHtmlText,
+    renderFormattedTextNoteHtml,
     isSerializedTextNoteSvg,
     extractTextFromSerializedTextNoteSvg,
     getNoteTextValue,
