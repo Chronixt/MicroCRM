@@ -27,6 +27,36 @@ class NoteActor {
     await expect(this.page.getByTestId('pinned-note-entry').filter({ hasText: text })).toHaveCount(1);
   }
 
+  async createFormattedTextNote() {
+    await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
+    await this.page.getByTestId('add-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeVisible();
+
+    await this.page.getByTestId('note-textarea').fill('Important\nLine one\nLine two');
+    await this.page.getByTestId('note-textarea').evaluate((el) => {
+      const start = el.value.indexOf('Important');
+      el.setSelectionRange(start, start + 'Important'.length);
+    });
+    await this.page.getByTestId('note-format-bold').click();
+    await this.page.getByTestId('note-textarea').evaluate((el) => {
+      const start = el.value.indexOf('Line one');
+      el.setSelectionRange(start, el.value.length);
+    });
+    await this.page.getByTestId('note-format-bullet').click();
+
+    await this.page.getByTestId('save-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeHidden();
+  }
+
+  async expectFormattedTextNote() {
+    await expect(this.page.getByTestId('note-entry')).toHaveCount(1);
+    const note = this.page.getByTestId('note-entry').first();
+    await note.locator('.note-header').click();
+    const content = note.getByTestId('text-note-content');
+    await expect(content.locator('strong')).toHaveText('Important');
+    await expect(content.locator('ul li')).toHaveText(['Line one', 'Line two']);
+  }
+
   async editFirstTextNote(updatedText) {
     await this.page.getByTestId('edit-note-button').first().click();
     await expect(this.page.getByTestId('note-textarea')).toBeVisible();

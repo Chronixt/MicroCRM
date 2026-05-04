@@ -1698,6 +1698,12 @@
   function serializeTextNoteToSvg(textValue) {
     return noteRuntime.serializeTextNoteToSvg ? noteRuntime.serializeTextNoteToSvg(textValue) : '';
   }
+  function renderFormattedTextNoteHtml(textValue) {
+    if (noteRuntime.renderFormattedTextNoteHtml) return noteRuntime.renderFormattedTextNoteHtml(textValue);
+    const div = document.createElement('div');
+    div.textContent = String(textValue || '');
+    return div.innerHTML;
+  }
   const PINNED_NOTES_LIMIT = 5;
 
   function renderPinnedNotesSection() {
@@ -9677,10 +9683,20 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           color: var(--text);
           font-size: 15px;
           line-height: 1.6;
-          white-space: pre-wrap;
+          white-space: normal;
           word-wrap: break-word;
         `;
-        contentContainer.textContent = noteText || '(No text payload)';
+        contentContainer.innerHTML = noteText ? renderFormattedTextNoteHtml(noteText) : '(No text payload)';
+        contentContainer.querySelectorAll('ul, ol').forEach((list) => {
+          list.style.margin = '0 0 0 20px';
+          list.style.padding = '0';
+        });
+        contentContainer.querySelectorAll('li').forEach((item) => {
+          item.style.margin = '4px 0';
+        });
+        contentContainer.querySelectorAll('code').forEach((code) => {
+          code.style.cssText = 'background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:1px 4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.92em;';
+        });
         return contentContainer;
       }
 
@@ -10650,6 +10666,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         min-height: 0;
       `;
 
+      const formatToolbar = this.createFormattingToolbar();
+      textareaContainer.appendChild(formatToolbar);
+
       this.textarea = document.createElement('textarea');
       this.textarea.placeholder = 'Type your note here...';
       this.textarea.setAttribute('data-testid', 'note-textarea');
@@ -10698,6 +10717,16 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Handle keyboard shortcuts
       this.textarea.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+          e.preventDefault();
+          this.applyTextFormat('bold');
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          this.applyTextFormat('italic');
+          return;
+        }
         // Ctrl/Cmd + Enter to save
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
@@ -10712,6 +10741,97 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       document.body.appendChild(this.overlay);
       configurePinCheckbox(this.pinCheckbox, this.pinStatus, this.customerId, this.editingNote);
+    }
+
+    createFormattingToolbar() {
+      const toolbar = document.createElement('div');
+      toolbar.setAttribute('data-testid', 'note-format-toolbar');
+      toolbar.style.cssText = `
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+        flex-shrink: 0;
+      `;
+
+      const buttons = [
+        { label: 'B', title: 'Bold', action: 'bold', testId: 'note-format-bold', fontWeight: '700' },
+        { label: 'I', title: 'Italic', action: 'italic', testId: 'note-format-italic', fontStyle: 'italic' },
+        { label: '•', title: 'Bullet list', action: 'bullet', testId: 'note-format-bullet' },
+        { label: '1.', title: 'Numbered list', action: 'numbered', testId: 'note-format-numbered' }
+      ];
+
+      buttons.forEach((config) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = config.label;
+        button.title = config.title;
+        button.setAttribute('data-testid', config.testId);
+        button.style.cssText = `
+          min-width: 36px;
+          height: 34px;
+          border-radius: 6px;
+          border: 1px solid rgba(255,255,255,0.16);
+          background: rgba(255,255,255,0.08);
+          color: var(--text);
+          cursor: pointer;
+          font-size: 15px;
+          font-weight: ${config.fontWeight || '600'};
+          font-style: ${config.fontStyle || 'normal'};
+          line-height: 1;
+        `;
+        button.addEventListener('click', () => this.applyTextFormat(config.action));
+        button.addEventListener('mouseenter', () => {
+          button.style.background = 'rgba(255,255,255,0.14)';
+        });
+        button.addEventListener('mouseleave', () => {
+          button.style.background = 'rgba(255,255,255,0.08)';
+        });
+        toolbar.appendChild(button);
+      });
+
+      return toolbar;
+    }
+
+    applyTextFormat(action) {
+      if (!this.textarea) return;
+      const textarea = this.textarea;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      const selected = value.slice(start, end);
+
+      const replaceSelection = (replacement, nextStart, nextEnd) => {
+        textarea.value = value.slice(0, start) + replacement + value.slice(end);
+        textarea.focus();
+        textarea.setSelectionRange(nextStart, nextEnd);
+      };
+
+      if (action === 'bold' || action === 'italic') {
+        const marker = action === 'bold' ? '**' : '*';
+        const fallback = action === 'bold' ? 'bold text' : 'italic text';
+        const innerText = selected || fallback;
+        const replacement = `${marker}${innerText}${marker}`;
+        const innerStart = start + marker.length;
+        replaceSelection(replacement, innerStart, innerStart + innerText.length);
+        return;
+      }
+
+      if (action === 'bullet' || action === 'numbered') {
+        const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+        const lineEndSearch = value.indexOf('\n', end);
+        const lineEnd = lineEndSearch === -1 ? value.length : lineEndSearch;
+        const block = value.slice(lineStart, lineEnd);
+        const lines = block.length > 0 ? block.split('\n') : [''];
+        const formatted = lines.map((line, index) => {
+          const clean = line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, '');
+          return action === 'bullet' ? `- ${clean}` : `${index + 1}. ${clean}`;
+        }).join('\n');
+        textarea.value = value.slice(0, lineStart) + formatted + value.slice(lineEnd);
+        textarea.focus();
+        textarea.setSelectionRange(lineStart, lineStart + formatted.length);
+      }
     }
 
     extractTextFromSVG(svgString) {
