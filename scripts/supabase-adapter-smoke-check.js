@@ -75,10 +75,20 @@ const checks = [
     ].every((rx) => has(src.adapter, rx))
   },
   {
+    id: 'api.runtime_preflight',
+    desc: 'adapter exposes runtime preflight and schema mismatch guard',
+    test: () => [
+      /function\s+runRuntimePreflight\s*\(/,
+      /SCHEMA_MISMATCH_APPOINTMENTS/,
+      /appointmentProbeColumns/
+    ].every((rx) => has(src.adapter, rx))
+  },
+  {
     id: 'api.dbapi_exports',
     desc: 'dbAPI exports notes/import/delete and tradie pipeline methods',
     test: () => [
       /const\s+dbAPI\s*=\s*\{/,
+      /runRuntimePreflight,\s*/,
       /createNote,\s*/,
       /importAllData,\s*/,
       /deleteCustomer,\s*/,
