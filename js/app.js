@@ -1700,6 +1700,32 @@
   }
   const PINNED_NOTES_LIMIT = 5;
 
+  function getStableNoteNumber(note) {
+    const value = Number(note && note.noteNumber);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function getNextStableNoteNumber(notes) {
+    const numbers = (Array.isArray(notes) ? notes : [])
+      .map(getStableNoteNumber)
+      .filter((value) => value != null);
+    if (numbers.length === 0) return 1;
+    return Math.max(...numbers) + 1;
+  }
+
+  function fillMissingStableNoteNumbers(notes) {
+    if (!Array.isArray(notes)) return notes;
+    let nextNoteNumber = getNextStableNoteNumber(notes);
+    notes
+      .filter((note) => note && getStableNoteNumber(note) == null)
+      .sort((a, b) => compareNotesByCreatedDesc(b, a))
+      .forEach((note) => {
+        note.noteNumber = nextNoteNumber;
+        nextNoteNumber++;
+      });
+    return notes;
+  }
+
   function renderPinnedNotesSection() {
     return `
       <div class="pinned-notes-view" style="display:none; margin: 16px 0;" data-testid="pinned-notes-view">
@@ -1911,6 +1937,7 @@
       const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
       const tempNotes = existingNotes['temp-new-customer'] || [];
       if (tempNotes.length > 0) {
+        fillMissingStableNoteNumbers(tempNotes);
         for (let i = 0; i < tempNotes.length; i++) {
           const note = tempNotes[i];
           await CrmDB.createNote({
@@ -1921,7 +1948,7 @@
             isPinned: isNotePinned(note),
             svg: note.svg || null,
             date: note.date,
-            noteNumber: note.noteNumber != null ? note.noteNumber : i + 1,
+            noteNumber: note.noteNumber,
             createdAt: note.createdAt || new Date().toISOString(),
             updatedAt: note.updatedAt || new Date().toISOString()
           });
@@ -8616,7 +8643,7 @@
           this.editingNote = null;
         } else {
           // Creating new note
-          const nextNoteNumber = allExistingNotes.length + 1;
+          const nextNoteNumber = getNextStableNoteNumber(allExistingNotes);
           
           console.log(`Creating new note #${nextNoteNumber} (based on ${allExistingNotes.length} existing notes)`);
           
@@ -9346,9 +9373,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             note.source = note.source || 'supabase';
           });
           dbNotes.sort(compareNotesByCreatedDesc);
-          dbNotes.forEach((note, index) => {
-            note.noteNumber = index + 1;
-          });
+          fillMissingStableNoteNumbers(dbNotes);
           console.log(`Loaded ${dbNotes.length} notes from Supabase (DB-only mode)`);
           return dbNotes;
         } catch (error) {
@@ -9358,9 +9383,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             note.source = note.source || 'localStorage';
           });
           localNotes.sort(compareNotesByCreatedDesc);
-          localNotes.forEach((note, index) => {
-            note.noteNumber = index + 1;
-          });
+          fillMissingStableNoteNumbers(localNotes);
           return localNotes;
         }
       }
@@ -9429,11 +9452,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Sort all notes by creation time (newest first)
       mergedNotes.sort(compareNotesByCreatedDesc);
-      
-      // Re-number notes for display consistency
-      mergedNotes.forEach((note, index) => {
-        note.noteNumber = index + 1;
-      });
+      fillMissingStableNoteNumbers(mergedNotes);
       
       console.log(`Total notes loaded: ${mergedNotes.length}`);
       return mergedNotes;
@@ -9883,7 +9902,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           // Keep original if conversion fails
         }
       }
-      titleText.textContent = `Note ${noteData.noteNumber} - ${displayDate}`;
+      titleText.textContent = `Note ${noteData.noteNumber || '?'} - ${displayDate || ''}`;
       
       // Add migrated indicator if this is a migrated note
       if (isMigratedNote) {
@@ -10166,6 +10185,25 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         border-bottom: 1px solid rgba(251,191,36,0.22);
       `;
 
+      const noteTitle = document.createElement('span');
+      noteTitle.style.cssText = 'color:var(--text); font-weight:600; min-width:0; overflow-wrap:anywhere;';
+      let displayDate = noteData.date;
+      if (displayDate && /^\d{4}-\d{2}-\d{2}$/.test(displayDate)) {
+        try {
+          const date = new Date(displayDate + 'T00:00:00');
+          if (!isNaN(date.getTime())) {
+            displayDate = date.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
+            });
+          }
+        } catch (e) {
+          // Keep original if conversion fails
+        }
+      }
+      noteTitle.textContent = `Note ${noteData.noteNumber || '?'} - ${displayDate || ''}`;
+
       const headerRight = document.createElement('div');
       headerRight.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
 
@@ -10227,6 +10265,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       noteContent.appendChild(this.createNoteContentContainer(noteData, isMigratedNote));
 
       if (showPinnedActions) {
+        noteHeader.appendChild(noteTitle);
         noteHeader.appendChild(headerRight);
         noteElement.appendChild(noteHeader);
       }
@@ -10766,7 +10805,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     async createNote(customerId, text, dateStr) {
       const existingNotesList = await this.getNotesForCustomer(customerId);
-      const noteNumber = existingNotesList.length + 1;
+      const noteNumber = getNextStableNoteNumber(existingNotesList);
       const serializedSvg = serializeTextNoteToSvg(text);
       
       const noteData = {
@@ -11333,13 +11372,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       let createdId = null;
       try {
         const before = await CrmDB.getNotesByCustomerId(cid);
-        const beforeCount = before.length;
 
         createdId = await CrmDB.createNote({
           customerId: cid,
           svg: baseSvg,
           date: formatDateYYYYMMDD(new Date()),
-          noteNumber: beforeCount + 1,
+          noteNumber: getNextStableNoteNumber(before),
           createdAt: new Date().toISOString()
         });
 

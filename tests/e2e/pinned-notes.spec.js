@@ -43,6 +43,37 @@ test('pinned text note moves out of regular notes, persists, unpins, and remains
   await app.assertNoFatalErrors();
 });
 
+test('pinning preserves original note numbers when notes move between sections', async ({ page }) => {
+  const app = new AppActor(page);
+  const customers = new CustomerActor(page);
+  const notes = new NoteActor(page);
+  const stamp = Date.now();
+  const customer = {
+    firstName: 'PinnedNumber',
+    lastName: `Stable ${stamp}`,
+    contactNumber: `0412${String(stamp).slice(-6)}`,
+    addressLine1: `${String(stamp).slice(-3)} Stable Pin Street`
+  };
+
+  await app.openClean();
+  await customers.createCustomer(customer);
+  await notes.createTextNoteOnly(`Original note one ${stamp}`);
+  await notes.createTextNoteOnly(`Original note two ${stamp}`);
+  await notes.expectRegularNoteHeaders([1, 2]);
+
+  await notes.pinRegularNoteByNumber(1);
+  await notes.expectPinnedCount(1);
+  await notes.expectRegularNoteHeaders([2]);
+
+  await page.getByTestId('edit-customer-button').click();
+  await expect(page.getByTestId('edit-customer-form')).toBeVisible();
+  await notes.expectPinnedEditHeader(1);
+
+  await notes.unpinFirstPinnedNote();
+  await notes.expectRegularNoteHeaders([1, 2]);
+  await app.assertNoFatalErrors();
+});
+
 test('new customer temp pinned notes persist after save and pin limit disables sixth pin', async ({ page }) => {
   const app = new AppActor(page);
   const notes = new NoteActor(page);
