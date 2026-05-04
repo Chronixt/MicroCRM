@@ -23,14 +23,18 @@ test('pinned text note moves out of regular notes, persists, unpins, and remains
   await notes.createTextNote(firstNote);
   await notes.pinFirstNote();
   await notes.expectPinnedNoteWithText(firstNote);
+  await notes.expectPinnedProfileBodyOnly();
   await notes.expectNoRegularNotes();
 
   await page.reload();
   await app.waitForReady();
   await customers.openCustomerBySearch(customer);
   await notes.expectPinnedNoteWithText(firstNote);
+  await notes.expectPinnedProfileBodyOnly();
   await notes.expectNoRegularNotes();
 
+  await page.getByTestId('edit-customer-button').click();
+  await expect(page.getByTestId('edit-customer-form')).toBeVisible();
   await notes.editFirstPinnedTextNote(editedNote);
   await notes.expectPinnedNoteWithText(editedNote);
 

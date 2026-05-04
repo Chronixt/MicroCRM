@@ -66,6 +66,13 @@ class NoteActor {
     await expect(this.page.getByTestId('pinned-note-entry').first().getByTestId('text-note-content')).toContainText(text);
   }
 
+  async expectPinnedProfileBodyOnly() {
+    const pinned = this.page.getByTestId('pinned-note-entry').first();
+    await expect(pinned.locator('.note-header')).toHaveCount(0);
+    await expect(pinned.getByTestId('edit-note-button')).toHaveCount(0);
+    await expect(pinned.getByTestId('unpin-note-button')).toHaveCount(0);
+  }
+
   async expectNoRegularNotes() {
     await expect(this.page.getByTestId('note-entry')).toHaveCount(0);
   }

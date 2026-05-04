@@ -10138,6 +10138,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       const isPendingSync = isNoteQueuedForSync(noteData);
       const isMigratedNote = noteData.isMigrated || isMigratedNoteByContent(noteData);
+      const showPinnedActions = window.location.hash.includes('#/customer-edit');
 
       const noteElement = document.createElement('div');
       noteElement.className = 'note-entry pinned-note-entry';
@@ -10154,7 +10155,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
 
       const noteHeader = document.createElement('div');
-      noteHeader.className = 'note-header';
+      noteHeader.className = 'pinned-note-actions';
       noteHeader.style.cssText = `
         padding: 12px 16px;
         display: flex;
@@ -10164,18 +10165,6 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         background: rgba(251,191,36,0.08);
         border-bottom: 1px solid rgba(251,191,36,0.22);
       `;
-
-      const noteTitle = document.createElement('span');
-      noteTitle.style.color = 'var(--text)';
-      noteTitle.style.fontWeight = '600';
-      let displayDate = noteData.date;
-      if (displayDate && /^\d{4}-\d{2}-\d{2}$/.test(displayDate)) {
-        const parsed = new Date(displayDate + 'T00:00:00');
-        if (!isNaN(parsed.getTime())) {
-          displayDate = parsed.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-        }
-      }
-      noteTitle.textContent = `Pinned Note ${noteData.noteNumber} - ${displayDate}`;
 
       const headerRight = document.createElement('div');
       headerRight.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
@@ -10203,8 +10192,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       }
 
       const unpinButton = document.createElement('button');
-      unpinButton.textContent = '📌';
       unpinButton.title = 'Unpin Note';
+      unpinButton.textContent = 'Unpin';
       unpinButton.setAttribute('data-testid', 'unpin-note-button');
       unpinButton.style.cssText = `
         background: rgba(251,191,36,0.24);
@@ -10237,9 +10226,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       `;
       noteContent.appendChild(this.createNoteContentContainer(noteData, isMigratedNote));
 
-      noteHeader.appendChild(noteTitle);
-      noteHeader.appendChild(headerRight);
-      noteElement.appendChild(noteHeader);
+      if (showPinnedActions) {
+        noteHeader.appendChild(headerRight);
+        noteElement.appendChild(noteHeader);
+      }
       noteElement.appendChild(noteContent);
       pinnedList.appendChild(noteElement);
     }
