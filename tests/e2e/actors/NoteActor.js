@@ -86,6 +86,23 @@ class NoteActor {
     await expect(this.page.getByTestId('note-textarea')).toBeHidden();
   }
 
+  async expectEnterAfterBoldTextDoesNotCreateBullet() {
+    await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
+    await this.page.getByTestId('add-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeVisible();
+
+    const textarea = this.page.getByTestId('note-textarea');
+    await textarea.fill('Important');
+    await textarea.evaluate((el) => el.setSelectionRange(0, el.value.length));
+    await this.page.getByTestId('note-format-bold').click();
+    await textarea.evaluate((el) => el.setSelectionRange(el.value.length, el.value.length));
+    await textarea.press('Enter');
+    await textarea.type('Follow up');
+
+    await expect(textarea).toHaveValue('**Important**\nFollow up');
+    await this.page.getByTestId('cancel-note-button').click();
+  }
+
   async expectAutoContinuedListNote() {
     await expect(this.page.getByTestId('note-entry')).toHaveCount(1);
     const note = this.page.getByTestId('note-entry').first();

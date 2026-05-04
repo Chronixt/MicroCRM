@@ -40,3 +40,21 @@ test('text note editor continues bullet and numbered lists on enter', async ({ p
   await notes.expectAutoContinuedListNote();
   await app.assertNoFatalErrors();
 });
+
+test('text note editor does not treat bold markdown as a bullet list', async ({ page }) => {
+  const app = new AppActor(page);
+  const customers = new CustomerActor(page);
+  const notes = new NoteActor(page);
+  const stamp = Date.now();
+  const customer = {
+    firstName: 'Bold',
+    lastName: `Enter ${stamp}`,
+    contactNumber: `0446${String(stamp).slice(-6)}`,
+    addressLine1: `${String(stamp).slice(-3)} Bold Street`
+  };
+
+  await app.openClean();
+  await customers.createCustomer(customer);
+  await notes.expectEnterAfterBoldTextDoesNotCreateBullet();
+  await app.assertNoFatalErrors();
+});

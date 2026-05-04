@@ -10865,8 +10865,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const value = textarea.value;
       const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
       const currentLine = value.slice(lineStart, start);
-      const unorderedMatch = currentLine.match(/^(\s*)([-*])\s*(.*)$/);
-      const orderedMatch = currentLine.match(/^(\s*)(\d+)([.)])\s*(.*)$/);
+      const unorderedMatch = currentLine.match(/^(\s*)([-*])\s+(.*)$/);
+      const orderedMatch = currentLine.match(/^(\s*)(\d+)([.)])\s+(.*)$/);
       if (!unorderedMatch && !orderedMatch) return false;
 
       e.preventDefault();
