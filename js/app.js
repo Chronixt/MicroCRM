@@ -9789,7 +9789,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     createNoteEditButton(noteData) {
       const editButton = document.createElement('button');
-      editButton.textContent = 'âœï¸';
+      editButton.textContent = '✏️';
       editButton.title = 'Edit Note';
       editButton.setAttribute('data-testid', 'edit-note-button');
       editButton.style.cssText = `
