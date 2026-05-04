@@ -74,6 +74,54 @@ class AppActor {
     await this.waitForReady();
   }
 
+  async openWithForcedSchemaMismatch() {
+    await this.page.route('**/js/config.local.js*', async (route) => {
+      await route.fulfill({
+        contentType: 'application/javascript',
+        body: `
+          window.SUPABASE_URL = 'https://example.supabase.co';
+          window.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_test_key';
+          window.USE_SUPABASE = true;
+          window.REQUIRE_LOGIN = false;
+          window.ACTIVE_PRODUCT = 'hairdresser';
+          window.ADDRESS_LOOKUP_ENABLED = false;
+          // Ensure index.html picks db-supabase path.
+          window.SupabaseClient = {};
+        `
+      });
+    });
+
+    const mismatchAdapterStub = `
+      (function () {
+        window.CrmDB = {
+          runRuntimePreflight: async function () {
+            const err = new Error('Simulated schema mismatch for e2e guardrail');
+            err.code = 'SCHEMA_MISMATCH_APPOINTMENTS';
+            throw err;
+          }
+        };
+      })();
+    `;
+
+    await this.page.route('**/js/db-supabase.js*', async (route) => {
+      await route.fulfill({
+        contentType: 'application/javascript',
+        body: mismatchAdapterStub
+      });
+    });
+
+    await this.page.route('**/js/db.js*', async (route) => {
+      await route.fulfill({
+        contentType: 'application/javascript',
+        body: mismatchAdapterStub
+      });
+    });
+
+    await this.page.goto('/manifest.json');
+    await this.clearBrowserAppState();
+    await this.page.goto('/');
+  }
+
   async waitForReady() {
     await expect(this.page.locator('#app')).toBeVisible();
     await expect(this.page.getByTestId('nav-new-customer').first()).toBeVisible();
