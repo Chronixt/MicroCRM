@@ -2385,7 +2385,9 @@
             // Check if we're on iPad Safari and use dataURL directly as fallback
             const isIpadSafari = /iPad/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
             
-            if (isIpadSafari && hasDataUrl) {
+            if (hasDataUrl) {
+              url = img.dataUrl;
+            } else if (isIpadSafari && hasDataUrl) {
               // Use dataURL directly for iPad Safari (more reliable)
               url = img.dataUrl;
             } else if (hasBlob) {
@@ -2941,7 +2943,7 @@
         // Use cached URL if available
         let url = window.currentEditImageCache.get(img.id);
         if (!url) {
-          url = hasBlob ? URL.createObjectURL(img.blob) : img.dataUrl;
+          url = hasDataUrl ? img.dataUrl : URL.createObjectURL(img.blob);
           window.currentEditImageCache.set(img.id, url);
         }
         
@@ -6511,6 +6513,13 @@
     const modalId = 'image-viewer-' + Date.now();
     const currentImage = images[currentIndex];
     const hasMultiple = images.length > 1;
+    const normalizeImageRotation = (value) => ((Number(value) % 360) + 360) % 360;
+    const getImageViewerSrc = (image) => {
+      if (image && image.dataUrl) return image.dataUrl;
+      if (image && image.blob) return URL.createObjectURL(image.blob);
+      return '';
+    };
+    const getRotationStyle = (image) => `rotate(${normalizeImageRotation(image && image.rotationDegrees)}deg)`;
     
     const modalHtml = `
       <div class="image-viewer-modal" id="${modalId}">
@@ -6521,8 +6530,10 @@
         <div class="image-viewer-content">
           ${hasMultiple ? '<button class="image-nav-btn image-nav-prev" id="image-nav-prev">‹</button>' : ''}
           <div class="image-viewer-main">
-            <img src="${URL.createObjectURL(currentImage.blob)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" />
+            <img src="${getImageViewerSrc(currentImage)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" style="transform:${getRotationStyle(currentImage)}; transition: transform 0.2s ease;" data-testid="viewer-image" />
             <div class="image-actions">
+              <button class="image-rotate-btn" id="image-rotate-left-btn" data-testid="image-rotate-left-button" title="Rotate Left">Rotate Left</button>
+              <button class="image-rotate-btn" id="image-rotate-right-btn" data-testid="image-rotate-right-button" title="Rotate Right">Rotate Right</button>
               <button class="image-delete-btn" id="image-delete-btn" data-image-id="${currentImage.id}">🗑️ Delete</button>
             </div>
           </div>
@@ -6545,8 +6556,9 @@
       const counterEl = document.querySelector('.image-counter');
       const deleteBtn = document.getElementById('image-delete-btn');
       
-      imgEl.src = URL.createObjectURL(img.blob);
+      imgEl.src = getImageViewerSrc(img);
       imgEl.alt = escapeHtml(img.name);
+      imgEl.style.transform = getRotationStyle(img);
       counterEl.textContent = `${currentIdx + 1} / ${images.length}`;
       deleteBtn.dataset.imageId = img.id;
       
@@ -6555,6 +6567,26 @@
       const nextBtn = document.getElementById('image-nav-next');
       if (prevBtn) prevBtn.disabled = currentIdx === 0;
       if (nextBtn) nextBtn.disabled = currentIdx === images.length - 1;
+    }
+
+    async function rotateCurrentImage(delta) {
+      const img = images[currentIdx];
+      if (!img || img.id == null) return;
+      const previousRotation = normalizeImageRotation(img.rotationDegrees || 0);
+      const nextRotation = normalizeImageRotation(previousRotation + delta);
+      img.rotationDegrees = nextRotation;
+      const imgEl = document.querySelector('.viewer-image');
+      if (imgEl) imgEl.style.transform = getRotationStyle(img);
+      try {
+        if (!CrmDB || typeof CrmDB.updateImageRotation !== 'function') {
+          throw new Error('Image rotation persistence is not available');
+        }
+        await CrmDB.updateImageRotation(img.id, nextRotation);
+      } catch (error) {
+        img.rotationDegrees = previousRotation;
+        if (imgEl) imgEl.style.transform = getRotationStyle(img);
+        alert('Error saving image rotation: ' + error.message);
+      }
     }
     
     // Event handlers
@@ -6568,6 +6600,8 @@
     if (nextBtn) {
       nextBtn.addEventListener('click', () => showImage(currentIdx + 1));
     }
+    document.getElementById('image-rotate-left-btn').addEventListener('click', () => rotateCurrentImage(-90));
+    document.getElementById('image-rotate-right-btn').addEventListener('click', () => rotateCurrentImage(90));
     
     // Delete image
     document.getElementById('image-delete-btn').addEventListener('click', async () => {

@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS images (
   name           TEXT,
   type           TEXT,
   data_url       TEXT NOT NULL,
+  rotation_degrees INTEGER NOT NULL DEFAULT 0,
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
