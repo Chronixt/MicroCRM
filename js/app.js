@@ -10591,6 +10591,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.onSaveCallback = null;
       this.pinCheckbox = null;
       this.pinStatus = null;
+      this.previewContainer = null;
+      this.previewContent = null;
     }
 
     show(customerId = null, editingNote = null) {
@@ -10747,12 +10749,57 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       textareaContainer.appendChild(this.textarea);
 
+      const previewContainer = document.createElement('div');
+      previewContainer.setAttribute('data-testid', 'note-format-preview');
+      previewContainer.style.cssText = `
+        margin-top: 12px;
+        flex: 0 0 34%;
+        min-height: 120px;
+        max-height: 34%;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 12px;
+        background: rgba(255,255,255,0.035);
+        overflow: hidden;
+      `;
+
+      const previewHeader = document.createElement('div');
+      previewHeader.textContent = 'Preview';
+      previewHeader.style.cssText = `
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      `;
+
+      this.previewContent = document.createElement('div');
+      this.previewContent.style.cssText = `
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 16px;
+        color: var(--text);
+        font-size: 15px;
+        line-height: 1.6;
+        word-wrap: break-word;
+      `;
+
+      previewContainer.appendChild(previewHeader);
+      previewContainer.appendChild(this.previewContent);
+      this.previewContainer = previewContainer;
+      textareaContainer.appendChild(previewContainer);
+
       this.overlay.appendChild(header);
       this.overlay.appendChild(textareaContainer);
 
       // Event listeners
       cancelBtn.addEventListener('click', () => this.hide());
       saveBtn.addEventListener('click', () => this.handleSave());
+      this.textarea.addEventListener('input', () => this.updateFormattingPreview());
       
       // Handle keyboard shortcuts
       this.textarea.addEventListener('keydown', (e) => {
@@ -10779,7 +10826,26 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       });
 
       document.body.appendChild(this.overlay);
+      this.updateFormattingPreview();
       configurePinCheckbox(this.pinCheckbox, this.pinStatus, this.customerId, this.editingNote);
+    }
+
+    updateFormattingPreview() {
+      if (!this.previewContent || !this.textarea) return;
+      const text = this.textarea.value;
+      this.previewContent.innerHTML = text.trim()
+        ? renderFormattedTextNoteHtml(text)
+        : '<span style="color:var(--muted);">Formatting preview appears here.</span>';
+      this.previewContent.querySelectorAll('ul, ol').forEach((list) => {
+        list.style.margin = '0 0 0 20px';
+        list.style.padding = '0';
+      });
+      this.previewContent.querySelectorAll('li').forEach((item) => {
+        item.style.margin = '4px 0';
+      });
+      this.previewContent.querySelectorAll('code').forEach((code) => {
+        code.style.cssText = 'background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:1px 4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.92em;';
+      });
     }
 
     createFormattingToolbar() {
@@ -10845,6 +10911,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         textarea.value = value.slice(0, start) + replacement + value.slice(end);
         textarea.focus();
         textarea.setSelectionRange(nextStart, nextEnd);
+        this.updateFormattingPreview();
       };
 
       if (action === 'bold' || action === 'italic') {
@@ -10870,6 +10937,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         textarea.value = value.slice(0, lineStart) + formatted + value.slice(lineEnd);
         textarea.focus();
         textarea.setSelectionRange(lineStart, lineStart + formatted.length);
+        this.updateFormattingPreview();
       }
     }
 
@@ -11097,6 +11165,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.customerId = null;
       this.pinCheckbox = null;
       this.pinStatus = null;
+      this.previewContainer = null;
+      this.previewContent = null;
     }
   }
 

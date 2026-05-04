@@ -53,6 +53,10 @@ class NoteActor {
     });
     await this.page.getByTestId('note-format-bullet').click();
 
+    const preview = this.page.getByTestId('note-format-preview');
+    await expect(preview.locator('strong')).toHaveText('Important');
+    await expect(preview.locator('ul li')).toHaveText(['Line one', 'Line two']);
+
     await this.page.getByTestId('save-note-button').click();
     await expect(this.page.getByTestId('note-textarea')).toBeHidden();
   }
