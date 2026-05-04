@@ -1273,6 +1273,8 @@
     setTestId('.detail-list .detail-item:first-child .detail-value', 'customer-contact-value', scope);
     setTestIds('.add-note-btn', 'add-note-button', scope);
     setTestIds('.notes-list', 'notes-list', scope);
+    setTestIds('.pinned-notes-view', 'pinned-notes-view', scope);
+    setTestIds('.pinned-notes-list', 'pinned-notes-list', scope);
     setTestId('#export-btn', 'backup-export-full', scope);
     setTestId('#export-lite-btn', 'backup-export-data-only', scope);
     setTestId('#download-btn', 'backup-download', scope);
@@ -1690,8 +1692,21 @@
   function isNoteQueuedForSync(note) {
     return noteRuntime.isNoteQueuedForSync ? noteRuntime.isNoteQueuedForSync(note) : !!(note && note.queuedSync === true);
   }
+  function isNotePinned(note) {
+    return noteRuntime.isNotePinned ? noteRuntime.isNotePinned(note) : !!(note && (note.isPinned === true || note.isPinned === 'true'));
+  }
   function serializeTextNoteToSvg(textValue) {
     return noteRuntime.serializeTextNoteToSvg ? noteRuntime.serializeTextNoteToSvg(textValue) : '';
+  }
+  const PINNED_NOTES_LIMIT = 5;
+
+  function renderPinnedNotesSection() {
+    return `
+      <div class="pinned-notes-view" style="display:none; margin: 16px 0;" data-testid="pinned-notes-view">
+        <h3 style="margin:0 0 8px 0;">Pinned Notes</h3>
+        <div class="pinned-notes-list" style="display:flex; flex-direction:column; gap:8px;" data-testid="pinned-notes-list"></div>
+      </div>
+    `;
   }
 
   async function renderAddRecord() {
@@ -1825,6 +1840,7 @@
           </div>
           <div>
             <label>${t('notes')}</label>
+            ${renderPinnedNotesSection()}
             <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
             <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
@@ -1902,6 +1918,7 @@
             text: note.text || note.textValue || note.content,
             textValue: note.textValue || note.text || note.content || null,
             noteType: note.noteType || note.type || null,
+            isPinned: isNotePinned(note),
             svg: note.svg || null,
             date: note.date,
             noteNumber: note.noteNumber != null ? note.noteNumber : i + 1,
@@ -2259,6 +2276,8 @@
           <div class="detail-item"><span class="detail-icon">❤️</span><span class="detail-label">Preferred Contact</span><span class="detail-value">${escapeHtml(customer.preferredContactMethod === 'phone' ? 'Phone Call' : customer.preferredContactMethod === 'sms' ? 'SMS' : customer.preferredContactMethod === 'email' ? 'Email' : customer.preferredContactMethod)}</span></div>
           ` : ''}
         </div>
+
+        ${renderPinnedNotesSection()}
 
         ${isTradie() && (customer.addressLine1 || customer.suburb) ? `
         <div class="address-section" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
@@ -2797,6 +2816,7 @@
           
           <div>
             <label>Notes</label>
+            ${renderPinnedNotesSection()}
             <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
             <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
@@ -6972,6 +6992,126 @@
     }
   }
 
+  function noteIdentity(note) {
+    if (!note) return '';
+    return String(note.id ?? note.originalId ?? note.noteId ?? '');
+  }
+
+  function updateLocalStoredNote(customerId, noteId, updates) {
+    const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+    const key = String(customerId);
+    const customerNotes = existingNotes[key] || [];
+    const idx = customerNotes.findIndex((note) => noteIdentity(note) === String(noteId));
+    if (idx === -1) return false;
+    customerNotes[idx] = { ...customerNotes[idx], ...updates };
+    existingNotes[key] = customerNotes;
+    localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+    return true;
+  }
+
+  async function getPinnedNotesCount(customerId, excludingNote = null) {
+    const notes = fullscreenNotesCanvas && typeof fullscreenNotesCanvas.loadNotesHybrid === 'function'
+      ? await fullscreenNotesCanvas.loadNotesHybrid(customerId)
+      : getLocalNotesForCustomer(customerId);
+    const excludedId = noteIdentity(excludingNote);
+    return notes.filter((note) => {
+      if (!isNotePinned(note)) return false;
+      return !excludedId || noteIdentity(note) !== excludedId;
+    }).length;
+  }
+
+  async function configurePinCheckbox(checkbox, statusEl, customerId, editingNote = null) {
+    if (!checkbox) return;
+    const currentlyPinned = isNotePinned(editingNote);
+    checkbox.checked = currentlyPinned;
+    checkbox.disabled = false;
+    checkbox.title = '';
+    if (statusEl) statusEl.textContent = '';
+
+    if (!currentlyPinned) {
+      try {
+        const pinnedCount = await getPinnedNotesCount(customerId, editingNote);
+        if (pinnedCount >= PINNED_NOTES_LIMIT) {
+          checkbox.checked = false;
+          checkbox.disabled = true;
+          checkbox.title = `Pinned note limit reached (${PINNED_NOTES_LIMIT})`;
+          if (statusEl) statusEl.textContent = `Pinned note limit reached (${PINNED_NOTES_LIMIT})`;
+        }
+      } catch (error) {
+        console.warn('Could not check pinned note limit:', error);
+      }
+    }
+  }
+
+  function getPinCheckboxValue(checkbox, existingNote = null) {
+    if (!checkbox) return isNotePinned(existingNote);
+    if (checkbox.disabled) return false;
+    return checkbox.checked === true;
+  }
+
+  async function persistNotePinnedState(noteData, shouldPin) {
+    const customerId = noteData.customerId || getCurrentCustomerId();
+    if (!customerId || customerId === 'default') throw new Error('Cannot determine customer for this note');
+    if (shouldPin) {
+      const pinnedCount = await getPinnedNotesCount(customerId, noteData);
+      if (pinnedCount >= PINNED_NOTES_LIMIT) {
+        alert(`Only ${PINNED_NOTES_LIMIT} notes can be pinned to a customer profile.`);
+        return false;
+      }
+    }
+
+    const updatedNote = {
+      ...noteData,
+      customerId,
+      isPinned: shouldPin === true,
+      updatedAt: new Date().toISOString()
+    };
+    const noteId = noteIdentity(noteData);
+
+    if (customerId === 'temp-new-customer') {
+      if (!updateLocalStoredNote(customerId, noteId, updatedNote)) {
+        throw new Error('Could not update temporary note pin state');
+      }
+      await fullscreenNotesCanvas.refreshNotesDisplay(customerId);
+      return true;
+    }
+
+    if (productConfig.useSupabase) {
+      try {
+        await CrmDB.updateNote(updatedNote);
+      } catch (error) {
+        if (!isOfflineLikeError(error)) throw error;
+        const queuedLocal = {
+          ...updatedNote,
+          source: 'localStorage',
+          queuedSync: true,
+          queuedOpType: 'update'
+        };
+        upsertLocalCustomerNote(customerId, queuedLocal);
+        const dbInput = buildDbNoteInputFromAnyNote(queuedLocal, customerId);
+        if (dbInput) {
+          enqueueNoteOfflineOp({
+            type: 'update',
+            customerId: parseInt(customerId, 10),
+            noteId,
+            note: { ...dbInput, id: noteId }
+          });
+        }
+      }
+      await fullscreenNotesCanvas.refreshNotesDisplay(customerId);
+      return true;
+    }
+
+    if (isDbBackedNoteSource(noteData.source)) {
+      await CrmDB.updateNote(updatedNote);
+    } else if (!updateLocalStoredNote(customerId, noteId, updatedNote)) {
+      throw new Error('Could not update note pin state');
+    }
+
+    await fullscreenNotesCanvas.refreshNotesDisplay(customerId);
+    return true;
+  }
+
   async function flushQueuedNoteOperations() {
     if (!productConfig.useSupabase || !navigator.onLine || !window.CrmDB) return { processed: 0, remaining: 0 };
     const queue = readNoteOfflineQueue();
@@ -7475,6 +7615,9 @@
       this.pencilBtn = null;
       this.eraserBtn = null;
       this.isEditingImageBasedNote = false;
+      this.pinCheckbox = null;
+      this.pinStatus = null;
+      this.canvasContainer = null;
     }
 
 
@@ -7510,7 +7653,7 @@
         right: 0;
         bottom: 0;
         background: rgba(17, 24, 39, 0.98);
-        z-index: 10000;
+        z-index: 10010;
         display: flex;
         flex-direction: column;
         padding: 20px;
@@ -7518,6 +7661,7 @@
       
       // Header
       const header = document.createElement('div');
+      header.className = 'header';
       header.style.cssText = `
         display: flex;
         justify-content: space-between;
@@ -7531,6 +7675,22 @@
       title.textContent = 'Add Note';
       title.style.margin = '0';
       title.style.color = 'var(--text)';
+
+      const rightControls = document.createElement('div');
+      rightControls.style.cssText = 'display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end;';
+
+      const pinWrap = document.createElement('label');
+      pinWrap.style.cssText = 'display:flex; align-items:center; gap:8px; color:var(--text); font-size:14px; cursor:pointer; user-select:none;';
+      this.pinCheckbox = document.createElement('input');
+      this.pinCheckbox.type = 'checkbox';
+      this.pinCheckbox.setAttribute('data-testid', 'note-pin-checkbox');
+      this.pinCheckbox.style.cssText = 'width:16px; height:16px; cursor:pointer;';
+      const pinText = document.createElement('span');
+      pinText.textContent = 'Pin to profile';
+      this.pinStatus = document.createElement('span');
+      this.pinStatus.style.cssText = 'color:var(--muted); font-size:12px;';
+      pinWrap.appendChild(this.pinCheckbox);
+      pinWrap.appendChild(pinText);
       
       const doneBtn = document.createElement('button');
       doneBtn.textContent = 'Done';
@@ -7545,11 +7705,15 @@
         font-weight: 600;
       `;
 
+      rightControls.appendChild(pinWrap);
+      rightControls.appendChild(this.pinStatus);
+      rightControls.appendChild(doneBtn);
       header.appendChild(title);
-      header.appendChild(doneBtn);
+      header.appendChild(rightControls);
 
       // Canvas container
       const canvasContainer = document.createElement('div');
+      this.canvasContainer = canvasContainer;
       canvasContainer.style.cssText = `
         flex: 1;
         display: flex;
@@ -7570,13 +7734,17 @@
       // Removed click-outside-to-close functionality to prevent accidental data loss
 
       document.body.appendChild(this.overlay);
+      configurePinCheckbox(this.pinCheckbox, this.pinStatus, this.getCurrentCustomerId(), this.editingNote);
     }
 
     setupCanvas() {
       this.canvas = document.createElement('canvas');
       this.ctx = this.canvas.getContext('2d');
       
-      const canvasContainer = this.overlay.querySelector('div:last-child');
+      const canvasContainer = this.canvasContainer || this.overlay.querySelector('canvas')?.parentElement;
+      if (!canvasContainer) {
+        throw new Error('Canvas container not found');
+      }
       canvasContainer.appendChild(this.canvas);
 
       // Set canvas size
@@ -7791,7 +7959,10 @@
       toolbar.appendChild(bottomRow);
 
       // Insert toolbar before canvas container
-      const canvasContainer = this.overlay.querySelector('div:last-child');
+      const canvasContainer = this.canvasContainer;
+      if (!canvasContainer || canvasContainer.parentNode !== this.overlay) {
+        throw new Error('Canvas container not found');
+      }
       this.overlay.insertBefore(toolbar, canvasContainer);
       
       // Event listeners
@@ -8168,7 +8339,7 @@
         border: 1px solid rgba(255,255,255,0.2);
         border-radius: 12px;
         padding: 24px;
-        z-index: 10001;
+        z-index: 10011;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
       `;
 
@@ -8298,6 +8469,13 @@
         }
         
         console.log(`Saving note for customer ID: ${customerId}`);
+        const requestedPinned = getPinCheckboxValue(this.pinCheckbox, this.editingNote);
+        if (requestedPinned && !isNotePinned(this.editingNote)) {
+          const pinnedCount = await getPinnedNotesCount(customerId, this.editingNote);
+          if (pinnedCount >= PINNED_NOTES_LIMIT) {
+            throw new Error(`Only ${PINNED_NOTES_LIMIT} notes can be pinned to a customer profile`);
+          }
+        }
         
         // Check localStorage availability and space
         try {
@@ -8331,6 +8509,7 @@
           const updatedNote = {
             ...this.editingNote,
             svg: optimizedSvgData,
+            isPinned: getPinCheckboxValue(this.pinCheckbox, this.editingNote),
             editedDate: new Date().toISOString()
           };
           
@@ -8449,7 +8628,8 @@
             id: uniqueId,
             svg: optimizedSvgData,
             date: formatDateYYYYMMDD(new Date()),
-            noteNumber: nextNoteNumber
+            noteNumber: nextNoteNumber,
+            isPinned: getPinCheckboxValue(this.pinCheckbox)
           };
 
           // Use hybrid storage (localStorage first, IndexedDB fallback)
@@ -8515,7 +8695,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 10002;
+        z-index: 10012;
         padding: 20px;
         box-sizing: border-box;
       `;
@@ -9111,6 +9291,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             noteNumber: normalizedNoteData.noteNumber,
             createdAt: new Date().toISOString(),
             editedDate: normalizedNoteData.editedDate,
+            isPinned: normalizedNoteData.isPinned === true,
             source: 'indexeddb-fallback', // Mark as fallback save
             originalId: normalizedNoteData.id // Store the original ID for reference
           };
@@ -9289,7 +9470,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             noteNumber: payload.noteNumber,
             createdAt: payload.createdAt || new Date().toISOString(),
             editedDate: payload.editedDate || null,
-            noteType: payload.noteType
+            noteType: payload.noteType,
+            isPinned: payload.isPinned === true
           };
           if (payload.noteType === 'text') {
             createInput.text = payload.text;
@@ -9323,6 +9505,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         if (notesList) {
           notesList.innerHTML = '';
         }
+        const pinnedList = document.querySelector('.pinned-notes-list');
+        const pinnedView = document.querySelector('.pinned-notes-view');
+        if (pinnedList) pinnedList.innerHTML = '';
+        if (pinnedView) pinnedView.style.display = 'none';
         
         // Add all notes to UI
         allNotes.forEach(note => {
@@ -9474,9 +9660,175 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       return 'default';
     }
 
+    createNoteContentContainer(noteData, isMigratedNote = false) {
+      const noteText = getNoteTextValue(noteData);
+      const isTextNote = shouldRenderAsText(noteData);
+
+      if (isTextNote) {
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'text-note-content';
+        contentContainer.setAttribute('data-testid', 'text-note-content');
+        contentContainer.style.cssText = `
+          max-width: 100%;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 4px;
+          padding: 16px;
+          background: rgba(255,255,255,0.03);
+          color: var(--text);
+          font-size: 15px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+        `;
+        contentContainer.textContent = noteText || '(No text payload)';
+        return contentContainer;
+      }
+
+      const contentContainer = document.createElement('div');
+      contentContainer.innerHTML = noteData.svg || '';
+      contentContainer.style.cssText = `
+        max-width: 100%;
+        overflow: visible;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 4px;
+        padding: 8px;
+        background: transparent;
+        display: flex;
+        justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
+        align-items: flex-start;
+        min-height: 100px;
+      `;
+
+      const svg = contentContainer.querySelector('svg');
+      if (svg) {
+        const originalViewBox = svg.getAttribute('viewBox');
+        const originalWidth = svg.getAttribute('width');
+        const originalHeight = svg.getAttribute('height');
+        let svgWidth = 500; // default width
+        let svgHeight = 60; // default height
+
+        if (originalViewBox) {
+          const parts = originalViewBox.split(' ');
+          if (parts.length >= 4) {
+            svgWidth = parseInt(parts[2]) || 500;
+            svgHeight = parseInt(parts[3]) || 60;
+          }
+        } else if (originalWidth && originalHeight) {
+          svgWidth = parseInt(originalWidth) || 500;
+          svgHeight = parseInt(originalHeight) || 60;
+        }
+
+        const textElements = svg.querySelectorAll('text, tspan');
+        let maxY = 0;
+        let maxX = 0;
+        let fontSize = 16; // default font size
+
+        textElements.forEach(textEl => {
+          const computedFontSize = textEl.getAttribute('font-size');
+          if (computedFontSize) {
+            fontSize = parseInt(computedFontSize) || 16;
+          }
+
+          const x = parseFloat(textEl.getAttribute('x')) || 0;
+          const y = parseFloat(textEl.getAttribute('y')) || 0;
+          const dy = parseFloat(textEl.getAttribute('dy')) || 0;
+          const actualY = y + dy;
+          const lineHeight = fontSize * 1.3;
+          const textHeight = actualY + lineHeight;
+          const textContent = textEl.textContent || '';
+          const estimatedTextWidth = textContent.length * fontSize * 0.6;
+          const textWidth = x + estimatedTextWidth;
+
+          if (textHeight > maxY) {
+            maxY = textHeight;
+          }
+
+          if (textWidth > maxX) {
+            maxX = textWidth;
+          }
+        });
+
+        if (maxY > 0) {
+          svgHeight = Math.max(svgHeight, maxY + 20);
+        }
+
+        if (maxX > 0) {
+          svgWidth = Math.max(svgWidth, maxX + 20);
+        }
+
+        const containerWidth = contentContainer.parentElement?.offsetWidth || 500;
+        const containerHeight = contentContainer.parentElement?.offsetHeight || 400;
+        const maxAllowedWidth = containerWidth - 40;
+        const maxAllowedHeight = containerHeight - 40;
+        const widthScale = maxAllowedWidth / svgWidth;
+        const heightScale = maxAllowedHeight / svgHeight;
+        const scale = Math.min(widthScale, heightScale, 1);
+
+        if (scale < 1) {
+          svgWidth = svgWidth * scale;
+          svgHeight = svgHeight * scale;
+        } else {
+          svgWidth = Math.min(svgWidth, maxAllowedWidth);
+          svgHeight = Math.min(svgHeight, maxAllowedHeight);
+        }
+
+        svg.setAttribute('viewBox', `0 0 ${svgWidth / scale} ${svgHeight / scale}`);
+        svg.setAttribute('width', svgWidth);
+        svg.setAttribute('height', svgHeight);
+
+        svg.style.cssText = `
+          max-width: 100%;
+          width: ${svgWidth}px;
+          height: ${svgHeight}px;
+          background: transparent;
+        `;
+      }
+
+      return contentContainer;
+    }
+
+    createNoteEditButton(noteData) {
+      const editButton = document.createElement('button');
+      editButton.textContent = '✏️';
+      editButton.title = 'Edit Note';
+      editButton.setAttribute('data-testid', 'edit-note-button');
+      editButton.style.cssText = `
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+        color: var(--text);
+        font-size: 12px;
+        transition: background 0.2s ease;
+      `;
+      editButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (shouldRenderAsText(noteData)) {
+          textNotesOverlay.show(noteData.customerId || getCurrentCustomerId(), noteData);
+        } else {
+          this.editNote(noteData);
+        }
+      });
+      editButton.addEventListener('mouseenter', () => {
+        editButton.style.background = 'rgba(255,255,255,0.2)';
+      });
+      editButton.addEventListener('mouseleave', () => {
+        editButton.style.background = 'rgba(255,255,255,0.1)';
+      });
+      return editButton;
+    }
+
     addNoteToUI(noteData) {
       const notesList = document.querySelector('.notes-list');
       if (!notesList) return;
+      if (isNotePinned(noteData)) {
+        const pinnedList = document.querySelector('.pinned-notes-list');
+        if (pinnedList) {
+          this.addPinnedNoteToUI(noteData);
+          return;
+        }
+      }
       const isPendingSync = isNoteQueuedForSync(noteData);
 
       const noteElement = document.createElement('div');
@@ -9641,6 +9993,38 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         headerRight.appendChild(editButton);
       }
 
+      if (!isNotePinned(noteData)) {
+        const pinButton = document.createElement('button');
+        pinButton.textContent = '📌';
+        pinButton.title = 'Pin Note';
+        pinButton.setAttribute('data-testid', 'pin-note-button');
+        pinButton.style.cssText = `
+          background: rgba(251,191,36,0.16);
+          border: 1px solid rgba(251,191,36,0.38);
+          border-radius: 4px;
+          padding: 4px 8px;
+          cursor: pointer;
+          color: var(--text);
+          font-size: 12px;
+          transition: background 0.2s ease;
+        `;
+        pinButton.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await persistNotePinnedState(noteData, true);
+          } catch (error) {
+            alert(`Failed to pin note: ${error.message}`);
+          }
+        });
+        pinButton.addEventListener('mouseenter', () => {
+          pinButton.style.background = 'rgba(251,191,36,0.28)';
+        });
+        pinButton.addEventListener('mouseleave', () => {
+          pinButton.style.background = 'rgba(251,191,36,0.16)';
+        });
+        headerRight.appendChild(pinButton);
+      }
+
       const expandIcon = document.createElement('span');
       expandIcon.textContent = '▼';
       expandIcon.style.color = 'var(--muted)';
@@ -9730,153 +10114,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         overflow-y: auto;
       `;
 
-      // Check if this is a text-based note or SVG-based note.
-      // Be defensive against payload drift: if text exists and SVG is empty, treat as text.
-      const noteText = getNoteTextValue(noteData);
-      const isTextNote = shouldRenderAsText(noteData);
-      
-      let contentContainer;
-      
-      if (isTextNote) {
-        // Render text-based note
-        contentContainer = document.createElement('div');
-        contentContainer.className = 'text-note-content';
-        contentContainer.setAttribute('data-testid', 'text-note-content');
-        contentContainer.style.cssText = `
-          max-width: 100%;
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 4px;
-          padding: 16px;
-          background: rgba(255,255,255,0.03);
-          color: var(--text);
-          font-size: 15px;
-          line-height: 1.6;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-        `;
-        contentContainer.textContent = noteText || '(No text payload)';
-      } else {
-        // Render SVG-based note (legacy handwriting)
-        contentContainer = document.createElement('div');
-        contentContainer.innerHTML = noteData.svg || '';
-        contentContainer.style.cssText = `
-          max-width: 100%;
-          overflow: visible;
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 4px;
-          padding: 8px;
-          background: transparent;
-          display: flex;
-          justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
-          align-items: flex-start;
-          min-height: 100px;
-        `;
-        
-        // Scale the SVG to fit the container - calculate proper dimensions for content
-        const svg = contentContainer.querySelector('svg');
-        if (svg) {
-          // Get the original viewBox to understand the intended dimensions
-          const originalViewBox = svg.getAttribute('viewBox');
-          const originalWidth = svg.getAttribute('width');
-          const originalHeight = svg.getAttribute('height');
-          
-          let svgWidth = 500; // default width
-          let svgHeight = 60; // default height
-          
-          // Parse original dimensions
-          if (originalViewBox) {
-            const parts = originalViewBox.split(' ');
-            if (parts.length >= 4) {
-              svgWidth = parseInt(parts[2]) || 500;
-              svgHeight = parseInt(parts[3]) || 60;
-            }
-          } else if (originalWidth && originalHeight) {
-            svgWidth = parseInt(originalWidth) || 500;
-            svgHeight = parseInt(originalHeight) || 60;
-          }
-          
-          // Calculate the actual content dimensions needed by analyzing all text elements
-          const textElements = svg.querySelectorAll('text, tspan');
-          let maxY = 0;
-          let maxX = 0;
-          let fontSize = 16; // default font size
-          
-          textElements.forEach(textEl => {
-            // Get font size from the element
-            const computedFontSize = textEl.getAttribute('font-size');
-            if (computedFontSize) {
-              fontSize = parseInt(computedFontSize) || 16;
-            }
-            
-            // Get x and y positions
-            const x = parseFloat(textEl.getAttribute('x')) || 0;
-            const y = parseFloat(textEl.getAttribute('y')) || 0;
-            
-            // Get dy offset for tspan elements
-            const dy = parseFloat(textEl.getAttribute('dy')) || 0;
-            const actualY = y + dy;
-            
-            // Calculate approximate height needed for this text element
-            const lineHeight = fontSize * 1.3; // slightly larger line height for better spacing
-            const textHeight = actualY + lineHeight;
-            
-            // Estimate text width based on content and font size
-            const textContent = textEl.textContent || '';
-            const estimatedTextWidth = textContent.length * fontSize * 0.6; // rough estimate
-            const textWidth = x + estimatedTextWidth;
-            
-            if (textHeight > maxY) {
-              maxY = textHeight;
-            }
-            
-            if (textWidth > maxX) {
-              maxX = textWidth;
-            }
-          });
-          
-          // Use the calculated dimensions if they're larger than the original
-          if (maxY > 0) {
-            svgHeight = Math.max(svgHeight, maxY + 20); // Add some padding
-          }
-          
-          if (maxX > 0) {
-            svgWidth = Math.max(svgWidth, maxX + 20); // Add some padding
-          }
-          
-          // Ensure dimensions don't exceed container bounds (with some margin)
-          const containerWidth = contentContainer.parentElement?.offsetWidth || 500;
-          const containerHeight = contentContainer.parentElement?.offsetHeight || 400;
-          const maxAllowedWidth = containerWidth - 40; // Account for padding and borders
-          const maxAllowedHeight = containerHeight - 40; // Account for padding and borders
-          
-          // Calculate scale factor to fit within bounds while maintaining aspect ratio
-          const widthScale = maxAllowedWidth / svgWidth;
-          const heightScale = maxAllowedHeight / svgHeight;
-          const scale = Math.min(widthScale, heightScale, 1); // Don't scale up, only down
-          
-          // Apply scaling if needed
-          if (scale < 1) {
-            svgWidth = svgWidth * scale;
-            svgHeight = svgHeight * scale;
-          } else {
-            // Still respect max bounds even if no scaling needed
-            svgWidth = Math.min(svgWidth, maxAllowedWidth);
-            svgHeight = Math.min(svgHeight, maxAllowedHeight);
-          }
-          
-          // Update the SVG viewBox and dimensions to match content
-          svg.setAttribute('viewBox', `0 0 ${svgWidth / scale} ${svgHeight / scale}`);
-          svg.setAttribute('width', svgWidth);
-          svg.setAttribute('height', svgHeight);
-          
-          svg.style.cssText = `
-            max-width: 100%;
-            width: ${svgWidth}px;
-            height: ${svgHeight}px;
-            background: transparent;
-          `;
-        }
-      }
+      const contentContainer = this.createNoteContentContainer(noteData, isMigratedNote);
 
       noteContent.appendChild(contentContainer);
       noteElement.appendChild(noteHeader);
@@ -9890,6 +10128,110 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       });
 
       notesList.appendChild(noteElement);
+    }
+
+    addPinnedNoteToUI(noteData) {
+      const pinnedList = document.querySelector('.pinned-notes-list');
+      const pinnedView = document.querySelector('.pinned-notes-view');
+      if (!pinnedList) return;
+      if (pinnedView) pinnedView.style.display = 'block';
+
+      const isPendingSync = isNoteQueuedForSync(noteData);
+      const isMigratedNote = noteData.isMigrated || isMigratedNoteByContent(noteData);
+      const showPinnedActions = window.location.hash.includes('#/customer-edit');
+
+      const noteElement = document.createElement('div');
+      noteElement.className = 'note-entry pinned-note-entry';
+      noteElement.setAttribute('data-testid', 'pinned-note-entry');
+      noteElement.style.cssText = `
+        border: 1px solid rgba(251,191,36,0.38);
+        border-radius: 8px;
+        background: rgba(251,191,36,0.08);
+        overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(251,191,36,0.08) inset;
+      `;
+      if (isPendingSync) {
+        noteElement.style.borderColor = 'rgba(245, 158, 11, 0.55)';
+      }
+
+      const noteHeader = document.createElement('div');
+      noteHeader.className = 'pinned-note-actions';
+      noteHeader.style.cssText = `
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        background: rgba(251,191,36,0.08);
+        border-bottom: 1px solid rgba(251,191,36,0.22);
+      `;
+
+      const headerRight = document.createElement('div');
+      headerRight.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
+
+      if (isPendingSync) {
+        const pendingBadge = document.createElement('span');
+        pendingBadge.textContent = 'Sync pending';
+        pendingBadge.title = 'Saved offline. Will sync when connection is restored.';
+        pendingBadge.style.cssText = `
+          font-size: 11px;
+          line-height: 1;
+          padding: 5px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(245, 158, 11, 0.45);
+          background: rgba(245, 158, 11, 0.2);
+          color: #fcd34d;
+          font-weight: 700;
+          white-space: nowrap;
+        `;
+        headerRight.appendChild(pendingBadge);
+      }
+
+      if (!isMigratedNote) {
+        headerRight.appendChild(this.createNoteEditButton(noteData));
+      }
+
+      const unpinButton = document.createElement('button');
+      unpinButton.title = 'Unpin Note';
+      unpinButton.textContent = 'Unpin';
+      unpinButton.setAttribute('data-testid', 'unpin-note-button');
+      unpinButton.style.cssText = `
+        background: rgba(251,191,36,0.24);
+        border: 1px solid rgba(251,191,36,0.5);
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+        color: var(--text);
+        font-size: 12px;
+        transition: background 0.2s ease;
+      `;
+      unpinButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await persistNotePinnedState(noteData, false);
+        } catch (error) {
+          alert(`Failed to unpin note: ${error.message}`);
+        }
+      });
+      headerRight.appendChild(unpinButton);
+
+      const noteContent = document.createElement('div');
+      noteContent.className = 'note-content';
+      noteContent.style.cssText = `
+        padding: 16px;
+        display: block;
+        background: rgba(255,255,255,0.02);
+        max-height: 90vh;
+        overflow-y: auto;
+      `;
+      noteContent.appendChild(this.createNoteContentContainer(noteData, isMigratedNote));
+
+      if (showPinnedActions) {
+        noteHeader.appendChild(headerRight);
+        noteElement.appendChild(noteHeader);
+      }
+      noteElement.appendChild(noteContent);
+      pinnedList.appendChild(noteElement);
     }
 
     async revertNoteToPreviousVersion(noteData) {
@@ -10192,6 +10534,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.editingNote = null;
       this.customerId = null;
       this.onSaveCallback = null;
+      this.pinCheckbox = null;
+      this.pinStatus = null;
     }
 
     show(customerId = null, editingNote = null) {
@@ -10221,7 +10565,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         right: 0;
         bottom: 0;
         background: rgba(17, 24, 39, 0.98);
-        z-index: 10000;
+        z-index: 10010;
         display: flex;
         flex-direction: column;
         padding: 20px;
@@ -10247,7 +10591,20 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       title.style.color = 'var(--text)';
       
       const buttonContainer = document.createElement('div');
-      buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+      buttonContainer.style.cssText = 'display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end;';
+
+      const pinWrap = document.createElement('label');
+      pinWrap.style.cssText = 'display:flex; align-items:center; gap:8px; color:var(--text); font-size:14px; cursor:pointer; user-select:none;';
+      this.pinCheckbox = document.createElement('input');
+      this.pinCheckbox.type = 'checkbox';
+      this.pinCheckbox.setAttribute('data-testid', 'note-pin-checkbox');
+      this.pinCheckbox.style.cssText = 'width:16px; height:16px; cursor:pointer;';
+      const pinText = document.createElement('span');
+      pinText.textContent = 'Pin to profile';
+      this.pinStatus = document.createElement('span');
+      this.pinStatus.style.cssText = 'color:var(--muted); font-size:12px;';
+      pinWrap.appendChild(this.pinCheckbox);
+      pinWrap.appendChild(pinText);
       
       const cancelBtn = document.createElement('button');
       cancelBtn.textContent = 'Cancel';
@@ -10277,6 +10634,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         font-weight: 600;
       `;
 
+      buttonContainer.appendChild(pinWrap);
+      buttonContainer.appendChild(this.pinStatus);
       buttonContainer.appendChild(cancelBtn);
       buttonContainer.appendChild(saveBtn);
       header.appendChild(title);
@@ -10352,6 +10711,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       });
 
       document.body.appendChild(this.overlay);
+      configurePinCheckbox(this.pinCheckbox, this.pinStatus, this.customerId, this.editingNote);
     }
 
     extractTextFromSVG(svgString) {
@@ -10382,6 +10742,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const customerId = this.customerId;
         const now = new Date();
         const dateStr = formatDateYYYYMMDD(now);
+        const requestedPinned = getPinCheckboxValue(this.pinCheckbox, this.editingNote);
+        if (requestedPinned && !isNotePinned(this.editingNote)) {
+          const pinnedCount = await getPinnedNotesCount(customerId, this.editingNote);
+          if (pinnedCount >= PINNED_NOTES_LIMIT) {
+            throw new Error(`Only ${PINNED_NOTES_LIMIT} notes can be pinned to a customer profile`);
+          }
+        }
         
         if (this.editingNote) {
           await this.updateNote(text);
@@ -10409,6 +10776,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         svg: serializedSvg,
         date: dateStr,
         noteNumber: noteNumber,
+        isPinned: getPinCheckboxValue(this.pinCheckbox),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         type: 'text',
@@ -10465,6 +10833,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         text: text,
         textValue: text,
         svg: serializedSvg,
+        isPinned: getPinCheckboxValue(this.pinCheckbox, this.editingNote),
         editedDate: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         type: 'text',
@@ -10567,6 +10936,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       this.textarea = null;
       this.editingNote = null;
       this.customerId = null;
+      this.pinCheckbox = null;
+      this.pinStatus = null;
     }
   }
 
