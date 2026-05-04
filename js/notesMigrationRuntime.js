@@ -172,8 +172,12 @@
       const allNotes = await fullscreenNotesCanvas.loadNotesHybrid(customerId);
       const notesList = document.querySelector('.notes-list');
       if (!notesList) return;
+      const pinnedList = document.querySelector('.pinned-notes-list');
+      const pinnedView = document.querySelector('.pinned-notes-view');
 
       notesList.innerHTML = '';
+      if (pinnedList) pinnedList.innerHTML = '';
+      if (pinnedView) pinnedView.style.display = 'none';
       allNotes.forEach((noteData) => {
         fullscreenNotesCanvas.addNoteToUI(noteData);
       });
@@ -186,8 +190,12 @@
       const customerNotes = existingNotes[customerId] || [];
       const notesList = document.querySelector('.notes-list');
       if (!notesList) return;
+      const pinnedList = document.querySelector('.pinned-notes-list');
+      const pinnedView = document.querySelector('.pinned-notes-view');
 
       notesList.innerHTML = '';
+      if (pinnedList) pinnedList.innerHTML = '';
+      if (pinnedView) pinnedView.style.display = 'none';
       customerNotes.forEach((noteData, index) => {
         noteData.noteNumber = index + 1;
         fullscreenNotesCanvas.addNoteToUI(noteData);

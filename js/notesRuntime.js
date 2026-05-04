@@ -65,6 +65,10 @@
     return !!(note && note.queuedSync === true);
   }
 
+  function isNotePinned(note) {
+    return note?.isPinned === true || note?.isPinned === 'true' || note?.is_pinned === true || note?.is_pinned === 'true';
+  }
+
   function serializeTextNoteToSvg(textValue) {
     const text = String(textValue || '').replace(/\r\n/g, '\n');
     const lines = text.split('\n');
@@ -148,16 +152,17 @@
     const editedDate = note?.editedDate ? (normalizeDateTimeToISO(note.editedDate) || note.editedDate) : null;
     const textValue = getNoteTextValue(note);
     const svgValue = typeof note?.svg === 'string' ? note.svg : '';
+    const isPinned = isNotePinned(note);
 
     if (noteType === 'text') {
       const text = (textValue || '').trim();
       if (!text) return null;
-      return { noteType: 'text', text, date, noteNumber, createdAt, editedDate, svg: null };
+      return { noteType: 'text', text, date, noteNumber, createdAt, editedDate, svg: null, isPinned };
     }
 
     const svg = (svgValue || '').trim();
     if (!svg) return null;
-    return { noteType: 'svg', svg, date, noteNumber, createdAt, editedDate, text: '' };
+    return { noteType: 'svg', svg, date, noteNumber, createdAt, editedDate, text: '', isPinned };
   }
 
   function buildNoteSyncSignature(note, options = {}) {
@@ -179,7 +184,8 @@
       noteNumber: payload.noteNumber,
       createdAt: payload.createdAt || new Date().toISOString(),
       editedDate: payload.editedDate || null,
-      noteType: payload.noteType
+      noteType: payload.noteType,
+      isPinned: payload.isPinned === true
     };
     if (payload.noteType === 'text') {
       input.text = payload.text;
@@ -301,6 +307,7 @@
     hasSvgPayload,
     shouldRenderAsText,
     isNoteQueuedForSync,
+    isNotePinned,
     serializeTextNoteToSvg,
     parseNoteDateValue,
     noteSortTimestamp,

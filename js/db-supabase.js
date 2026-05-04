@@ -30,6 +30,7 @@
     : APPOINTMENT_BASE_COLUMNS;
   var cachedClient = null;
   let cachedTypedNoteColumns = null;
+  let cachedPinnedNoteColumn = null;
   let cachedTypedNoteVersionColumns = null;
   let runtimePreflightPromise = null;
 
@@ -98,7 +99,7 @@
       addressLine1: 'address_line1', addressLine2: 'address_line2', suburb: 'suburb', state: 'state', postcode: 'postcode', country: 'country',
       updatedAt: 'updated_at', customerId: 'customer_id', createdAt: 'created_at',
       editedDate: 'edited_date', noteNumber: 'note_number', dataUrl: 'data_url',
-      textValue: 'text_value', noteType: 'note_type',
+      textValue: 'text_value', noteType: 'note_type', isPinned: 'is_pinned',
       noteId: 'note_id', savedAt: 'saved_at',
       appointmentId: 'appointment_id', dueAt: 'due_at',
       quotedAmount: 'quoted_amount', invoiceAmount: 'invoice_amount', paidAmount: 'paid_amount'
@@ -120,7 +121,7 @@
       address_line1: 'addressLine1', address_line2: 'addressLine2', suburb: 'suburb', state: 'state', postcode: 'postcode', country: 'country',
       updated_at: 'updatedAt', customer_id: 'customerId', created_at: 'createdAt',
       edited_date: 'editedDate', note_number: 'noteNumber', data_url: 'dataUrl',
-      text_value: 'textValue', note_type: 'noteType',
+      text_value: 'textValue', note_type: 'noteType', is_pinned: 'isPinned',
       note_id: 'noteId', saved_at: 'savedAt',
       appointment_id: 'appointmentId', due_at: 'dueAt',
       quoted_amount: 'quotedAmount', invoice_amount: 'invoiceAmount', paid_amount: 'paidAmount'
@@ -167,6 +168,19 @@
     }
     if (probe.error) throwIfError(probe);
     cachedTypedNoteColumns = true;
+    return true;
+  }
+
+  async function hasPinnedNoteColumn() {
+    if (cachedPinnedNoteColumn != null) return cachedPinnedNoteColumn;
+    const supabase = getClient();
+    const probe = await supabase.from('notes').select('id,is_pinned').limit(1);
+    if (probe.error && isMissingColumnError(probe.error)) {
+      cachedPinnedNoteColumn = false;
+      return false;
+    }
+    if (probe.error) throwIfError(probe);
+    cachedPinnedNoteColumn = true;
     return true;
   }
 
@@ -874,6 +888,7 @@
     const noteType = inferNoteType(note);
     const textValue = note.text ?? note.textValue ?? note.content ?? null;
     const supportsTypedColumns = await hasTypedNoteColumns();
+    const supportsPinnedColumn = await hasPinnedNoteColumn();
     const row = {
       customer_id: parseInt(note.customerId),
       date: date,
@@ -882,6 +897,9 @@
       svg: note.svg ?? null,
       note_number: note.noteNumber ?? null
     };
+    if (supportsPinnedColumn) {
+      row.is_pinned = note.isPinned === true;
+    }
     if (supportsTypedColumns) {
       row.note_type = noteType;
       row.text_value = noteType === 'text' ? textValue : null;
@@ -919,6 +937,7 @@
     const existingCamel = toCamel(existing);
     const supportsTypedColumns = await hasTypedNoteColumns();
     const supportsTypedVersionColumns = await hasTypedNoteVersionColumns();
+    const supportsPinnedColumn = await hasPinnedNoteColumn();
     const nextNoteType = inferNoteType(updatedNote);
     const nextTextValue = updatedNote.text ?? updatedNote.textValue ?? updatedNote.content ?? null;
     const existingType = existingCamel.noteType || inferNoteType(existingCamel);
@@ -961,6 +980,9 @@
       svg: merged.svg ?? null,
       note_number: merged.noteNumber ?? null
     };
+    if (supportsPinnedColumn) {
+      row.is_pinned = merged.isPinned === true;
+    }
     if (supportsTypedColumns) {
       row.note_type = nextNoteType;
       row.text_value = nextNoteType === 'text' ? nextTextValue : null;
@@ -988,6 +1010,7 @@
       restoredAt: new Date().toISOString()
     };
     const supportsTypedColumns = await hasTypedNoteColumns();
+    const supportsPinnedColumn = await hasPinnedNoteColumn();
     const row = {
       customer_id: parseInt(restored.customerId),
       date: restored.date || null,
@@ -996,6 +1019,9 @@
       svg: restored.svg ?? null,
       note_number: restored.noteNumber ?? null
     };
+    if (supportsPinnedColumn) {
+      row.is_pinned = restored.isPinned === true;
+    }
     if (supportsTypedColumns) {
       const restoredType = restored.noteType || inferNoteType(restored);
       row.note_type = restoredType;
