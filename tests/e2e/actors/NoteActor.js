@@ -36,6 +36,91 @@ class NoteActor {
     await expect(this.page.getByTestId('pinned-note-entry').filter({ hasText: text })).toHaveCount(1);
   }
 
+  async createFormattedTextNote() {
+    await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
+    await this.page.getByTestId('add-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeVisible();
+
+    await this.page.getByTestId('note-textarea').fill('Important\nLine one\nLine two');
+    await this.page.getByTestId('note-textarea').evaluate((el) => {
+      const start = el.value.indexOf('Important');
+      el.setSelectionRange(start, start + 'Important'.length);
+    });
+    await this.page.getByTestId('note-format-bold').click();
+    await this.page.getByTestId('note-textarea').evaluate((el) => {
+      const start = el.value.indexOf('Line one');
+      el.setSelectionRange(start, el.value.length);
+    });
+    await this.page.getByTestId('note-format-bullet').click();
+
+    const preview = this.page.getByTestId('note-format-preview');
+    await expect(preview.locator('strong')).toHaveText('Important');
+    await expect(preview.locator('ul li')).toHaveText(['Line one', 'Line two']);
+
+    await this.page.getByTestId('save-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeHidden();
+  }
+
+  async createAutoContinuedListNote() {
+    await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
+    await this.page.getByTestId('add-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeVisible();
+
+    const textarea = this.page.getByTestId('note-textarea');
+    await textarea.fill('- First bullet');
+    await textarea.press('Enter');
+    await textarea.type('Second bullet');
+    await textarea.press('Enter');
+    await textarea.press('Enter');
+    await textarea.type('1. First number');
+    await textarea.press('Enter');
+    await textarea.type('Second number');
+
+    await expect(textarea).toHaveValue('- First bullet\n- Second bullet\n1. First number\n2. Second number');
+
+    const preview = this.page.getByTestId('note-format-preview');
+    await expect(preview.locator('ul li')).toHaveText(['First bullet', 'Second bullet']);
+    await expect(preview.locator('ol li')).toHaveText(['First number', 'Second number']);
+
+    await this.page.getByTestId('save-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeHidden();
+  }
+
+  async expectEnterAfterBoldTextDoesNotCreateBullet() {
+    await this.page.evaluate(() => localStorage.setItem('noteInputMode', 'text'));
+    await this.page.getByTestId('add-note-button').click();
+    await expect(this.page.getByTestId('note-textarea')).toBeVisible();
+
+    const textarea = this.page.getByTestId('note-textarea');
+    await textarea.fill('Important');
+    await textarea.evaluate((el) => el.setSelectionRange(0, el.value.length));
+    await this.page.getByTestId('note-format-bold').click();
+    await textarea.evaluate((el) => el.setSelectionRange(el.value.length, el.value.length));
+    await textarea.press('Enter');
+    await textarea.type('Follow up');
+
+    await expect(textarea).toHaveValue('**Important**\nFollow up');
+    await this.page.getByTestId('cancel-note-button').click();
+  }
+
+  async expectAutoContinuedListNote() {
+    await expect(this.page.getByTestId('note-entry')).toHaveCount(1);
+    const note = this.page.getByTestId('note-entry').first();
+    await note.locator('.note-header').click();
+    const content = note.getByTestId('text-note-content');
+    await expect(content.locator('ul li')).toHaveText(['First bullet', 'Second bullet']);
+    await expect(content.locator('ol li')).toHaveText(['First number', 'Second number']);
+  }
+
+  async expectFormattedTextNote() {
+    await expect(this.page.getByTestId('note-entry')).toHaveCount(1);
+    const note = this.page.getByTestId('note-entry').first();
+    await note.locator('.note-header').click();
+    const content = note.getByTestId('text-note-content');
+    await expect(content.locator('strong')).toHaveText('Important');
+    await expect(content.locator('ul li')).toHaveText(['Line one', 'Line two']);
+  }
+
   async editFirstTextNote(updatedText) {
     await this.page.getByTestId('edit-note-button').first().click();
     await expect(this.page.getByTestId('note-textarea')).toBeVisible();
