@@ -74,3 +74,21 @@ test('new customer temp pinned notes persist after save and pin limit disables s
   await expect(page.getByTestId('note-entry')).toHaveCount(0);
   await app.assertNoFatalErrors();
 });
+
+test('canvas note creation opens toolbar and accepts drawing input', async ({ page }) => {
+  const app = new AppActor(page);
+  const customers = new CustomerActor(page);
+  const notes = new NoteActor(page);
+  const stamp = Date.now();
+  const customer = {
+    firstName: 'Canvas',
+    lastName: `Note ${stamp}`,
+    contactNumber: `0433${String(stamp).slice(-6)}`,
+    addressLine1: `${String(stamp).slice(-3)} Canvas Street`
+  };
+
+  await app.openClean();
+  await customers.createCustomer(customer);
+  await notes.createCanvasNote();
+  await app.assertNoFatalErrors();
+});

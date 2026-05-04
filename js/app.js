@@ -7617,6 +7617,7 @@
       this.isEditingImageBasedNote = false;
       this.pinCheckbox = null;
       this.pinStatus = null;
+      this.canvasContainer = null;
     }
 
 
@@ -7660,6 +7661,7 @@
       
       // Header
       const header = document.createElement('div');
+      header.className = 'header';
       header.style.cssText = `
         display: flex;
         justify-content: space-between;
@@ -7711,6 +7713,7 @@
 
       // Canvas container
       const canvasContainer = document.createElement('div');
+      this.canvasContainer = canvasContainer;
       canvasContainer.style.cssText = `
         flex: 1;
         display: flex;
@@ -7738,7 +7741,10 @@
       this.canvas = document.createElement('canvas');
       this.ctx = this.canvas.getContext('2d');
       
-      const canvasContainer = this.overlay.querySelector('div:last-child');
+      const canvasContainer = this.canvasContainer || this.overlay.querySelector('canvas')?.parentElement;
+      if (!canvasContainer) {
+        throw new Error('Canvas container not found');
+      }
       canvasContainer.appendChild(this.canvas);
 
       // Set canvas size
@@ -7953,7 +7959,10 @@
       toolbar.appendChild(bottomRow);
 
       // Insert toolbar before canvas container
-      const canvasContainer = this.overlay.querySelector('div:last-child');
+      const canvasContainer = this.canvasContainer;
+      if (!canvasContainer || canvasContainer.parentNode !== this.overlay) {
+        throw new Error('Canvas container not found');
+      }
       this.overlay.insertBefore(toolbar, canvasContainer);
       
       // Event listeners
