@@ -80,6 +80,7 @@ CREATE TABLE hairdresser.images (
   name        text,
   type        text,
   data_url    text,
+  rotation_degrees integer NOT NULL DEFAULT 0,
   created_at  timestamptz DEFAULT now()
 );
 

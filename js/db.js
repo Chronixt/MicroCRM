@@ -520,6 +520,7 @@
             dataUrl: payload.dataUrl,
             filePath: payload.filePath,
             storageType: payload.storageType,
+            rotationDegrees: 0,
             createdAt: new Date().toISOString(),
           };
           
@@ -551,6 +552,7 @@
         dataUrl: payload.dataUrl,
         filePath: payload.filePath,
         storageType: payload.storageType,
+        rotationDegrees: 0,
         createdAt: new Date().toISOString(),
       };
       
@@ -912,6 +914,30 @@
     return result;
   }
 
+  async function updateImageRotation(imageId, rotationDegrees) {
+    const id = parseInt(imageId, 10);
+    const normalized = ((Number(rotationDegrees) % 360) + 360) % 360;
+    if (Number.isNaN(id)) throw new Error('Invalid image id');
+    return runTransaction(['images'], 'readwrite', (images) => (
+      new Promise((resolve, reject) => {
+        const getReq = images.get(id);
+        getReq.onsuccess = () => {
+          const record = getReq.result;
+          if (!record) {
+            reject(new Error('Image not found'));
+            return;
+          }
+          record.rotationDegrees = normalized;
+          record.updatedAt = new Date().toISOString();
+          const putReq = images.put(record);
+          putReq.onsuccess = () => resolve(true);
+          putReq.onerror = () => reject(putReq.error);
+        };
+        getReq.onerror = () => reject(getReq.error);
+      })
+    ));
+  }
+
   function deleteCustomer(id) {
     return runTransaction(['customers', 'appointments', 'images'], 'readwrite', (customers, appointments, images) => (
       Promise.all([
@@ -1103,6 +1129,7 @@
             name: img.name,
             type: img.type,
             createdAt: img.createdAt,
+            rotationDegrees: img.rotationDegrees || 0,
             dataUrl: img.dataUrl, // Use dataUrl directly instead of converting from blob
           };
         } catch (error) {
@@ -2230,7 +2257,8 @@
               dataUrl: img.dataUrl || null,
               filePath: img.filePath || null,
               storageType: img.storageType || (img.filePath ? 'filesystem' : 'inline'),
-              createdAt: img.createdAt 
+              createdAt: img.createdAt,
+              rotationDegrees: img.rotationDegrees || 0
             };
             imagesStore.put(imageData);
             successCount++;
@@ -2519,6 +2547,7 @@
         }
         exportableImages.push({
           ...img,
+          rotationDegrees: img.rotationDegrees || 0,
           dataUrl: dataUrl || null
         });
       }
@@ -2681,6 +2710,7 @@
               name: img.name,
               type: img.type,
               createdAt: img.createdAt,
+              rotationDegrees: img.rotationDegrees || 0,
               filePath: img.filePath || null,
               storageType: img.storageType || (img.filePath ? 'filesystem' : 'inline'),
               dataUrl: img.dataUrl,
@@ -2782,6 +2812,7 @@
     getImagesByCustomerId,
     getImagesByAppointmentId,
     deleteImage,
+    updateImageRotation,
     fileListToEntries,
     
     // Notes operations
