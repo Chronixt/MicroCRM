@@ -14,6 +14,7 @@
   const RUNTIME_INFO = {
     email: null
   };
+  let currentUserProfile = null;
   
   console.log(`[App] Starting ${APP_NAME}`);
 
@@ -235,6 +236,59 @@
     }
   }
 
+  async function refreshCurrentUserProfile() {
+    currentUserProfile = null;
+    if (!productConfig.useSupabase) return null;
+    let api;
+    try {
+      api = requireDataApi();
+    } catch (e) {
+      return null;
+    }
+    if (typeof api.getCurrentUserProfile !== 'function') return null;
+    try {
+      currentUserProfile = await api.getCurrentUserProfile();
+    } catch (e) {
+      currentUserProfile = null;
+    }
+    return currentUserProfile;
+  }
+
+  function emailLocalPart() {
+    return String(RUNTIME_INFO.email || '').split('@')[0] || '';
+  }
+
+  function getCurrentProfileNameParts() {
+    const first = String(currentUserProfile?.firstName || '').trim();
+    const last = String(currentUserProfile?.lastName || '').trim();
+    return { first, last };
+  }
+
+  function getDisplayUserName() {
+    const { first, last } = getCurrentProfileNameParts();
+    const profileName = [first, last].filter(Boolean).join(' ').trim();
+    return profileName || emailLocalPart() || RUNTIME_INFO.email || 'User';
+  }
+
+  function getDisplayFirstName() {
+    const { first } = getCurrentProfileNameParts();
+    return first || emailLocalPart() || 'there';
+  }
+
+  function getDisplayPlanLabel() {
+    return String(currentUserProfile?.planLabel || 'Standard Plan').trim() || 'Standard Plan';
+  }
+
+  function getDisplayInitialsFromCurrentUser() {
+    const { first, last } = getCurrentProfileNameParts();
+    const source = [first, last].filter(Boolean).join(' ') || getDisplayUserName();
+    const parts = source.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+    }
+    return String(source).slice(0, 2).toUpperCase() || 'U';
+  }
+
   async function signOutCurrentUser() {
     if (!productConfig.useSupabase) return;
     let api;
@@ -287,6 +341,53 @@
     });
   }
 
+  function attachAccountMenuHandler() {
+    const chip = document.getElementById('account-menu-toggle');
+    const menu = document.getElementById('account-menu');
+    if (!chip || !menu) return;
+
+    const close = () => {
+      menu.classList.remove('open');
+      chip.setAttribute('aria-expanded', 'false');
+    };
+    const onDocumentClick = () => close();
+    const onDocumentKeydown = (event) => {
+      if (event.key === 'Escape') close();
+    };
+    const toggle = (event) => {
+      event.stopPropagation();
+      const isOpen = menu.classList.toggle('open');
+      chip.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (isOpen) {
+        setTimeout(() => {
+          document.addEventListener('click', onDocumentClick, { once: true });
+          document.addEventListener('keydown', onDocumentKeydown, { once: true });
+        }, 0);
+      }
+    };
+
+    chip.addEventListener('click', toggle);
+    menu.addEventListener('click', async (event) => {
+      const actionEl = event.target.closest('[data-account-action]');
+      if (!actionEl) return;
+      const action = actionEl.getAttribute('data-account-action');
+      close();
+      if (action === 'profile-settings') {
+        navigate('/profile-settings');
+      } else if (action === 'help') {
+        navigate('/help');
+      } else if (action === 'signout') {
+        if (!productConfig.useSupabase || !RUNTIME_INFO.email) {
+          alert('Sign out is only available when signed in to Supabase.');
+          return;
+        }
+        const ok = confirm('Sign out now?');
+        if (ok) await signOutCurrentUser();
+      }
+    });
+
+  }
+
   function runtimeBannerHtml(options = {}) {
     if (window.SHOW_ENV_BANNER === false) return '';
     const compact = options.compact === true;
@@ -301,19 +402,16 @@
     const toneBorder = isTestUser ? 'rgba(16,185,129,0.45)' : 'rgba(245,158,11,0.45)';
     const toneText = isTestUser ? '#a7f3d0' : '#fde68a';
     const toneVars = `--rb-bg:${toneBg};--rb-border:${toneBorder};--rb-text:${toneText};`;
-    const signOutButton = productConfig.useSupabase && RUNTIME_INFO.email
-      ? '<button type=\"button\" data-action=\"runtime-signout\" class=\"runtime-signout-btn\">Sign Out</button>'
-      : '';
     if (compact) {
       return `
         <div class="runtime-banner runtime-banner--compact" style="${toneVars}" title="${env} | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}">
-          <strong>${env}</strong>&nbsp;|&nbsp;${productLabel}&nbsp;|&nbsp;${user}${signOutButton}
+          <strong>${env}</strong>&nbsp;|&nbsp;${productLabel}&nbsp;|&nbsp;${user}
         </div>
       `;
     }
     return `
       <div class="runtime-banner runtime-banner--full" style="${toneVars}">
-        <strong>${env}</strong> | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}${signOutButton}
+        <strong>${env}</strong> | ${productLabel} (${appLabel}) | ${backend} | schema: ${schema} | user: ${user}
       </div>
     `;
   }
@@ -1005,6 +1103,8 @@
     '/calendar': renderCalendar,
     '/follow-ups': renderFollowUps,
     '/backup': renderBackup,
+    '/profile-settings': renderProfileSettings,
+    '/help': renderHelp,
     '/customer': renderCustomer, // expects id query ?id=123
     '/customer-edit': renderCustomerEdit,
     '/emergency-backup': renderEmergencyBackup,
@@ -1102,7 +1202,7 @@
   }
 
   function getWelcomeMenuMessage() {
-    const firstNameOrEmail = RUNTIME_INFO.email || '{firstName}';
+    const firstNameOrEmail = getDisplayFirstName();
     const product = productConfig.activeProduct || 'core';
     let defaultTemplate = 'Welcome back {firstName}, ready for today?';
     if (product === 'hairdresser') {
@@ -1317,6 +1417,7 @@
     attachVerticalBackupHandler();
     attachRuntimeBannerHandlers();
     attachSidebarToggleHandler();
+    attachAccountMenuHandler();
     
     // Show FAB/search on products that enable the job pipeline.
     if (usesJobPipeline()) {
@@ -1470,34 +1571,49 @@
             })
           );
           
-                          appointmentsContainer.innerHTML = `
-                  <h3>${t('todaysAppointments')}</h3>
-                  <div class="appointment-list">
-                    ${appointmentsWithCustomers.map(apt => `
-                      <div class="appointment-item" data-appointment-id="${apt.id}" style="cursor: pointer;">
-                        <div class="apt-time">${new Date(apt.start).toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { 
-                          hour: '2-digit', 
-                          minute: '2-digit',
-                          hour12: getLang() === 'en'
-                        })}</div>
-                        <div class="apt-details">
-                          <div class="apt-customer">${apt.customerName}</div>
-                          <div class="apt-title">${apt.title || 'No service type'}</div>
-                        </div>
-                      </div>
-                    `).join('')}
+          appointmentsContainer.innerHTML = `
+            <h3>${t('todaysAppointments')}</h3>
+            <div class="today-booking-stack ${appointmentsWithCustomers.length > 1 ? 'multi' : 'single'}">
+              ${appointmentsWithCustomers.map((apt, index) => {
+                const start = new Date(apt.start);
+                const end = new Date(apt.end);
+                const time = `${start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' })} - ${end.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' })}`;
+                const initials = escapeHtml((apt.customerName || 'UC').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase());
+                return `
+                  <div class="booking-accordion-card ${index === 0 ? 'expanded' : ''}" data-appointment-id="${apt.id}">
+                    <button class="booking-accordion-header" type="button">
+                      <span class="client-avatar">${initials}</span>
+                      <span><strong>${escapeHtml(apt.customerName)}</strong><small>${escapeHtml(apt.title || 'No service type')}</small></span>
+                      <em>${escapeHtml(time)}</em>
+                    </button>
+                    <div class="booking-detail-content">
+                      <dl>
+                        <div><dt>Time</dt><dd>${escapeHtml(time)}</dd></div>
+                        <div><dt>Status</dt><dd><span class="status-pill">${escapeHtml(apt.status || 'Confirmed')}</span></dd></div>
+                        <div><dt>Notes</dt><dd>${escapeHtml(apt.notes || 'No appointment notes.')}</dd></div>
+                      </dl>
+                      <button class="button outline full-width" type="button" data-action="open-booking" data-appointment-id="${apt.id}">
+                        <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+                        Open Details
+                      </button>
+                    </div>
                   </div>
-                                `;
-                // Add click handlers for appointment items
-                const appointmentItems = appointmentsContainer.querySelectorAll('.appointment-item');
-                appointmentItems.forEach(item => {
-                  item.addEventListener('click', () => {
-                    const appointmentId = item.dataset.appointmentId;
-                    if (appointmentId) {
-                      navigate(`/calendar?appointment=${encodeURIComponent(appointmentId)}`);
-                    }
-                  });
-                });
+                `;
+              }).join('')}
+            </div>
+          `;
+          appointmentsContainer.querySelectorAll('.booking-accordion-header').forEach((button) => {
+            button.addEventListener('click', () => {
+              appointmentsContainer.querySelectorAll('.booking-accordion-card').forEach((card) => card.classList.remove('expanded'));
+              button.closest('.booking-accordion-card')?.classList.add('expanded');
+            });
+          });
+          appointmentsContainer.querySelectorAll('[data-action="open-booking"]').forEach((button) => {
+            button.addEventListener('click', () => {
+              const appointmentId = button.getAttribute('data-appointment-id');
+              if (appointmentId) navigate(`/calendar?appointment=${encodeURIComponent(appointmentId)}`);
+            });
+          });
         } else {
           // No appointments found for today
         }
@@ -1510,6 +1626,12 @@
   function wrapWithSidebar(contentHtml) {
     const lang = getLang();
     const collapsed = isSidebarCollapsed();
+    const path = currentPath().split('?')[0] || '/';
+    const isActive = (href) => path === href || (href !== '/' && path.startsWith(href));
+    const productLabel = (productConfig.activeProduct || 'core').replace(/^\w/, (c) => c.toUpperCase());
+    const userName = escapeHtml(getDisplayUserName());
+    const planLabel = escapeHtml(getDisplayPlanLabel());
+    const initials = escapeHtml(getDisplayInitialsFromCurrentUser());
     const cachedSidebarTopOffset = getCachedSidebarTopOffset();
     const toggleLabel = collapsed ? 'Expand sidebar menu' : 'Collapse sidebar menu';
     const toggleIcon = sidebarToggleIconSvg(collapsed);
@@ -1523,29 +1645,29 @@
             <button type="button" id="sidebar-toggle-btn" class="sidebar-icon-btn" aria-label="${toggleLabel}" title="${toggleLabel}" aria-expanded="${collapsed ? 'false' : 'true'}">${toggleIcon}</button>
           </div>
           <nav class="sidebar-tiles" aria-label="Sidebar menu">
-            <a class="menu-tile small" href="#/" aria-label="Menu">
+            <a class="menu-tile small ${isActive('/') ? 'active' : ''}" href="#/" aria-label="Menu">
               <div class="tile-icon" aria-hidden="true">🏠</div>
               <div class="tile-label">${t('menu')}</div>
             </a>
-            <a class="menu-tile small" href="#/add" aria-label="Add new record">
+            <a class="menu-tile small ${isActive('/add') ? 'active' : ''}" href="#/add" aria-label="Add new record">
               <div class="tile-icon" aria-hidden="true">➕</div>
               <div class="tile-label">${t('add')}</div>
             </a>
-            <a class="menu-tile small" href="#/find" aria-label="Customers">
+            <a class="menu-tile small ${isActive('/find') || isActive('/customer') ? 'active' : ''}" href="#/find" aria-label="Customers">
               <div class="tile-icon" aria-hidden="true">🔎</div>
               <div class="tile-label">${t('customers')}</div>
             </a>
-            <a class="menu-tile small" href="#/calendar" aria-label="Calendar">
+            <a class="menu-tile small ${isActive('/calendar') ? 'active' : ''}" href="#/calendar" aria-label="Calendar">
               <div class="tile-icon" aria-hidden="true">🗓️</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
             ${usesJobPipeline() ? `
-            <a class="menu-tile small" href="#/follow-ups" aria-label="Follow-ups">
+            <a class="menu-tile small ${isActive('/follow-ups') ? 'active' : ''}" href="#/follow-ups" aria-label="Follow-ups">
               <div class="tile-icon" aria-hidden="true">🔔</div>
               <div class="tile-label">${t('followUps')}</div>
             </a>
             ` : ''}
-            <a class="menu-tile small" href="#/backup" aria-label="Options">
+            <a class="menu-tile small ${isActive('/backup') ? 'active' : ''}" href="#/backup" aria-label="Options">
               <div class="tile-icon" aria-hidden="true">⚙️</div>
               <div class="tile-label">Options</div>
             </a>
@@ -1557,7 +1679,11 @@
         </aside>
         <section class="content">
           <div class="content-toolbar">
-            ${runtimeBannerHtml({ compact: true })}
+            <div class="brand-lockup" aria-label="${escapeHtml(APP_NAME)}">
+              <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
+              <div class="brand-wordmark"><span>CRM</span><strong>icro</strong></div>
+              <span class="brand-product">${escapeHtml(productLabel)}</span>
+            </div>
             ${usesJobPipeline() ? `
             <div class="global-search-container">
               <input type="text" id="global-search-input" class="global-search-input" placeholder="Search customers, ${appointmentEntityPlural().toLowerCase()}..." />
@@ -1565,9 +1691,20 @@
               <div id="global-search-results" class="search-results-dropdown search-results-dropdown--hidden"></div>
             </div>
             ` : ''}
-            <div class="lang-toolbar-group">
-              <img src="${BRAND_LOGO_LIGHT}" alt="${BRAND_LOGO_ALT}" class="toolbar-logo" />
-              <button id="lang-toggle" class="lang-btn">${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</button>
+            <div class="topbar-actions">
+              ${runtimeBannerHtml({ compact: true })}
+              <button id="lang-toggle" class="language-pill" type="button"><span>${lang === 'en' ? '\u65e5\u672c\u8a9e' : 'English'}</span><i aria-hidden="true"></i></button>
+              <div class="account-menu-wrap">
+                <button id="account-menu-toggle" class="user-chip" type="button" aria-haspopup="menu" aria-expanded="false">
+                  <span class="user-chip-text"><strong>${userName}</strong><small>${planLabel}</small></span>
+                  <span class="user-avatar">${initials}</span>
+                </button>
+                <div id="account-menu" class="account-menu" role="menu">
+                  <button type="button" class="account-menu-item" data-account-action="profile-settings" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>Profile Settings</button>
+                  <button type="button" class="account-menu-item" data-account-action="help" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">help</span>Help</button>
+                  <button type="button" class="account-menu-item danger" data-account-action="signout" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Sign Out</button>
+                </div>
+              </div>
             </div>
           </div>
           ${contentHtml}
@@ -1751,7 +1888,8 @@
       <div class="space-between section-header">
         <h2>${t('newCustomer')}</h2>
       </div>
-      <div class="card">
+      <div class="customer-directory-layout">
+      <div class="card customer-list-panel">
         <div class="view-header" style="margin-bottom: 8px;">
           <div></div>
           <div class="view-actions" style="display: flex; gap: 8px;">
@@ -2040,6 +2178,56 @@
     const allCustomersSection = document.getElementById('all-customers-section');
     const allCustomersList = document.getElementById('all-customers-list');
     const showAllCustomersBtn = document.getElementById('show-all-customers-btn');
+    const quickViewEl = document.getElementById('customer-quick-view');
+
+    async function renderCustomerQuickView(customer, nextAppointment = null) {
+      if (!quickViewEl || !customer) return;
+      let pinnedNotes = [];
+      try {
+        const notes = await CrmDB.getNotesByCustomerId(customer.id);
+        pinnedNotes = (notes || []).filter(isNotePinned).slice(0, PINNED_NOTES_LIMIT || 5);
+      } catch (error) {
+        pinnedNotes = [];
+      }
+      const name = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed customer';
+      const initials = getInitials(customer.firstName, customer.lastName) || name.slice(0, 2).toUpperCase();
+      const contactValue = customer.contactNumber || 'No phone number';
+      const secondaryValue = isTradie()
+        ? [customer.addressLine1, customer.suburb, customer.state].filter(Boolean).join(', ') || 'No address'
+        : customer.socialMediaName || 'No social profile';
+      const appointmentHtml = nextAppointment
+        ? `<div class="appointment-card has-appointment">
+            <strong>${escapeHtml(nextAppointment.title || appointmentEntitySingular())}</strong>
+            <span>${escapeHtml(new Date(nextAppointment.start).toLocaleString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' }))}</span>
+          </div>`
+        : '<div class="appointment-card"><strong>No upcoming appointment</strong><span>Nothing booked yet.</span></div>';
+      quickViewEl.innerHTML = `
+        <p class="eyebrow">Quick View</p>
+        <div class="client-card compact">
+          <div class="client-avatar">${escapeHtml(initials)}</div>
+          <div>
+            <strong>${escapeHtml(name)}</strong>
+            <span>${escapeHtml(contactValue)}</span>
+          </div>
+        </div>
+        <div class="detail-box-grid">
+          <div><dt>Contact</dt><dd>${escapeHtml(contactValue)}</dd></div>
+          <div><dt>${isTradie() ? 'Location' : 'Social'}</dt><dd>${escapeHtml(secondaryValue)}</dd></div>
+        </div>
+        <h4>Next Appointment</h4>
+        ${appointmentHtml}
+        <h4>Pinned Notes</h4>
+        <div class="quick-note-stack">
+          ${pinnedNotes.length
+            ? pinnedNotes.map((note) => `<div class="note-card pinned">${escapeHtml(getNoteTextValue(note) || 'Pinned note')}</div>`).join('')
+            : '<div class="note-card">No pinned notes.</div>'}
+        </div>
+        <button class="button outline full-width" type="button" id="open-quick-view-customer">Open Profile</button>
+      `;
+      quickViewEl.querySelector('#open-quick-view-customer')?.addEventListener('click', () => {
+        navigate(`/customer?id=${encodeURIComponent(customer.id)}`);
+      });
+    }
 
     async function refresh() {
       const query = (searchInput.value || '').trim();
@@ -2081,6 +2269,11 @@
           </div>`;
         }).join('');
         resultsEl.querySelectorAll('.list-item').forEach((rowEl) => {
+          rowEl.addEventListener('mouseenter', () => {
+            const id = Number(rowEl.getAttribute('data-id'));
+            const customer = customers.find((c) => Number(c.id) === id);
+            if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
+          });
           rowEl.addEventListener('click', () => {
             const id = Number(rowEl.getAttribute('data-id'));
             if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
@@ -2125,7 +2318,13 @@
           ${rightHtml}
         </div>`;
       }).join('');
+      if (customers[0]) await renderCustomerQuickView(customers[0], nextByCustomer.get(customers[0].id) || null);
       recentsEl.querySelectorAll('.list-item').forEach((rowEl) => {
+        rowEl.addEventListener('mouseenter', () => {
+          const id = Number(rowEl.getAttribute('data-id'));
+          const customer = customers.find((c) => Number(c.id) === id);
+          if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
+        });
         rowEl.addEventListener('click', () => {
           const id = Number(rowEl.getAttribute('data-id'));
           if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
@@ -2193,6 +2392,11 @@
             </div>`;
           }).join('');
           allCustomersList.querySelectorAll('.list-item').forEach((rowEl) => {
+            rowEl.addEventListener('mouseenter', () => {
+              const id = Number(rowEl.getAttribute('data-id'));
+              const customer = sortedCustomers.find((c) => Number(c.id) === id);
+              if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
+            });
             rowEl.addEventListener('click', () => {
               const id = Number(rowEl.getAttribute('data-id'));
               if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
@@ -3147,6 +3351,138 @@
       return `${y}-${m}-${day}`;
     }
 
+    function formatAppointmentTimeRange(event) {
+      if (!event?.start) return 'No time set';
+      const start = new Date(event.start);
+      const end = event.end ? new Date(event.end) : null;
+      const options = { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' };
+      const locale = getLang() === 'ja' ? 'ja-JP' : 'en-US';
+      const startText = start.toLocaleTimeString(locale, options);
+      const endText = end && Number.isFinite(end.getTime()) ? end.toLocaleTimeString(locale, options) : '';
+      return endText ? `${startText} - ${endText}` : startText;
+    }
+
+    function escapeCssIdentifier(value) {
+      const raw = String(value || '');
+      if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(raw);
+      return raw.replace(/["\\]/g, '\\$&');
+    }
+
+    function getEventsForDate(dateStr) {
+      if (!calendar) return [];
+      return calendar.getEvents()
+        .filter((event) => toLocalYmd(event.start) === dateStr)
+        .sort((a, b) => new Date(a.start) - new Date(b.start));
+    }
+
+    function selectedBookingHeaderHtml(event, expanded = false) {
+      const props = event.extendedProps || {};
+      const initials = escapeHtml(props.customerInitials || (props.customerName || '??').slice(0, 2).toUpperCase());
+      return `
+        <button class="booking-accordion-header" type="button" data-selected-event-id="${escapeHtml(event.id)}" aria-expanded="${expanded ? 'true' : 'false'}">
+          <span class="client-avatar">${initials}</span>
+          <span><strong>${escapeHtml(props.customerName || 'Unknown Customer')}</strong><small>${escapeHtml(props.bookingType || event.title || appointmentEntitySingular())}</small></span>
+          <em>${escapeHtml(formatAppointmentTimeRange(event))}</em>
+        </button>
+      `;
+    }
+
+    function selectedBookingDetailHtml(event) {
+      const props = event.extendedProps || {};
+      return `
+        <div class="booking-detail-content">
+          <dl>
+            <div><dt>Time</dt><dd>${escapeHtml(formatAppointmentTimeRange(event))}</dd></div>
+            <div><dt>Status</dt><dd><span class="status-pill">${escapeHtml(props.status || 'Confirmed')}</span></dd></div>
+            <div><dt>Notes</dt><dd>${escapeHtml(props.notes || 'No appointment notes.')}</dd></div>
+          </dl>
+          <button class="button outline full-width" type="button" data-action="open-selected-booking" data-selected-event-id="${escapeHtml(event.id)}">
+            <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+            Open Details
+          </button>
+        </div>
+      `;
+    }
+
+    function renderSelectedBookingPanel(event, options = {}) {
+      const panel = document.getElementById('selected-booking-content');
+      const title = document.getElementById('selected-booking-title');
+      if (!panel) return;
+      if (!event) {
+        if (title) title.textContent = 'Selected Booking';
+        panel.innerHTML = `<div class="selected-booking-empty">Select a booking or choose an empty date to quick book.</div>`;
+        return;
+      }
+
+      const viewType = calendar?.view?.type || 'listWeek';
+      const dayEvents = getEventsForDate(toLocalYmd(event.start));
+      if (title) {
+        const dayText = new Date(event.start).toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        title.textContent = viewType === 'dayGridMonth' ? dayText : 'Selected Booking';
+      }
+
+      if (viewType === 'dayGridMonth' && dayEvents.length > 1) {
+        panel.innerHTML = `
+          <div class="calendar-booking-stack">
+            ${dayEvents.map((dayEvent) => `
+              <div class="booking-accordion-card ${String(dayEvent.id) === String(event.id) ? 'expanded' : ''}">
+                ${selectedBookingHeaderHtml(dayEvent, String(dayEvent.id) === String(event.id))}
+                ${selectedBookingDetailHtml(dayEvent)}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } else {
+        panel.innerHTML = `
+          <div class="calendar-booking-stack">
+            <div class="booking-accordion-card expanded">
+              ${selectedBookingHeaderHtml(event, true)}
+              ${selectedBookingDetailHtml(event)}
+            </div>
+          </div>
+        `;
+      }
+
+      panel.querySelectorAll('.booking-accordion-header').forEach((button) => {
+        button.addEventListener('click', () => {
+          const eventId = button.getAttribute('data-selected-event-id');
+          const nextEvent = calendar?.getEventById(eventId);
+          if (nextEvent) renderSelectedBookingPanel(nextEvent, { preserveView: true });
+        });
+      });
+      panel.querySelectorAll('[data-action="open-selected-booking"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const eventId = button.getAttribute('data-selected-event-id');
+          const selected = calendar?.getEventById(eventId);
+          if (selected) openAppointmentDetailsModal(selected);
+        });
+      });
+
+      if (!options.preserveView) {
+        calendarEl.querySelectorAll('.fc-event-selected').forEach((el) => el.classList.remove('fc-event-selected'));
+        const eventEl = calendarEl.querySelector(`[data-event-id="${escapeCssIdentifier(event.id)}"]`);
+        eventEl?.classList.add('fc-event-selected');
+      }
+    }
+
+    function selectDefaultBookingForCurrentView() {
+      if (!calendar) return;
+      const events = calendar.getEvents().filter((event) => event.start).sort((a, b) => new Date(a.start) - new Date(b.start));
+      if (events.length === 0) {
+        renderSelectedBookingPanel(null);
+        return;
+      }
+      if (calendar.view?.type === 'dayGridMonth') {
+        const start = calendar.view.activeStart;
+        const end = calendar.view.activeEnd;
+        const visible = events.find((event) => new Date(event.start) >= start && new Date(event.start) < end);
+        renderSelectedBookingPanel(visible || events[0]);
+        return;
+      }
+      const now = new Date();
+      renderSelectedBookingPanel(events.find((event) => new Date(event.start) >= now) || events[0]);
+    }
+
     function decorateMobileMonthDots() {
       if (!compactCalendarToolbar || !calendar || calendar.view?.type !== 'dayGridMonth') return;
       const dayCells = calendarEl.querySelectorAll('.fc-daygrid-day[data-date]');
@@ -3164,7 +3500,8 @@
     }
     
     appRoot.innerHTML = wrapWithSidebar(`
-        <div class="space-between section-header">
+      <div class="modern-page calendar-modern-page">
+        <div class="space-between section-header calendar-modern-header">
           <h2>${usesJobPipeline() ? appointmentEntityPlural() : t('calendar')}</h2>
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             ${usesJobPipeline() ? `
@@ -3207,14 +3544,24 @@
         </div>
       </div>
       ` : ''}
-      <div class="card" id="calendar-container">
-        <div id="calendar"></div>
+      <div class="calendar-modern-layout">
+        <div class="card calendar-modern-panel" id="calendar-container">
+          <div id="calendar"></div>
+        </div>
+        <aside class="card selected-booking-panel" id="selected-booking-panel">
+          <p class="eyebrow">Selected Booking</p>
+          <h3 id="selected-booking-title">Selected Booking</h3>
+          <div id="selected-booking-content">
+            <div class="selected-booking-empty">Loading appointments...</div>
+          </div>
+        </aside>
       </div>
       ${usesJobPipeline() ? `
       <div class="card hidden" id="pipeline-container">
         <div id="pipeline" class="pipeline-view"></div>
       </div>
       ` : ''}
+      </div>
     `);
 
     const calendarEl = document.getElementById('calendar');
@@ -3239,22 +3586,24 @@
       },
       dayHeaderFormat: { weekday: 'short' },
       datesSet: (info) => {
-        if (!compactCalendarToolbar) return;
-        const todayBtn = document.getElementById('calendar-mobile-today-btn');
-        const listBtn = document.getElementById('calendar-mobile-list-btn');
-        const monthBtn = document.getElementById('calendar-mobile-month-btn');
         const isList = info.view.type === 'listWeek';
         const isMonth = info.view.type === 'dayGridMonth';
-        listBtn?.classList.toggle('secondary', !isList);
-        monthBtn?.classList.toggle('secondary', !isMonth);
-        if (listBtn && isList) listBtn.classList.remove('secondary');
-        if (monthBtn && isMonth) monthBtn.classList.remove('secondary');
-        todayBtn?.classList.add('secondary');
+        if (compactCalendarToolbar) {
+          const todayBtn = document.getElementById('calendar-mobile-today-btn');
+          const listBtn = document.getElementById('calendar-mobile-list-btn');
+          const monthBtn = document.getElementById('calendar-mobile-month-btn');
+          listBtn?.classList.toggle('secondary', !isList);
+          monthBtn?.classList.toggle('secondary', !isMonth);
+          if (listBtn && isList) listBtn.classList.remove('secondary');
+          if (monthBtn && isMonth) monthBtn.classList.remove('secondary');
+          todayBtn?.classList.add('secondary');
+        }
         setTimeout(decorateMobileMonthDots, 0);
+        setTimeout(selectDefaultBookingForCurrentView, 0);
       },
       eventsSet: () => {
-        if (!compactCalendarToolbar) return;
         setTimeout(decorateMobileMonthDots, 0);
+        setTimeout(selectDefaultBookingForCurrentView, 0);
       },
       events: async (info, successCallback, failureCallback) => {
         try {
@@ -3277,7 +3626,8 @@
                 status: e.status || 'scheduled',
                 quotedAmount: e.quotedAmount || null,
                 invoiceAmount: e.invoiceAmount || null,
-                paidAmount: e.paidAmount || null
+                paidAmount: e.paidAmount || null,
+                notes: e.notes || ''
               }
             };
             return mappedEvent;
@@ -3287,6 +3637,9 @@
           console.error('Error loading calendar events:', err);
           failureCallback(err); 
         }
+      },
+      eventDidMount: (info) => {
+        info.el.dataset.eventId = String(info.event.id);
       },
       eventContent: (arg) => {
         const time = new Date(arg.event.start).toLocaleTimeString('en-US', { 
@@ -3326,10 +3679,14 @@
         // Return undefined to allow default rendering for timeGridWeek/timeGridDay
       },
       eventClick: async (info) => {
-        // Open appointment details modal instead of navigating to customer
-        openAppointmentDetailsModal(info.event);
+        renderSelectedBookingPanel(info.event);
       },
       dateClick: (info) => {
+        const eventsForDay = calendar.getEvents().filter((event) => toLocalYmd(event.start) === info.dateStr);
+        if (eventsForDay.length > 0) {
+          renderSelectedBookingPanel(eventsForDay[0]);
+          return;
+        }
         openQuickBookModal(info.dateStr);
       }
     });
@@ -3452,6 +3809,7 @@
             setTimeout(() => {
               const event = calendar.getEventById(appointmentId);
               if (event) {
+                renderSelectedBookingPanel(event);
                 openAppointmentDetailsModal(event);
               }
             }, 500);
@@ -3597,6 +3955,7 @@
                     customerId: job.customerId,
                     customerName: customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : '',
                     status: job.status || 'scheduled',
+                    notes: job.notes || '',
                     quotedAmount: job.quotedAmount || null,
                     invoiceAmount: job.invoiceAmount || null,
                     paidAmount: job.paidAmount || null
@@ -3660,6 +4019,9 @@
                 </div>
               </div>
             </div>
+
+            <label>Notes</label>
+            <textarea id="qb-notes" rows="3" placeholder="Appointment notes"></textarea>
 
             <div class="row" style="margin-top:8px;">
               <button class="button" id="qb-save">Save</button>
@@ -3759,6 +4121,7 @@
       document.getElementById('qb-save').onclick = async () => {
         if (!selectedCustomer) { alert(t('pleaseSelectCustomer')); return; }
         const titleInput = document.getElementById('qb-title').value.trim();
+        const notes = document.getElementById('qb-notes')?.value.trim() || '';
         const startStr = document.getElementById('qb-start').value;
         const durationMin = parseInt(document.getElementById('qb-duration').value || '60', 10);
         if (!startStr) { alert(t('pleaseSelectDateTime')); return; }
@@ -3778,7 +4141,7 @@
         
         // Get default status (first status in pipeline)
         const defaultStatus = (productConfig.statuses && productConfig.statuses[0]?.id) || 'scheduled';
-        const appointmentId = await CrmDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, status: defaultStatus, createdAt: new Date().toISOString() });
+        const appointmentId = await CrmDB.createAppointment({ customerId: selectedCustomer.id, title, start: startISO, end: endISO, status: defaultStatus, notes, createdAt: new Date().toISOString() });
         
         hideModal();
         
@@ -3887,6 +4250,9 @@
                 </div>
               </div>
             </div>
+
+            <label>Notes</label>
+            <textarea id="apt-notes" rows="3" placeholder="Appointment notes">${escapeHtml(event.extendedProps?.notes || '')}</textarea>
 
             ${isTradie() ? `
             <label>${t('jobStatus')}</label>
@@ -4272,6 +4638,7 @@
               .map((el) => el.value);
             const typeLabel = types.length ? types.join(' + ') : '';
             const newTitle = typeLabel || titleInput || 'No service type';
+            const notes = document.getElementById('apt-notes')?.value.trim() || '';
             
             // Get status (only for tradie edition)
             const statusEl = document.getElementById('apt-status');
@@ -4311,6 +4678,7 @@
                 start: startISO,
                 end: endISO,
                 status: status,
+                notes: notes,
                 quotedAmount: quotedAmount,
                 invoiceAmount: invoiceAmount,
                 paidAmount: paidAmount
@@ -4324,6 +4692,7 @@
                 start: startISO,
                 end: endISO,
                 status: status,
+                notes: notes,
                 quotedAmount: quotedAmount,
                 invoiceAmount: invoiceAmount,
                 paidAmount: paidAmount,
@@ -5412,204 +5781,274 @@
     }
   }
 
-  async function renderBackup() {
-    const db = getDataApi();
+  async function renderProfileSettings() {
+    const email = RUNTIME_INFO.email || '';
+    const first = currentUserProfile?.firstName || '';
+    const last = currentUserProfile?.lastName || '';
+    const plan = currentUserProfile?.planLabel || 'Standard Plan';
+    const language = currentUserProfile?.preferredLanguage || getLang();
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between section-header">
-        <h2>Options</h2>
-      </div>
-      
-      ${isTradie() ? `
-      <div class="card" style="margin-bottom: 16px;">
-        <h3 style="margin-top: 0;">📊 Storage Usage</h3>
-        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
-          Driver: <span id="storage-driver-name">Detecting...</span>
-        </div>
-        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
-          Runtime: <span id="native-runtime-status">Detecting...</span>
-        </div>
-        <div class="muted" style="font-size: 12px; margin-bottom: 8px;">
-          Native Plugins: <span id="native-plugin-status">Detecting...</span>
-        </div>
-        <div class="row" style="align-items: flex-end; margin-bottom: 8px; gap: 8px;">
-          <label style="font-size: 12px;">
-            Native Driver Mode<br />
-            <select id="native-driver-mode" style="margin-top: 4px;">
-              <option value="adapter">Adapter (Default)</option>
-              <option value="sqlite_test">SQLite Test Mode</option>
-            </select>
-          </label>
-          <button id="save-native-driver-mode-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Save Mode</button>
-        </div>
-        <div id="native-driver-mode-status" class="muted" style="font-size: 12px; margin-bottom: 8px;"></div>
-        <div id="storage-meter-container">
-          <div class="muted" style="font-size: 12px;">Calculating...</div>
-        </div>
-        <div class="row" style="margin-top: 10px;">
-          <button id="native-migrate-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Migrate Current Data to Native SQLite</button>
-        </div>
-        <div id="native-migrate-status" class="muted" style="font-size: 12px; margin-top: 6px;"></div>
-        <div class="row" style="margin-top: 10px;">
-          <button id="native-smoke-test-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Run Native Storage Smoke Test</button>
-        </div>
-        <div id="native-smoke-test-status" class="muted" style="font-size: 12px; margin-top: 6px;"></div>
-      </div>
-      ` : ''}
-      
-      <div class="card" style="margin-bottom: 16px;">
-        <div class="form">
-          <h3 style="margin-top: 0; margin-bottom: 10px;">Export</h3>
-          <div class="muted" style="font-size: 12px; margin-bottom: 10px;">
-            Create a backup file first, then download it.
-          </div>
-          <div class="row">
-            <button id="export-btn" class="button">Export with Images</button>
-            <button id="export-lite-btn" class="button secondary">Export Data Only</button>
-            <button id="export-images-only-btn" class="button secondary">Export Images Only</button>
-            <button id="download-btn" class="button secondary" disabled>${t('download')}</button>
-          </div>
-          <div class="muted" id="backup-status" style="margin-top: 8px;"></div>
-          
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
-          
-          <h3 style="margin-top: 0; margin-bottom: 10px;">Import</h3>
-          <div class="muted" style="font-size: 12px; margin-bottom: 10px;">
-            Load a backup file, preview what will import, then run selected import.
-          </div>
-          <div class="row">
-            <input id="import-file" type="file" accept="application/json" />
-            <button id="load-backup" class="button secondary">${t('load')}</button>
-          </div>
-          <div id="backup-preview" class="card hidden" style="margin-top:8px;">
-            <h3 style="margin-top:0;">${t('preview')}</h3>
-            <div id="summary" class="muted"></div>
-            <div class="row" style="margin:8px 0;">
-              <button id="select-all" class="button secondary">${t('selectAll')}</button>
-              <button id="select-none" class="button secondary">${t('selectNone')}</button>
-            </div>
-            <div id="customer-list" class="list" style="max-height: 280px; overflow:auto;"></div>
-            <div class="row" style="margin-top: 8px;">
-              <label><input type="checkbox" id="include-appts" checked /> ${t('includeAppointments')}</label>
-              <label><input type="checkbox" id="include-images" checked /> ${t('includeImages')}</label>
-            </div>
-            <div class="row" style="margin-top: 8px;">
-              <label><input type="radio" name="mode" value="merge" checked /> ${t('mergeAppendUpdate')}</label>
-              ${(window.ALLOW_DESTRUCTIVE_WIPE === true || !productConfig.useSupabase)
-                ? `<label><input type="radio" name="mode" value="replace" /> ${t('replaceWipeThenImport')}</label>`
-                : ''}
-            </div>
-            <div class="row" style="margin-top: 8px;">
-              <button id="import-selected" class="button">${t('importSelected')}</button>
-            </div>
+      <div class="modern-page">
+        <div class="modern-page-header">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h2>Profile Settings</h2>
           </div>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="form">
-          <div class="row">
-            <button id="wipe-btn" class="button danger">${productConfig.useSupabase ? t('deleteMyData') : t('wipeAllData')}</button>
+        <div class="modern-card profile-settings-card">
+          <div class="client-card compact">
+            <div class="client-avatar">${escapeHtml(getDisplayInitialsFromCurrentUser())}</div>
+            <div>
+              <strong>${escapeHtml(getDisplayUserName())}</strong>
+              <span>${escapeHtml(email || 'Local profile')}</span>
+            </div>
           </div>
-          ${productConfig.useSupabase ? `
-          <div class="row" style="margin-top: 8px;">
-            <button id="signout-btn" class="button secondary">Sign Out</button>
-          </div>
-          ` : ''}
-          
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
-          
-          <h3 style="margin-top: 16px; margin-bottom: 8px;">🔧 Note Recovery</h3>
-          <div class="card" style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3);">
-            <div class="muted" style="font-size: 12px; margin-bottom: 12px;">
-              If notes are missing content after editing, this tool can recover them from backups or alternate storage.
+          <form id="profile-settings-form" class="form modern-form">
+            <div class="grid-2">
+              <label>First name<input name="firstName" value="${escapeHtml(first)}" ${productConfig.useSupabase ? 'required' : 'disabled'} /></label>
+              <label>Last name<input name="lastName" value="${escapeHtml(last)}" ${productConfig.useSupabase ? '' : 'disabled'} /></label>
             </div>
-            
-            <div class="row" style="gap: 8px; margin-bottom: 12px;">
-              <button id="scan-notes-btn" class="button" style="background: linear-gradient(135deg, #f59e0b, #d97706); flex: 1;">
-                🔍 Scan for Corrupted Notes
-              </button>
-            </div>
-            
-            <div id="scan-results" class="hidden" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
-              <div id="scan-summary" style="margin-bottom: 12px;"></div>
-              <div id="recovery-actions" class="hidden">
-                <div class="row" style="gap: 8px;">
-                  <button id="recover-notes-btn" class="button" style="background: linear-gradient(135deg, #10b981, #059669); flex: 1;">
-                    ✅ Recover Notes
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div id="recovery-status" style="margin-top: 12px; font-size: 12px;"></div>
-          </div>
-          
-          <h3 style="margin-top: 16px; margin-bottom: 8px;">Restore Notes from Backup</h3>
-          <div class="card" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3);">
-            <div class="muted" style="font-size: 12px; margin-bottom: 12px;">
-              Load a backup file and restore notes from it. This will only replace corrupted notes.
-            </div>
-            
-            <div class="row" style="gap: 8px;">
-              <input id="restore-notes-file" type="file" accept="application/json" style="flex: 1;" />
-              <button id="restore-notes-btn" class="button secondary">Load Backup</button>
-            </div>
-            
-            <div id="restore-notes-status" style="margin-top: 12px; font-size: 12px;"></div>
-          </div>
-          
-          ${isTradie() ? `
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
-          
-          <h3 style="margin-top: 16px; margin-bottom: 8px;">⭐ Pro Settings</h3>
-          
-          <div class="card" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3);">
-            <div style="margin-bottom: 16px;">
-              <strong style="font-size: 14px;">🔔 Backup Reminders</strong>
-              <div class="muted" style="font-size: 12px; margin: 8px 0;">Get reminded to backup your data regularly.</div>
-              <div style="display: flex; gap: 8px; margin-top: 8px;">
-                <select id="backup-reminder-frequency" style="flex: 1;">
-                  <option value="off">Off</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
+            <div class="grid-2">
+              <label>Plan label<input name="planLabel" value="${escapeHtml(plan)}" ${productConfig.useSupabase ? '' : 'disabled'} /></label>
+              <label>Preferred language
+                <select name="preferredLanguage" ${productConfig.useSupabase ? '' : 'disabled'}>
+                  <option value="en"${language === 'en' ? ' selected' : ''}>English</option>
+                  <option value="ja"${language === 'ja' ? ' selected' : ''}>Japanese</option>
                 </select>
-                <button id="save-backup-reminder" class="button secondary" style="padding: 8px 12px;">Save</button>
-              </div>
+              </label>
             </div>
-            
-            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px;">
-              <strong style="font-size: 14px;">🔒 App Lock</strong>
-              <div class="muted" style="font-size: 12px; margin: 8px 0;">Protect your data with a PIN code when opening the app.</div>
-              <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" id="app-lock-enabled" />
-                  <span>Enable PIN Lock</span>
-                </label>
-              </div>
-              <div id="pin-setup-section" style="display: none; margin-top: 12px;">
-                <div style="display: flex; gap: 8px;">
-                  <input type="password" id="app-lock-pin" placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="flex: 1; text-align: center; letter-spacing: 8px; font-size: 18px;" />
-                  <button id="save-app-lock" class="button" style="padding: 8px 16px;">Set PIN</button>
-                </div>
-              </div>
-              <div id="pin-status" style="margin-top: 8px; font-size: 12px;"></div>
+            <div class="row">
+              <button id="save-profile-settings" class="button" type="submit" ${productConfig.useSupabase ? '' : 'disabled'}>Save Profile</button>
             </div>
+            <p id="profile-settings-status" class="muted">${productConfig.useSupabase ? 'These details are stored in your product profile.' : 'Profile settings are available when signed in to Supabase.'}</p>
+          </form>
+        </div>
+      </div>
+      <aside class="card customer-quick-view-panel" id="customer-quick-view">
+        <p class="eyebrow">Quick View</p>
+        <h3>Select a customer</h3>
+        <p class="muted">Hover or load recent customers to preview contact details, next appointment and pinned notes.</p>
+      </aside>
+      </div>
+    `);
+
+    const form = document.getElementById('profile-settings-form');
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const statusEl = document.getElementById('profile-settings-status');
+      try {
+        const api = requireDataApi();
+        if (typeof api.upsertCurrentUserProfile !== 'function') throw new Error('Profile storage is unavailable.');
+        const data = new FormData(form);
+        await api.upsertCurrentUserProfile({
+          firstName: String(data.get('firstName') || '').trim(),
+          lastName: String(data.get('lastName') || '').trim(),
+          planLabel: String(data.get('planLabel') || '').trim() || 'Standard Plan',
+          preferredLanguage: String(data.get('preferredLanguage') || '').trim() || getLang()
+        });
+        await refreshCurrentUserProfile();
+        if (statusEl) statusEl.textContent = 'Profile saved.';
+        render();
+      } catch (error) {
+        if (statusEl) statusEl.textContent = `Profile save failed: ${error.message || error}`;
+      }
+    });
+  }
+
+  async function renderHelp() {
+    appRoot.innerHTML = wrapWithSidebar(`
+      <div class="modern-page">
+        <div class="modern-page-header">
+          <div>
+            <p class="eyebrow">Support</p>
+            <h2>Help & FAQ</h2>
           </div>
-          ` : ''}
-          
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
-          
-          <div class="row">
-            <button id="refresh-app-btn" class="button" style="background: linear-gradient(135deg, #667eea, #764ba2);">
-              🔄 Refresh App (PWA)
-            </button>
-          </div>
-          <div class="muted" style="font-size: 12px; margin-top: 8px;">
-            Use this if notes don't appear after migration, especially when using the app from home screen.
+        </div>
+        <div class="modern-card help-placeholder">
+          <h3>Contact and FAQ are coming next.</h3>
+          <p class="muted">This placeholder keeps the new account menu wired while the full help page content is built.</p>
+          <div class="grid-2">
+            <div class="mini-info-box"><strong>Contact</strong><span>Support contact details will live here.</span></div>
+            <div class="mini-info-box"><strong>FAQ</strong><span>Common setup, backup, and account answers will live here.</span></div>
           </div>
         </div>
       </div>
     `);
+  }
+
+  function renderModernOptionsHtml() {
+    return `
+      <div class="modern-page options-modern-page">
+        <div class="modern-page-header options-page-header">
+          <div>
+            <p class="eyebrow">Data Tools</p>
+            <h2>Options</h2>
+          </div>
+        </div>
+
+        <div class="options-primary-grid">
+          <section class="modern-panel options-panel import-panel">
+            <div class="options-panel-heading">
+              <span class="material-symbols-outlined" aria-hidden="true">download</span>
+              <div>
+                <p class="eyebrow">Import</p>
+                <h3>Restore from backup</h3>
+              </div>
+            </div>
+            <p class="muted">Load a backup file, preview what will import, then run selected import.</p>
+            <div class="row options-action-row">
+              <input id="import-file" type="file" accept="application/json" />
+              <button id="load-backup" class="button secondary">${t('load')}</button>
+            </div>
+            <div id="backup-preview" class="card options-preview hidden">
+              <h3>${t('preview')}</h3>
+              <div id="summary" class="muted"></div>
+              <div class="row">
+                <button id="select-all" class="button secondary">${t('selectAll')}</button>
+                <button id="select-none" class="button secondary">${t('selectNone')}</button>
+              </div>
+              <div id="customer-list" class="list options-customer-list"></div>
+              <div class="row">
+                <label><input type="checkbox" id="include-appts" checked /> ${t('includeAppointments')}</label>
+                <label><input type="checkbox" id="include-images" checked /> ${t('includeImages')}</label>
+              </div>
+              <div class="row">
+                <label><input type="radio" name="mode" value="merge" checked /> ${t('mergeAppendUpdate')}</label>
+                ${(window.ALLOW_DESTRUCTIVE_WIPE === true || !productConfig.useSupabase)
+                  ? `<label><input type="radio" name="mode" value="replace" /> ${t('replaceWipeThenImport')}</label>`
+                  : ''}
+              </div>
+              <button id="import-selected" class="button full-width">${t('importSelected')}</button>
+            </div>
+          </section>
+
+          <section class="modern-panel options-panel export-panel">
+            <div class="options-panel-heading">
+              <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+              <div>
+                <p class="eyebrow">Export</p>
+                <h3>Create backup</h3>
+              </div>
+            </div>
+            <p class="muted">Create a backup file first, then download it.</p>
+            <div class="options-button-stack">
+              <button id="export-btn" class="button">Export with Images</button>
+              <button id="export-lite-btn" class="button secondary">Export Data Only</button>
+              <button id="export-images-only-btn" class="button secondary">Export Images Only</button>
+              <button id="download-btn" class="button secondary" disabled>${t('download')}</button>
+            </div>
+            <div class="muted options-status" id="backup-status"></div>
+          </section>
+        </div>
+
+        <section class="modern-panel options-danger-panel">
+          <div>
+            <p class="eyebrow">Danger Zone</p>
+            <h3>${productConfig.useSupabase ? t('deleteMyData') : t('wipeAllData')}</h3>
+            <p class="muted">${productConfig.useSupabase ? 'Delete only your own cloud data for this product profile.' : 'Delete all local CRM data stored on this device.'}</p>
+          </div>
+          <button id="wipe-btn" class="button danger">${productConfig.useSupabase ? t('deleteMyData') : t('wipeAllData')}</button>
+        </section>
+
+        <details class="modern-panel advanced-options-panel">
+          <summary>
+            <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+            <strong>Advanced / Recovery Tools</strong>
+            <span>Note recovery, app refresh, native storage and pro-device tools.</span>
+          </summary>
+          <div class="advanced-options-content">
+            ${isTradie() ? `
+            <section class="advanced-tool-card">
+              <h3>Storage Usage</h3>
+              <div class="muted">Driver: <span id="storage-driver-name">Detecting...</span></div>
+              <div class="muted">Runtime: <span id="native-runtime-status">Detecting...</span></div>
+              <div class="muted">Native Plugins: <span id="native-plugin-status">Detecting...</span></div>
+              <div class="row">
+                <label>
+                  Native Driver Mode
+                  <select id="native-driver-mode">
+                    <option value="adapter">Adapter (Default)</option>
+                    <option value="sqlite_test">SQLite Test Mode</option>
+                  </select>
+                </label>
+                <button id="save-native-driver-mode-btn" class="button secondary">Save Mode</button>
+              </div>
+              <div id="native-driver-mode-status" class="muted"></div>
+              <div id="storage-meter-container"><div class="muted">Calculating...</div></div>
+              <div class="row">
+                <button id="native-migrate-btn" class="button secondary">Migrate Current Data to Native SQLite</button>
+                <button id="native-smoke-test-btn" class="button secondary">Run Native Storage Smoke Test</button>
+              </div>
+              <div id="native-migrate-status" class="muted"></div>
+              <div id="native-smoke-test-status" class="muted"></div>
+            </section>
+            ` : ''}
+
+            <section class="advanced-tool-card">
+              <h3>Note Recovery</h3>
+              <p class="muted">Recover notes from backups or alternate storage if note content is missing after editing.</p>
+              <button id="scan-notes-btn" class="button warning full-width">Scan for Corrupted Notes</button>
+              <div id="scan-results" class="hidden">
+                <div id="scan-summary"></div>
+                <div id="recovery-actions" class="hidden">
+                  <button id="recover-notes-btn" class="button full-width">Recover Notes</button>
+                </div>
+              </div>
+              <div id="recovery-status" class="muted"></div>
+            </section>
+
+            <section class="advanced-tool-card">
+              <h3>Restore Notes from Backup</h3>
+              <p class="muted">Load a backup file and restore notes from it. This only replaces corrupted notes.</p>
+              <div class="row">
+                <input id="restore-notes-file" type="file" accept="application/json" />
+                <button id="restore-notes-btn" class="button secondary">Load Backup</button>
+              </div>
+              <div id="restore-notes-status" class="muted"></div>
+            </section>
+
+            ${isTradie() ? `
+            <section class="advanced-tool-card">
+              <h3>Pro Settings</h3>
+              <div class="advanced-setting-block">
+                <strong>Backup Reminders</strong>
+                <p class="muted">Get reminded to backup your data regularly.</p>
+                <div class="row">
+                  <select id="backup-reminder-frequency">
+                    <option value="off">Off</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                  <button id="save-backup-reminder" class="button secondary">Save</button>
+                </div>
+              </div>
+              <div class="advanced-setting-block">
+                <strong>App Lock</strong>
+                <p class="muted">Protect your data with a PIN code when opening the app.</p>
+                <label class="inline-control"><input type="checkbox" id="app-lock-enabled" /> Enable PIN Lock</label>
+                <div id="pin-setup-section">
+                  <input type="password" id="app-lock-pin" placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" />
+                  <button id="save-app-lock" class="button">Set PIN</button>
+                </div>
+                <div id="pin-status" class="muted"></div>
+              </div>
+            </section>
+            ` : ''}
+
+            <section class="advanced-tool-card">
+              <h3>Refresh App</h3>
+              <p class="muted">Use this if notes do not appear after migration, especially when using the installed app.</p>
+              <button id="refresh-app-btn" class="button secondary">Refresh App (PWA)</button>
+            </section>
+          </div>
+        </details>
+      </div>
+    `;
+  }
+
+  async function renderBackup() {
+    const db = getDataApi();
+    appRoot.innerHTML = wrapWithSidebar(renderModernOptionsHtml());
 
     // Load storage stats for tradie edition
     if (isTradie()) {
@@ -7328,6 +7767,7 @@
       return;
     }
     await refreshRuntimeUserInfo();
+    await refreshCurrentUserProfile();
 
     if (productConfig.useSupabase) {
       try {
