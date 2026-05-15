@@ -34,6 +34,7 @@
   let cachedPinnedNoteColumn = null;
   let cachedTypedNoteVersionColumns = null;
   let runtimePreflightPromise = null;
+  const AUTH_SESSION_TIMEOUT_MS = Number(window.SUPABASE_AUTH_TIMEOUT_MS || 6000);
 
   function getClient() {
     if (cachedClient) return cachedClient;
@@ -48,6 +49,69 @@
     cachedClient = supabase.createClient(url, key, { db: { schema: SCHEMA } });
     window.SupabaseClient = cachedClient;
     return cachedClient;
+  }
+
+  function isInvalidRefreshTokenError(errorLike) {
+    const msg = String(errorLike && (errorLike.message || errorLike.error_description || errorLike.error || errorLike) || '').toLowerCase();
+    return msg.includes('invalid refresh token') || msg.includes('refresh token not found');
+  }
+
+  function isRetryableAuthFetchError(errorLike) {
+    const name = String(errorLike && errorLike.name || '').toLowerCase();
+    const msg = String(errorLike && (errorLike.message || errorLike.error_description || errorLike.error || errorLike) || '').toLowerCase();
+    return name.includes('authretryablefetcherror') ||
+      msg.includes('failed to fetch') ||
+      msg.includes('network') ||
+      msg.includes('timeout') ||
+      msg.includes('timed out');
+  }
+
+  function withTimeout(promise, timeoutMs, label) {
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(`${label} timed out`);
+        error.name = 'AuthSessionTimeoutError';
+        reject(error);
+      }, Math.max(1000, timeoutMs || 6000));
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
+  function getProjectRef(url) {
+    try {
+      const host = String(new URL(url).hostname || '');
+      return host.split('.')[0] || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function clearSupabaseAuthState() {
+    if (typeof window.clearSupabaseAuthState === 'function') {
+      window.clearSupabaseAuthState();
+      return;
+    }
+    const ref = getProjectRef(window.SUPABASE_URL || '');
+    const key = ref ? `sb-${ref}-auth-token` : '';
+    if (!key) return;
+    try {
+      localStorage.removeItem(key);
+      localStorage.removeItem(`lock:${key}`);
+    } catch (error) {}
+    try {
+      sessionStorage.removeItem(key);
+      sessionStorage.removeItem(`lock:${key}`);
+    } catch (error) {}
+  }
+
+  async function clearLocalSupabaseSession(supabaseClient) {
+    try {
+      await supabaseClient.auth.signOut({ scope: 'local' });
+    } catch (error) {}
+    clearSupabaseAuthState();
   }
 
   function normalizeDateToYYYYMMDD(dateValue) {
@@ -421,9 +485,22 @@
 
   async function getSession() {
     const supabase = getClient();
-    const res = await supabase.auth.getSession();
-    throwIfError(res);
-    return res.data && res.data.session ? res.data.session : null;
+    try {
+      const res = await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SESSION_TIMEOUT_MS,
+        'Supabase session refresh'
+      );
+      throwIfError(res);
+      return res.data && res.data.session ? res.data.session : null;
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error) || isRetryableAuthFetchError(error)) {
+        console.warn('[Supabase] Session refresh failed; clearing local auth cache and continuing signed out.', error.message || error);
+        await clearLocalSupabaseSession(supabase);
+        return null;
+      }
+      throw error;
+    }
   }
 
   async function signInWithPassword(email, password) {
