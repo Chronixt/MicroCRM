@@ -107,11 +107,11 @@
     } catch (error) {}
   }
 
-  async function clearLocalSupabaseSession(supabaseClient) {
-    try {
-      await supabaseClient.auth.signOut({ scope: 'local' });
-    } catch (error) {}
+  function clearLocalSupabaseSession(supabaseClient) {
     clearSupabaseAuthState();
+    try {
+      supabaseClient.auth.signOut({ scope: 'local' }).catch(() => {});
+    } catch (error) {}
   }
 
   function normalizeDateToYYYYMMDD(dateValue) {
@@ -496,7 +496,7 @@
     } catch (error) {
       if (isInvalidRefreshTokenError(error) || isRetryableAuthFetchError(error)) {
         console.warn('[Supabase] Session refresh failed; clearing local auth cache and continuing signed out.', error.message || error);
-        await clearLocalSupabaseSession(supabase);
+        clearLocalSupabaseSession(supabase);
         return null;
       }
       throw error;
