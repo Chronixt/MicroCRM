@@ -63,9 +63,23 @@
     } catch (e) {}
   }
 
+  window.clearSupabaseAuthState = function () {
+    clearPersistedAuthState(SUPABASE_URL);
+  };
+
   function isInvalidRefreshTokenError(err) {
     var msg = String(err && (err.message || err.error_description || err.error || err) || '').toLowerCase();
     return msg.indexOf('invalid refresh token') !== -1 || msg.indexOf('refresh token not found') !== -1;
+  }
+
+  function isRetryableAuthFetchError(err) {
+    var name = String(err && err.name || '').toLowerCase();
+    var msg = String(err && (err.message || err.error_description || err.error || err) || '').toLowerCase();
+    return name.indexOf('authretryablefetcherror') !== -1 ||
+      msg.indexOf('failed to fetch') !== -1 ||
+      msg.indexOf('network') !== -1 ||
+      msg.indexOf('timeout') !== -1 ||
+      msg.indexOf('timed out') !== -1;
   }
 
   try {
@@ -77,11 +91,11 @@
     console.log('Supabase client initialized (schema: ' + schema + ')');
 
     // Recovery path for migrated keys / stale local sessions:
-    // if persisted refresh token is invalid, clear local auth state.
+    // if persisted refresh token is invalid or unreachable, clear local auth state.
     window.SupabaseClient.auth.getSession().catch(function (err) {
-      if (!isInvalidRefreshTokenError(err)) return;
-      console.warn('Supabase session reset: stale refresh token detected. Clearing local auth cache.');
-      try { window.SupabaseClient.auth.signOut(); } catch (e) {}
+      if (!isInvalidRefreshTokenError(err) && !isRetryableAuthFetchError(err)) return;
+      console.warn('Supabase session reset: auth refresh failed. Clearing local auth cache.');
+      try { window.SupabaseClient.auth.signOut({ scope: 'local' }); } catch (e) {}
       clearPersistedAuthState(SUPABASE_URL);
     });
   } catch (e) {

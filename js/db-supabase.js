@@ -16,6 +16,7 @@
     'title',
     'start',
     'end',
+    'notes',
     'created_at'
   ];
   const APPOINTMENT_PIPELINE_COLUMNS = [
@@ -33,6 +34,7 @@
   let cachedPinnedNoteColumn = null;
   let cachedTypedNoteVersionColumns = null;
   let runtimePreflightPromise = null;
+  const AUTH_SESSION_TIMEOUT_MS = Number(window.SUPABASE_AUTH_TIMEOUT_MS || 6000);
 
   function getClient() {
     if (cachedClient) return cachedClient;
@@ -47,6 +49,69 @@
     cachedClient = supabase.createClient(url, key, { db: { schema: SCHEMA } });
     window.SupabaseClient = cachedClient;
     return cachedClient;
+  }
+
+  function isInvalidRefreshTokenError(errorLike) {
+    const msg = String(errorLike && (errorLike.message || errorLike.error_description || errorLike.error || errorLike) || '').toLowerCase();
+    return msg.includes('invalid refresh token') || msg.includes('refresh token not found');
+  }
+
+  function isRetryableAuthFetchError(errorLike) {
+    const name = String(errorLike && errorLike.name || '').toLowerCase();
+    const msg = String(errorLike && (errorLike.message || errorLike.error_description || errorLike.error || errorLike) || '').toLowerCase();
+    return name.includes('authretryablefetcherror') ||
+      msg.includes('failed to fetch') ||
+      msg.includes('network') ||
+      msg.includes('timeout') ||
+      msg.includes('timed out');
+  }
+
+  function withTimeout(promise, timeoutMs, label) {
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(`${label} timed out`);
+        error.name = 'AuthSessionTimeoutError';
+        reject(error);
+      }, Math.max(1000, timeoutMs || 6000));
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
+  function getProjectRef(url) {
+    try {
+      const host = String(new URL(url).hostname || '');
+      return host.split('.')[0] || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function clearSupabaseAuthState() {
+    if (typeof window.clearSupabaseAuthState === 'function') {
+      window.clearSupabaseAuthState();
+      return;
+    }
+    const ref = getProjectRef(window.SUPABASE_URL || '');
+    const key = ref ? `sb-${ref}-auth-token` : '';
+    if (!key) return;
+    try {
+      localStorage.removeItem(key);
+      localStorage.removeItem(`lock:${key}`);
+    } catch (error) {}
+    try {
+      sessionStorage.removeItem(key);
+      sessionStorage.removeItem(`lock:${key}`);
+    } catch (error) {}
+  }
+
+  function clearLocalSupabaseSession(supabaseClient) {
+    clearSupabaseAuthState();
+    try {
+      supabaseClient.auth.signOut({ scope: 'local' }).catch(() => {});
+    } catch (error) {}
   }
 
   function normalizeDateToYYYYMMDD(dateValue) {
@@ -102,7 +167,8 @@
       textValue: 'text_value', noteType: 'note_type', isPinned: 'is_pinned',
       noteId: 'note_id', savedAt: 'saved_at',
       appointmentId: 'appointment_id', dueAt: 'due_at',
-      quotedAmount: 'quoted_amount', invoiceAmount: 'invoice_amount', paidAmount: 'paid_amount'
+      quotedAmount: 'quoted_amount', invoiceAmount: 'invoice_amount', paidAmount: 'paid_amount',
+      ownerUserId: 'owner_user_id', planLabel: 'plan_label', preferredLanguage: 'preferred_language'
     };
     const out = {};
     for (const k in obj) {
@@ -124,7 +190,8 @@
       text_value: 'textValue', note_type: 'noteType', is_pinned: 'isPinned',
       note_id: 'noteId', saved_at: 'savedAt',
       appointment_id: 'appointmentId', due_at: 'dueAt',
-      quoted_amount: 'quotedAmount', invoice_amount: 'invoiceAmount', paid_amount: 'paidAmount'
+      quoted_amount: 'quotedAmount', invoice_amount: 'invoiceAmount', paid_amount: 'paidAmount',
+      owner_user_id: 'ownerUserId', plan_label: 'planLabel', preferred_language: 'preferredLanguage'
     };
     const out = {};
     for (const k in obj) {
@@ -156,6 +223,12 @@
     const code = String(errorLike?.code || '');
     const msg = String(errorLike?.message || '').toLowerCase();
     return code === '42703' || msg.includes('column') && msg.includes('does not exist');
+  }
+
+  function isMissingRelationError(errorLike) {
+    const code = String(errorLike?.code || '');
+    const msg = String(errorLike?.message || '').toLowerCase();
+    return code === '42P01' || msg.includes('relation') && msg.includes('does not exist');
   }
 
   async function hasTypedNoteColumns() {
@@ -412,9 +485,22 @@
 
   async function getSession() {
     const supabase = getClient();
-    const res = await supabase.auth.getSession();
-    throwIfError(res);
-    return res.data && res.data.session ? res.data.session : null;
+    try {
+      const res = await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SESSION_TIMEOUT_MS,
+        'Supabase session refresh'
+      );
+      throwIfError(res);
+      return res.data && res.data.session ? res.data.session : null;
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error) || isRetryableAuthFetchError(error)) {
+        console.warn('[Supabase] Session refresh failed; clearing local auth cache and continuing signed out.', error.message || error);
+        clearLocalSupabaseSession(supabase);
+        return null;
+      }
+      throw error;
+    }
   }
 
   async function signInWithPassword(email, password) {
@@ -436,6 +522,45 @@
       if (typeof callback === 'function') callback(event, session);
     });
     return res && res.data ? res.data.subscription : null;
+  }
+
+  async function getCurrentUserProfile() {
+    const supabase = getClient();
+    const session = await getSession();
+    const userId = session?.user?.id || null;
+    if (!userId) return null;
+    const res = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('owner_user_id', userId)
+      .maybeSingle();
+    if (res.error && (isMissingColumnError(res.error) || isMissingRelationError(res.error))) return null;
+    throwIfError(res);
+    return res.data ? toCamel(res.data) : null;
+  }
+
+  async function upsertCurrentUserProfile(profile) {
+    const supabase = getClient();
+    const session = await getSession();
+    const userId = session?.user?.id || null;
+    if (!userId) throw new Error('Not authenticated');
+    const firstName = String(profile?.firstName || '').trim();
+    if (!firstName) throw new Error('Profile first name is required');
+    const row = {
+      owner_user_id: userId,
+      first_name: firstName,
+      last_name: profile?.lastName ? String(profile.lastName).trim() : null,
+      plan_label: profile?.planLabel || 'Standard Plan',
+      preferred_language: profile?.preferredLanguage || null,
+      updated_at: new Date().toISOString()
+    };
+    const res = await supabase
+      .from('user_profiles')
+      .upsert(row, { onConflict: 'owner_user_id' })
+      .select('*')
+      .single();
+    throwIfError(res);
+    return toCamel(res.data);
   }
 
   async function claimUnownedData() {
@@ -550,6 +675,7 @@
       noteVersions: 0,
       reminders: 0,
       jobEvents: 0,
+      userProfiles: 0,
       fallback: true,
       rpcTimedOut: isTimeout
     };
@@ -563,6 +689,13 @@
     }
     deleted.appointments = await deleteOwnedByIdBatches('appointments', 'id');
     deleted.customers = await deleteOwnedByIdBatches('customers', 'id');
+    try {
+      const profileRes = await supabase.from('user_profiles').delete().eq('owner_user_id', uid);
+      if (profileRes.error && !isMissingColumnError(profileRes.error) && !isMissingRelationError(profileRes.error)) throwIfError(profileRes);
+      if (!profileRes.error) deleted.userProfiles = 1;
+    } catch (profileError) {
+      if (!isMissingColumnError(profileError) && !isMissingRelationError(profileError)) throw profileError;
+    }
     return deleted;
   }
 
@@ -579,6 +712,7 @@
       start: appointment.start || null,
       end: appointment.end || null,
       title: appointment.title || null,
+      notes: appointment.notes || null,
       created_at: appointment.createdAt || new Date().toISOString()
     };
     if (SUPPORTS_JOB_PIPELINE) {
@@ -1295,6 +1429,7 @@
     const notes = await getAllNotes();
     const reminders = await getAllReminders();
     const jobEvents = await getAllJobEvents();
+    const userProfile = await getCurrentUserProfile();
     const customerNotes = {};
     notes.forEach((n) => {
       const cid = String(n.customerId);
@@ -1311,6 +1446,7 @@
       },
       customers,
       appointments,
+      userProfile,
       customerNotes,
       images: imagesSerialized,
       reminders,
@@ -1327,6 +1463,7 @@
     const notes = await getAllNotes();
     const reminders = await getAllReminders();
     const jobEvents = await getAllJobEvents();
+    const userProfile = await getCurrentUserProfile();
     const customerNotes = {};
     notes.forEach((n) => {
       const cid = String(n.customerId);
@@ -1346,6 +1483,7 @@
         },
         customers,
         appointments,
+        userProfile,
         customerNotes,
         images: imagesSerialized,
         reminders,
@@ -1362,6 +1500,7 @@
     const customers = await getAllCustomers();
     const appointments = await getAllAppointments();
     const notes = await getAllNotes();
+    const userProfile = await getCurrentUserProfile();
     const customerNotes = {};
     notes.forEach((n) => {
       const cid = String(n.customerId);
@@ -1373,6 +1512,7 @@
       __meta: { app: APP_SLUG, version: 3, exportedAt: new Date().toISOString(), backupType: 'lightweight-no-images' },
       customers,
       appointments,
+      userProfile,
       customerNotes,
       images: []
     }, null, 2)], { type: 'application/json' });
@@ -1474,13 +1614,21 @@
 
   async function importAllData(payload, options = {}) {
     const mode = options.mode || 'replace';
-    const { customers = [], appointments = [], images = [], customerNotes = {}, reminders = [] } = payload || {};
+    const { customers = [], appointments = [], images = [], customerNotes = {}, reminders = [], userProfile = null } = payload || {};
     const hasImportedCustomers = Array.isArray(customers) && customers.length > 0;
     if (mode === 'replace') await clearAllStores();
     const supabase = getClient();
     const customerIdMap = {};
     const importedCustomerIds = new Set();
     const existingCustomerIds = new Set();
+
+    if (userProfile && typeof userProfile === 'object' && userProfile.firstName) {
+      try {
+        await upsertCurrentUserProfile(userProfile);
+      } catch (profileError) {
+        console.warn('[Supabase] User profile import skipped:', profileError.message || profileError);
+      }
+    }
 
     function normalizeText(value) {
       return String(value || '').trim().toLowerCase();
@@ -1840,6 +1988,8 @@
     signInWithPassword,
     signOut,
     onAuthStateChange,
+    getCurrentUserProfile,
+    upsertCurrentUserProfile,
     runRuntimePreflight,
     claimUnownedData,
     deleteMyData,

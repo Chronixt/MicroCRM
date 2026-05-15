@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   quoted_amount   NUMERIC(12,2),
   invoice_amount  NUMERIC(12,2),
   paid_amount     NUMERIC(12,2),
+  notes           TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -56,6 +57,19 @@ CREATE INDEX IF NOT EXISTS idx_appointments_customer_id ON appointments (custome
 CREATE INDEX IF NOT EXISTS idx_appointments_start ON appointments (start);
 CREATE INDEX IF NOT EXISTS idx_appointments_customer_start ON appointments (customer_id, start);
 CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments (status);
+
+-- -----------------------------------------------------------------------------
+-- 2b. USER PROFILES
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_profiles (
+  owner_user_id      UUID PRIMARY KEY DEFAULT auth.uid(),
+  first_name         TEXT NOT NULL,
+  last_name          TEXT,
+  plan_label         TEXT DEFAULT 'Standard Plan',
+  preferred_language TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- -----------------------------------------------------------------------------
 -- 3. IMAGES (Photos – customer and job level)
@@ -174,6 +188,7 @@ ALTER TABLE notes              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE note_versions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE job_events         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles      ENABLE ROW LEVEL SECURITY;
 
 -- Allow all for anon (single-tenant; restrict later with auth)
 CREATE POLICY "Allow all for anon" ON customers          FOR ALL TO anon USING (true) WITH CHECK (true);
@@ -183,6 +198,7 @@ CREATE POLICY "Allow all for anon" ON notes             FOR ALL TO anon USING (t
 CREATE POLICY "Allow all for anon" ON note_versions     FOR ALL TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for anon" ON reminders        FOR ALL TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for anon" ON job_events       FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for anon" ON user_profiles    FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- -----------------------------------------------------------------------------
 -- OPTIONAL: Trigger to keep updated_at in sync (customers)
@@ -208,4 +224,9 @@ CREATE TRIGGER notes_updated_at
 DROP TRIGGER IF EXISTS reminders_updated_at ON reminders;
 CREATE TRIGGER reminders_updated_at
   BEFORE UPDATE ON reminders
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS user_profiles_updated_at ON user_profiles;
+CREATE TRIGGER user_profiles_updated_at
+  BEFORE UPDATE ON user_profiles
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
