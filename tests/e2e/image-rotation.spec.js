@@ -2,6 +2,30 @@ const { test, expect } = require('@playwright/test');
 const { AppActor } = require('./actors/AppActor');
 const { CustomerActor } = require('./actors/CustomerActor');
 
+async function expectViewerImageInsideStage(page) {
+  const bounds = await page.evaluate(() => {
+    const image = document.querySelector('[data-testid="viewer-image"]');
+    const stage = document.querySelector('[data-testid="viewer-image-stage"]');
+    const imageBox = image.getBoundingClientRect();
+    const stageBox = stage.getBoundingClientRect();
+    return {
+      imageTop: imageBox.top,
+      imageRight: imageBox.right,
+      imageBottom: imageBox.bottom,
+      imageLeft: imageBox.left,
+      stageTop: stageBox.top,
+      stageRight: stageBox.right,
+      stageBottom: stageBox.bottom,
+      stageLeft: stageBox.left
+    };
+  });
+  const tolerance = 1;
+  expect(bounds.imageTop).toBeGreaterThanOrEqual(bounds.stageTop - tolerance);
+  expect(bounds.imageLeft).toBeGreaterThanOrEqual(bounds.stageLeft - tolerance);
+  expect(bounds.imageRight).toBeLessThanOrEqual(bounds.stageRight + tolerance);
+  expect(bounds.imageBottom).toBeLessThanOrEqual(bounds.stageBottom + tolerance);
+}
+
 test('image viewer rotation persists per customer image', async ({ page }) => {
   const app = new AppActor(page);
   const customers = new CustomerActor(page);
@@ -38,6 +62,11 @@ test('image viewer rotation persists per customer image', async ({ page }) => {
   await expect(thumb).toBeVisible();
   await thumb.click();
   await expect(page.getByTestId('viewer-image')).toBeVisible();
+  await page.getByTestId('image-rotate-left-button').click();
+  await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(-90deg\)/);
+  await expectViewerImageInsideStage(page);
+  await page.getByTestId('image-rotate-right-button').click();
+  await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(0deg\)/);
   await page.getByTestId('image-rotate-right-button').click();
   await expect(page.getByTestId('viewer-image')).toHaveCSS('transform', /matrix/);
   await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(90deg\)/);
