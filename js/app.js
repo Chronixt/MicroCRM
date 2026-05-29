@@ -6528,7 +6528,31 @@
       }
       return image.__viewerRotationDegrees;
     };
-    const getRotationStyle = (image) => `rotate(${getDisplayRotation(image)}deg)`;
+    const getViewerScale = (image) => {
+      if (!image || !Number.isFinite(image.__viewerScale)) return 1;
+      return image.__viewerScale;
+    };
+    const getRotationStyle = (image) => `rotate(${getDisplayRotation(image)}deg) scale(${getViewerScale(image)})`;
+    const fitViewerImageToStage = (image) => {
+      const imgEl = document.querySelector('.viewer-image');
+      const stageEl = document.querySelector('.image-viewer-stage');
+      if (!image || !imgEl || !stageEl) return;
+      image.__viewerScale = 1;
+      imgEl.style.transform = getRotationStyle(image);
+      requestAnimationFrame(() => {
+        const stageWidth = stageEl.clientWidth;
+        const stageHeight = stageEl.clientHeight;
+        const imageWidth = imgEl.offsetWidth;
+        const imageHeight = imgEl.offsetHeight;
+        if (!stageWidth || !stageHeight || !imageWidth || !imageHeight) return;
+        const isQuarterTurn = normalizeImageRotation(getDisplayRotation(image)) % 180 !== 0;
+        const rotatedWidth = isQuarterTurn ? imageHeight : imageWidth;
+        const rotatedHeight = isQuarterTurn ? imageWidth : imageHeight;
+        const nextScale = Math.min(1, stageWidth / rotatedWidth, stageHeight / rotatedHeight);
+        image.__viewerScale = Number.isFinite(nextScale) ? Math.max(0.1, nextScale) : 1;
+        imgEl.style.transform = getRotationStyle(image);
+      });
+    };
     const updateImageThumbnailRotation = (imageId, rotationDegrees) => {
       document.querySelectorAll(`.lazy-image[data-image-id="${imageId}"]`).forEach((thumb) => {
         thumb.style.transform = `rotate(${normalizeImageRotation(rotationDegrees)}deg)`;
@@ -6544,7 +6568,9 @@
         <div class="image-viewer-content">
           ${hasMultiple ? '<button class="image-nav-btn image-nav-prev" id="image-nav-prev">‹</button>' : ''}
           <div class="image-viewer-main">
-            <img src="${getImageViewerSrc(currentImage)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" style="transform:${getRotationStyle(currentImage)}; transition: transform 0.2s ease;" data-testid="viewer-image" />
+            <div class="image-viewer-stage" data-testid="viewer-image-stage">
+              <img src="${getImageViewerSrc(currentImage)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" style="transform:${getRotationStyle(currentImage)}; transition: transform 0.2s ease;" data-testid="viewer-image" />
+            </div>
             <div class="image-actions">
               <button class="image-rotate-btn" id="image-rotate-left-btn" data-testid="image-rotate-left-button" title="Rotate Left" aria-label="Rotate Left"><span aria-hidden="true">↶</span></button>
               <button class="image-rotate-btn" id="image-rotate-right-btn" data-testid="image-rotate-right-button" title="Rotate Right" aria-label="Rotate Right"><span aria-hidden="true">↷</span></button>
@@ -6561,6 +6587,11 @@
     
     let currentIdx = currentIndex;
     let rotationSaveQueue = Promise.resolve();
+    const initialImageEl = document.querySelector('.viewer-image');
+    if (initialImageEl) {
+      initialImageEl.addEventListener('load', () => fitViewerImageToStage(images[currentIdx]), { once: true });
+    }
+    fitViewerImageToStage(currentImage);
     
     // Navigation functions
     function showImage(index) {
@@ -6573,7 +6604,10 @@
       
       imgEl.src = getImageViewerSrc(img);
       imgEl.alt = escapeHtml(img.name);
+      img.__viewerScale = 1;
       imgEl.style.transform = getRotationStyle(img);
+      imgEl.onload = () => fitViewerImageToStage(img);
+      fitViewerImageToStage(img);
       counterEl.textContent = `${currentIdx + 1} / ${images.length}`;
       deleteBtn.dataset.imageId = img.id;
       
@@ -6594,7 +6628,7 @@
       img.__viewerRotationDegrees = nextDisplayRotation;
       img.rotationDegrees = nextRotation;
       const imgEl = document.querySelector('.viewer-image');
-      if (imgEl) imgEl.style.transform = getRotationStyle(img);
+      if (imgEl) fitViewerImageToStage(img);
       updateImageThumbnailRotation(img.id, nextRotation);
       try {
         const persistRotation = async () => {
@@ -6609,7 +6643,7 @@
       } catch (error) {
         img.__viewerRotationDegrees = previousDisplayRotation;
         img.rotationDegrees = previousRotation;
-        if (imgEl) imgEl.style.transform = getRotationStyle(img);
+        if (imgEl) fitViewerImageToStage(img);
         updateImageThumbnailRotation(img.id, previousRotation);
         alert('Error saving image rotation: ' + error.message);
       }
