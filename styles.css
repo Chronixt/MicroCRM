@@ -904,20 +904,33 @@ input[type="text"], input[type="tel"], input[type="datetime-local"], select, .te
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   width: 100%;
   height: 100%;
   max-width: calc(100vw - 120px); /* Account for navigation buttons */
   max-height: calc(100vh - 120px); /* Account for header and actions */
   position: relative;
+  min-height: 0;
+}
+
+.image-viewer-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .viewer-image {
   max-width: 100%;
-  max-height: calc(100% - 60px); /* Leave space for actions */
+  max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  flex-shrink: 1;
+  flex-shrink: 0;
   position: relative;
   z-index: 1;
   transform-origin: center center;
@@ -925,7 +938,7 @@ input[type="text"], input[type="tel"], input[type="datetime-local"], select, .te
 }
 
 .image-actions {
-  margin-top: 12px;
+  margin-top: 0;
   display: flex;
   gap: 12px;
   flex-shrink: 0;
@@ -1086,7 +1099,7 @@ input[type="text"], input[type="tel"], input[type="datetime-local"], select, .te
   }
   
   .viewer-image {
-    max-height: calc(100% - 80px); /* More space for larger action buttons */
+    max-height: 100%;
   }
 }
 
