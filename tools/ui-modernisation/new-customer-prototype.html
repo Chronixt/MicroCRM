@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRMicro Beautician - New Customer Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="new-customer-prototype.css" />
+    <link rel="stylesheet" href="account-menu.css" />
+  </head>
+  <body>
+    <div class="new-customer-shell" data-sidebar="open">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <button class="icon-button sidebar-toggle" type="button" aria-label="Collapse sidebar" data-action="toggle-sidebar">
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+        </button>
+
+        <nav class="nav-stack">
+          <button class="nav-tile" type="button" data-action="home">
+            <span class="material-symbols-outlined" aria-hidden="true">home</span>
+            <span>Menu</span>
+          </button>
+          <button class="nav-tile active" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+            <span>New</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="clients">
+            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+            <span>Clients</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="calendar">
+            <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+            <span>Calendar</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="options">
+            <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            <span>Options</span>
+          </button>
+        </nav>
+
+        <button class="backup-button" type="button" data-action="backup">
+          <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+          <span>1-Tap<br />Backup</span>
+        </button>
+      </aside>
+
+      <main class="new-customer-main">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <img src="../../assets/CRMicro_logo_beautician_light.png" alt="CRMicro" />
+            <span>Beautician</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="prototype-link" href="home-prototype.html">Home Prototype</a>
+            <a class="prototype-link" href="customer-list-prototype.html">Customers Prototype</a>
+            <a class="prototype-link" href="customer-profile-prototype.html">Profile Prototype</a>
+            <a class="prototype-link" href="calendar-prototype.html">Calendar Prototype</a>
+            <a class="prototype-link" href="options-prototype.html">Options Prototype</a>
+            <button class="language-pill" type="button" data-action="language">日本語 <i></i></button>
+            <button class="user-chip" type="button" data-action="account-menu">
+              <div>
+                <strong>Amber Liu</strong>
+                <span>Standard Plan</span>
+              </div>
+              <div class="avatar">AL</div>
+            </button>
+          </div>
+        </header>
+
+        <section class="new-customer-scroll">
+          <header class="page-header">
+            <div>
+              <span class="eyebrow">Create Record</span>
+              <h1>New Customer</h1>
+            </div>
+            <div class="page-actions">
+              <button class="button primary" type="button" data-action="save-customer">
+                <span class="material-symbols-outlined" aria-hidden="true">check</span>
+                Save Customer
+              </button>
+            </div>
+          </header>
+
+          <div class="new-customer-grid">
+            <form class="customer-form" id="customer-form">
+              <section class="form-panel">
+                <header class="section-header">
+                  <div>
+                    <span>Profile</span>
+                    <h2>Customer Details</h2>
+                  </div>
+                  <div class="status-pill">Draft</div>
+                </header>
+
+                <div class="field-grid two">
+                  <label>
+                    First Name
+                    <input id="first-name" name="firstName" type="text" value="Hana" autocomplete="given-name" />
+                  </label>
+                  <label>
+                    Last Name
+                    <input id="last-name" name="lastName" type="text" value="Mori" autocomplete="family-name" />
+                  </label>
+                </div>
+
+                <div class="field-grid two">
+                  <label>
+                    Phone
+                    <input id="phone" name="phone" type="tel" value="0418 555 246" autocomplete="tel" />
+                  </label>
+                  <label>
+                    Email
+                    <input id="email" name="email" type="email" value="hana.mori@example.com" autocomplete="email" />
+                  </label>
+                </div>
+
+                <div class="field-grid two">
+                  <label>
+                    Social Media Name
+                    <input id="social-name" name="socialName" type="text" value="@hanamori.hair" />
+                  </label>
+                  <label>
+                    Source
+                    <select id="source" name="source">
+                      <option>Referral</option>
+                      <option>Instagram</option>
+                      <option>Walk-in</option>
+                      <option>Handwritten Import</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="field-grid two">
+                  <label>
+                    Street Address
+                    <input id="street-address" name="streetAddress" type="text" value="42 Peel Street" autocomplete="address-line1" />
+                  </label>
+                  <label>
+                    Suburb
+                    <input id="suburb" name="suburb" type="text" value="Collingwood" autocomplete="address-level2" />
+                  </label>
+                </div>
+
+                <div class="field-grid two">
+                  <label>
+                    State
+                    <input id="state" name="state" type="text" value="VIC" autocomplete="address-level1" />
+                  </label>
+                  <label>
+                    Postcode
+                    <input id="postcode" name="postcode" type="text" value="3066" autocomplete="postal-code" />
+                  </label>
+                </div>
+
+                <label>
+                  Country
+                  <input id="country" name="country" type="text" value="Australia" autocomplete="country-name" />
+                </label>
+              </section>
+
+            </form>
+
+            <aside class="side-stack">
+              <section class="notes-panel">
+                <header class="notes-header">
+                  <div class="notes-heading">
+                    <div class="heading-icon">
+                      <span class="material-symbols-outlined" aria-hidden="true">description</span>
+                    </div>
+                    <h2>Internal Notes</h2>
+                  </div>
+                  <div class="segmented-control" role="tablist" aria-label="Note type" data-active-mode="text">
+                    <button class="active" type="button" role="tab" aria-selected="true" data-mode="text">
+                      <span class="mode-aa-icon" aria-hidden="true">Aa</span>
+                      <span class="mode-label">Typing</span>
+                    </button>
+                    <button type="button" role="tab" aria-selected="false" data-mode="handwriting">
+                      <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+                      <span class="mode-label">Handwriting</span>
+                    </button>
+                  </div>
+                </header>
+
+                <div class="notes-body">
+                  <form class="note-composer" id="note-form">
+                    <textarea id="note-input" placeholder="Type a starter note or detail for this customer..." aria-label="New note">Prefers low scent products and a softer fringe shape.</textarea>
+                    <div class="composer-actions">
+                      <button class="icon-button" type="button" aria-label="Attach file" data-action="attach">
+                        <span class="material-symbols-outlined" aria-hidden="true">attach_file</span>
+                      </button>
+                      <button class="composer-icon-button expand" type="button" aria-label="Expand note editor" data-action="expand-note">
+                        <span class="material-symbols-outlined" aria-hidden="true">open_in_full</span>
+                      </button>
+                      <button class="composer-icon-button send" type="submit" aria-label="Save note">
+                        <span class="material-symbols-outlined" aria-hidden="true">send</span>
+                      </button>
+                    </div>
+                  </form>
+
+                  <div class="note-options">
+                    <label class="check-row">
+                      <input id="pin-note" type="checkbox" checked />
+                      <span>Pin note to profile</span>
+                    </label>
+                    <label class="check-row">
+                      <input id="medical-alert" type="checkbox" />
+                      <span>Medical alert</span>
+                    </label>
+                  </div>
+
+                  <div class="history-divider"><span></span><strong>Recent History</strong><span></span></div>
+                  <div class="notes-list" id="notes-list"></div>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="account-menu.js"></script>
+    <script src="new-customer-prototype.js"></script>
+  </body>
+</html>

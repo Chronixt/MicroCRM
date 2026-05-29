@@ -104,30 +104,7 @@
   }
 
   function sidebarToggleIconSvg(collapsed) {
-    // Collapsed: hamburger + right chevron (open).
-    // Expanded: left chevron + hamburger (close).
-    if (collapsed) {
-      return `
-        <svg viewBox="0 0 28 16" width="18" height="18" aria-hidden="true" focusable="false">
-          <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="4" y1="4" x2="14" y2="4"></line>
-            <line x1="4" y1="8" x2="14" y2="8"></line>
-            <line x1="4" y1="12" x2="14" y2="12"></line>
-            <polyline points="18,4 24,8 18,12"></polyline>
-          </g>
-        </svg>
-      `;
-    }
-    return `
-      <svg viewBox="0 0 28 16" width="18" height="18" aria-hidden="true" focusable="false">
-        <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="10,4 4,8 10,12"></polyline>
-          <line x1="14" y1="4" x2="24" y2="4"></line>
-          <line x1="14" y1="8" x2="24" y2="8"></line>
-          <line x1="14" y1="12" x2="24" y2="12"></line>
-        </g>
-      </svg>
-    `;
+    return `<span class="material-symbols-outlined" aria-hidden="true">${collapsed ? 'chevron_right' : 'chevron_left'}</span>`;
   }
 
   async function initializeStorageDriverLayer() {
@@ -279,6 +256,25 @@
     return String(currentUserProfile?.planLabel || 'Standard Plan').trim() || 'Standard Plan';
   }
 
+  function buildBackupFileName(kind, date = new Date()) {
+    const iso = (date instanceof Date ? date : new Date(date)).toISOString().replace(/[:]/g, '-');
+    const base = 'crmicro';
+    switch (kind) {
+      case 'daily':
+        return `${base}-dailybackup-${iso}.json`;
+      case 'full':
+        return `${base}-fullbackup-${iso}.json`;
+      case 'data':
+        return `${base}-databackup-${iso}.json`;
+      case 'images':
+        return `${base}-imagesbackup-${iso}.json`;
+      case 'emergency':
+        return `${base}-emergencybackup-${iso.split('T')[0]}.json`;
+      default:
+        return `${base}-backup-${iso}.json`;
+    }
+  }
+
   function getDisplayInitialsFromCurrentUser() {
     const { first, last } = getCurrentProfileNameParts();
     const source = [first, last].filter(Boolean).join(' ') || getDisplayUserName();
@@ -416,6 +412,11 @@
     `;
   }
 
+  function setPinStatusMessage(container, message, tone = 'muted') {
+    if (!container) return;
+    container.innerHTML = `<span class="pin-status-message pin-status-message--${tone}">${escapeHtml(message)}</span>`;
+  }
+
   // Compatibility proxy: existing CrmDB calls now resolve through the active
   // storage driver first (IndexedDB/Supabase today, SQLite later).
   const CrmDB = new Proxy({}, {
@@ -467,48 +468,16 @@
     // Create backup reminder banner
     const reminderBanner = document.createElement('div');
     reminderBanner.id = 'backup-reminder';
-    reminderBanner.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: linear-gradient(135deg, #4ecdc4, #44a08d);
-      color: white;
-      padding: 12px 20px;
-      text-align: center;
-      z-index: 10000;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-      font-size: 14px;
-      font-weight: 500;
-    `;
-
     const lastBackup = localStorage.getItem(`${STORAGE_PREFIX}last_backup`);
     const daysSinceBackup = lastBackup ? 
       Math.floor((new Date() - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 
       'unknown';
 
     reminderBanner.innerHTML = `
-      <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
-        <span>📥 Daily backup available (${daysSinceBackup} days since last backup)</span>
-        <button id="backup-now-btn" style="
-          background: rgba(255,255,255,0.2);
-          border: 1px solid rgba(255,255,255,0.3);
-          color: white;
-          padding: 6px 12px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 600;
-        ">Backup Now</button>
-        <button id="dismiss-backup-btn" style="
-          background: transparent;
-          border: 1px solid rgba(255,255,255,0.3);
-          color: white;
-          padding: 6px 12px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-        ">Dismiss</button>
+      <div class="backup-reminder-content">
+        <span>Daily backup available (${daysSinceBackup} days since last backup)</span>
+        <button id="backup-now-btn" class="backup-reminder-btn backup-reminder-btn--primary">Backup Now</button>
+        <button id="dismiss-backup-btn" class="backup-reminder-btn backup-reminder-btn--ghost">Dismiss</button>
       </div>
     `;
 
@@ -556,10 +525,10 @@
       
       overlay.innerHTML = `
         <div style="text-align: center; max-width: 300px;">
-          <div style="font-size: 48px; margin-bottom: 20px;">🔒</div>
+          <div style="font-size: 48px; margin-bottom: 20px;">ðŸ”’</div>
           <h2 style="margin: 0 0 8px 0; color: white;">${LOCK_TITLE}</h2>
           <p style="margin: 0 0 24px 0; color: #94a3b8; font-size: 14px;">Enter your 4-digit PIN to unlock</p>
-          <input type="password" id="unlock-pin-input" placeholder="• • • •" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 12px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;" />
+          <input type="password" id="unlock-pin-input" placeholder="â€¢ â€¢ â€¢ â€¢" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 12px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); border-radius: 12px; color: white;" />
           <button id="unlock-btn" style="width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; font-weight: 600; background: var(--brand, #f59e0b); color: white; border: none; border-radius: 12px; cursor: pointer;">Unlock</button>
           <p id="pin-error" style="color: #ef4444; margin-top: 12px; font-size: 13px; display: none;">Incorrect PIN. Please try again.</p>
         </div>
@@ -636,49 +605,48 @@
     try {
       const db = getDataApi();
       if (!db || typeof db.getStorageStats !== 'function') {
-        container.innerHTML = '<div class="muted" style="font-size: 12px;">Storage info unavailable</div>';
+        container.innerHTML = '<div class="muted options-storage-empty">Storage info unavailable</div>';
         return;
       }
       const stats = await db.getStorageStats();
       
-      let statusColor = '#22c55e'; // green
+      let statusClass = '';
       let statusText = 'Healthy';
       if (stats.isCritical) {
-        statusColor = '#ef4444'; // red
+        statusClass = ' is-critical';
         statusText = 'Critical - consider deleting some photos';
       } else if (stats.isWarning) {
-        statusColor = '#f97316'; // orange
+        statusClass = ' is-warning';
         statusText = 'High usage - consider cleaning up';
       }
 
       const needsAttention = stats.isWarning || stats.isCritical;
       const attentionTitle = stats.isCritical ? 'Storage Critical' : 'Storage Warning';
-      const attentionBg = stats.isCritical ? 'rgba(239,68,68,0.12)' : 'rgba(249,115,22,0.12)';
-      const attentionBorder = stats.isCritical ? 'rgba(239,68,68,0.35)' : 'rgba(249,115,22,0.35)';
+      const attentionClass = stats.isCritical ? ' is-critical' : ' is-warning';
       const attentionText = stats.isCritical
         ? 'You are close to the limit. Export and remove old photos to avoid failures.'
         : 'Usage is getting high. Consider a data-only backup and cleaning up older photos.';
       
       container.innerHTML = `
-        <div style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+        <div class="options-storage-meter${statusClass}" style="--storage-percent: ${stats.usagePercent}%;">
+          <div class="options-storage-summary">
             <span>${stats.imageCount} photos</span>
             <span>${stats.totalMB} MB used</span>
           </div>
-          <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden;">
-            <div style="background: ${statusColor}; height: 100%; width: ${stats.usagePercent}%; transition: width 0.3s;"></div>
+          <div class="options-storage-bar">
+            <div class="options-storage-bar-fill"></div>
           </div>
-          <div style="font-size: 11px; color: ${statusColor}; margin-top: 4px;">
+          <div class="options-storage-status">
             ${statusText} (${stats.usagePercent}% of ~50MB limit)
           </div>
         </div>
         ${needsAttention ? `
-        <div style="background: ${attentionBg}; border: 1px solid ${attentionBorder}; border-radius: 8px; padding: 10px; margin-top: 8px;">
-          <div style="font-size: 13px; font-weight: 700; color: ${statusColor}; margin-bottom: 6px;">${attentionTitle}</div>
-          <div style="font-size: 12px; color: var(--text); margin-bottom: 10px;">${attentionText}</div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button id="storage-export-lite-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Export Data Only</button>
-            <button id="storage-cleanup-btn" class="button secondary" style="padding: 6px 10px; font-size: 12px;">Review Customer Photos</button>
+        <div class="options-storage-alert${attentionClass}">
+          <div class="options-storage-alert-title">${attentionTitle}</div>
+          <div class="options-storage-alert-text">${attentionText}</div>
+          <div class="options-storage-alert-actions">
+            <button id="storage-export-lite-btn" class="button secondary options-inline-button-compact">Export Data Only</button>
+            <button id="storage-cleanup-btn" class="button secondary options-inline-button-compact">Review Customer Photos</button>
           </div>
         </div>
         ` : ''}
@@ -705,13 +673,16 @@
       }
     } catch (error) {
       console.error('Error loading storage stats:', error);
-      container.innerHTML = '<div class="muted" style="font-size: 12px;">Could not calculate storage</div>';
+      container.innerHTML = '<div class="muted options-storage-empty">Could not calculate storage</div>';
     }
   }
 
   async function confirmImageStorageCapacity(fileList, label = 'photos') {
     const files = Array.from(fileList || []);
     if (files.length === 0) return true;
+    // Supabase mode stores large image payloads server-side; local quota checks
+    // are not representative and can be expensive due full-table scans.
+    if (productConfig.useSupabase) return true;
 
     try {
       const db = getDataApi();
@@ -1024,11 +995,10 @@
       });
 
       // Create and download backup
-      const timestamp = new Date().toISOString().split('T')[0];
       const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${productConfig.appSlug || 'crm'}-daily-backup-${timestamp}.json`;
+      a.download = buildBackupFileName('daily');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1040,21 +1010,17 @@
       // Show success message
       const reminderBanner = document.getElementById('backup-reminder');
       if (reminderBanner) {
-        reminderBanner.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+        reminderBanner.classList.add('is-success');
         reminderBanner.innerHTML = `
-          <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
-            <span>✅ Daily backup completed! (${result.customers.length} customers, ${result.appointments.length} appointments)</span>
-            <button onclick="this.parentElement.parentElement.remove()" style="
-              background: rgba(255,255,255,0.2);
-              border: 1px solid rgba(255,255,255,0.3);
-              color: white;
-              padding: 6px 12px;
-              border-radius: 4px;
-              cursor: pointer;
-              font-size: 12px;
-            ">Close</button>
+          <div class="backup-reminder-content">
+            <span>Daily backup completed! (${result.customers.length} customers, ${result.appointments.length} appointments)</span>
+            <button id="dismiss-backup-success-btn" class="backup-reminder-btn backup-reminder-btn--success">Close</button>
           </div>
         `;
+        const dismissSuccessBtn = document.getElementById('dismiss-backup-success-btn');
+        if (dismissSuccessBtn) {
+          dismissSuccessBtn.addEventListener('click', () => reminderBanner.remove());
+        }
       }
 
     } catch (error) {
@@ -1129,12 +1095,12 @@
       bookAppointment: 'Book Appointment', bookingDate: 'Booking date', duration: 'Duration', bookingType: 'Booking type',
       selectTypes: 'Select types', noneSelected: 'None selected', book: 'Book',
       suggested: 'Suggested', recentlyUpdated: 'Recently updated', noMatchesFound: 'No matches found',
-      quickBook: 'Quick Book', customer: 'Customer', searchPlaceholder: 'Search by name, phone, or social media…', noCustomerSelected: 'No customer selected', titleOptional: 'Title (optional)',
+      quickBook: 'Quick Book', customer: 'Customer', searchPlaceholder: 'Search by name, phone, or social mediaâ€¦', noCustomerSelected: 'No customer selected', titleOptional: 'Title (optional)',
       appointmentBooked: 'Appointment booked', pleaseSelectDateTime: 'Please select booking date/time', pleaseSelectCustomer: 'Please select a customer',
       menu: 'Menu',
       month: 'Month', week: 'Week', day: 'Day', list: 'List', today: 'Today',
       sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat',
-      langToggleEn: 'English', langToggleJa: '日本語',
+      langToggleEn: 'English', langToggleJa: 'æ—¥æœ¬èªž',
       todaysAppointments: 'Today\'s Appointments', noAppointmentsToday: 'No appointments today',
       loading: 'Loading', nextAppointment: 'Next Appointment', noUpcomingAppointments: 'No upcoming appointments', errorLoadingAppointment: 'Error loading appointment',
       delete: 'Delete', confirmDelete: 'Are you sure you want to delete this appointment?', appointmentDetails: 'Appointment Details', pleaseSelectDateTime: 'Please select date and time',
@@ -1148,39 +1114,39 @@
       , welcomeMenuMessage: 'Welcome back {firstName}, ready for today?'
     },
     ja: {
-              add: '新規顧客', find: '検索', customers: '顧客', calendar: 'カレンダー', backup: 'バックアップ',
-      export: 'エクスポート', download: 'ダウンロード', load: '読み込み', preview: 'プレビュー',
-      selectAll: '全選択', selectNone: '全解除', includeAppointments: '予約を含む', includeImages: '画像を含む',
-      mergeAppendUpdate: 'マージ（追加/更新）', replaceWipeThenImport: '置換（削除して取り込み）', importSelected: '選択を取り込み', wipeAllData: '全データを削除',
-      deleteMyData: '自分のデータを削除',
-      goHome: 'ホームへ', notFound: '見つかりません',
-        newCustomer: '新規顧客', newAppointment: '新規予約', findCustomer: '顧客検索', backupRestore: 'バックアップ／復元',
-      firstName: '名', lastName: '姓', contactNumber: '電話番号', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNS名', socialMediaNamePlaceholder: 'SNSのユーザー名を入力',
-      address: '住所', addressLookupPlaceholder: '住所検索', addressLine1: '住所1', addressLine2: '住所2', suburb: '市区町村', state: '都道府県', postcode: '郵便番号', country: '国',
-      referralType: '紹介区分', referralNotes: '紹介メモ', referralNotesPlaceholder: '紹介に関する詳細', notes: 'ノート', attachImages: '画像を追加',
-      save: '保存', saveChanges: '変更を保存', cancel: 'キャンセル', open: '開く', select: '選択',
-      walkIn: '飛び込み', friend: '友人', instagram: 'インスタ', website: 'ウェブサイト', googleMaps: 'Googleマップ', other: 'その他',
-      addNotes: 'ノート追加', edit: '編集', images: '画像', contact: '連絡先', referral: '紹介', noNotesAdded: 'ノートはありません',
-      bookAppointment: '予約', bookingDate: '予約日時', duration: '施術時間', bookingType: 'メニュー',
-      selectTypes: 'メニューを選択', noneSelected: '未選択', book: '予約する',
-      suggested: '候補', recentlyUpdated: '最近更新', noMatchesFound: '該当なし',
-      quickBook: 'クイック予約', customer: '顧客', searchPlaceholder: '氏名、電話、またはSNS名で検索…', noCustomerSelected: '未選択', titleOptional: 'タイトル（任意）',
-      appointmentBooked: '予約を登録しました', pleaseSelectDateTime: '予約日時を選択してください', pleaseSelectCustomer: '顧客を選択してください',
-      menu: 'メニュー',
-      month: '月', week: '週', day: '日', list: 'リスト', today: '今日',
-      sun: '日', mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土',
-      langToggleEn: 'English', langToggleJa: '日本語',
-      todaysAppointments: '今日の予約', noAppointmentsToday: '予約はありません',
-      loading: '読み込み中', nextAppointment: '次の予約', noUpcomingAppointments: '予約はありません', errorLoadingAppointment: '予約の読み込みエラー',
-              delete: '削除', confirmDelete: 'この予約を削除してもよろしいですか？', appointmentDetails: '予約詳細', pleaseSelectDateTime: '日時を選択してください',
-      emergencyBackup: '緊急バックアップ', backupBeforeCacheClear: 'キャッシュクリア前のバックアップ', downloadBackupNow: '今すぐバックアップをダウンロード', cacheCleared: 'キャッシュクリア完了 - アプリが再読み込みされます', clearCacheAndReload: 'キャッシュクリア＆アプリ再読み込み',
-      followUps: 'フォローアップ', newReminder: '新規リマインダー', followUpsUnavailableTitle: 'フォローアップは利用できません',
-      followUpsUnavailableMessage: 'このプロダクトではリマインダー／フォローアップ機能は無効です。',
-      noFollowUps: 'フォローアップはありません', followUpsEmptyMessage: '顧客または予約からリマインダーを作成してフォローアップを管理してください。',
-      errorLoadingFollowUps: 'フォローアップの読み込みエラー', loadingJobs: 'ジョブ読み込み中...', errorLoadingJobs: 'ジョブの読み込みエラー',
-      pipeline: 'パイプライン', needsInvoice: '請求書未作成', unpaid: '未入金', noResultsFound: '結果が見つかりません', errorSearching: '検索エラー',
-      paymentTracking: '支払い管理', jobPhotos: 'ジョブ写真', quickAddAppointment: 'クイック追加', all: 'すべて'
-      , welcomeMenuMessage: 'おかえりなさい {firstName} さん、今日の準備はいいですか？'
+              add: 'æ–°è¦é¡§å®¢', find: 'æ¤œç´¢', customers: 'é¡§å®¢', calendar: 'ã‚«ãƒ¬ãƒ³ãƒ€ãƒ¼', backup: 'ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—',
+      export: 'ã‚¨ã‚¯ã‚¹ãƒãƒ¼ãƒˆ', download: 'ãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰', load: 'èª­ã¿è¾¼ã¿', preview: 'ãƒ—ãƒ¬ãƒ“ãƒ¥ãƒ¼',
+      selectAll: 'å…¨é¸æŠž', selectNone: 'å…¨è§£é™¤', includeAppointments: 'äºˆç´„ã‚’å«ã‚€', includeImages: 'ç”»åƒã‚’å«ã‚€',
+      mergeAppendUpdate: 'ãƒžãƒ¼ã‚¸ï¼ˆè¿½åŠ /æ›´æ–°ï¼‰', replaceWipeThenImport: 'ç½®æ›ï¼ˆå‰Šé™¤ã—ã¦å–ã‚Šè¾¼ã¿ï¼‰', importSelected: 'é¸æŠžã‚’å–ã‚Šè¾¼ã¿', wipeAllData: 'å…¨ãƒ‡ãƒ¼ã‚¿ã‚’å‰Šé™¤',
+      deleteMyData: 'è‡ªåˆ†ã®ãƒ‡ãƒ¼ã‚¿ã‚’å‰Šé™¤',
+      goHome: 'ãƒ›ãƒ¼ãƒ ã¸', notFound: 'è¦‹ã¤ã‹ã‚Šã¾ã›ã‚“',
+        newCustomer: 'æ–°è¦é¡§å®¢', newAppointment: 'æ–°è¦äºˆç´„', findCustomer: 'é¡§å®¢æ¤œç´¢', backupRestore: 'ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ï¼å¾©å…ƒ',
+      firstName: 'å', lastName: 'å§“', contactNumber: 'é›»è©±ç•ªå·', contactNumberPlaceholder: '0400 123 456', socialMediaName: 'SNSå', socialMediaNamePlaceholder: 'SNSã®ãƒ¦ãƒ¼ã‚¶ãƒ¼åã‚’å…¥åŠ›',
+      address: 'ä½æ‰€', addressLookupPlaceholder: 'ä½æ‰€æ¤œç´¢', addressLine1: 'ä½æ‰€1', addressLine2: 'ä½æ‰€2', suburb: 'å¸‚åŒºç”ºæ‘', state: 'éƒ½é“åºœçœŒ', postcode: 'éƒµä¾¿ç•ªå·', country: 'å›½',
+      referralType: 'ç´¹ä»‹åŒºåˆ†', referralNotes: 'ç´¹ä»‹ãƒ¡ãƒ¢', referralNotesPlaceholder: 'ç´¹ä»‹ã«é–¢ã™ã‚‹è©³ç´°', notes: 'ãƒŽãƒ¼ãƒˆ', attachImages: 'ç”»åƒã‚’è¿½åŠ ',
+      save: 'ä¿å­˜', saveChanges: 'å¤‰æ›´ã‚’ä¿å­˜', cancel: 'ã‚­ãƒ£ãƒ³ã‚»ãƒ«', open: 'é–‹ã', select: 'é¸æŠž',
+      walkIn: 'é£›ã³è¾¼ã¿', friend: 'å‹äºº', instagram: 'ã‚¤ãƒ³ã‚¹ã‚¿', website: 'ã‚¦ã‚§ãƒ–ã‚µã‚¤ãƒˆ', googleMaps: 'Googleãƒžãƒƒãƒ—', other: 'ãã®ä»–',
+      addNotes: 'ãƒŽãƒ¼ãƒˆè¿½åŠ ', edit: 'ç·¨é›†', images: 'ç”»åƒ', contact: 'é€£çµ¡å…ˆ', referral: 'ç´¹ä»‹', noNotesAdded: 'ãƒŽãƒ¼ãƒˆã¯ã‚ã‚Šã¾ã›ã‚“',
+      bookAppointment: 'äºˆç´„', bookingDate: 'äºˆç´„æ—¥æ™‚', duration: 'æ–½è¡“æ™‚é–“', bookingType: 'ãƒ¡ãƒ‹ãƒ¥ãƒ¼',
+      selectTypes: 'ãƒ¡ãƒ‹ãƒ¥ãƒ¼ã‚’é¸æŠž', noneSelected: 'æœªé¸æŠž', book: 'äºˆç´„ã™ã‚‹',
+      suggested: 'å€™è£œ', recentlyUpdated: 'æœ€è¿‘æ›´æ–°', noMatchesFound: 'è©²å½“ãªã—',
+      quickBook: 'ã‚¯ã‚¤ãƒƒã‚¯äºˆç´„', customer: 'é¡§å®¢', searchPlaceholder: 'æ°åã€é›»è©±ã€ã¾ãŸã¯SNSåã§æ¤œç´¢â€¦', noCustomerSelected: 'æœªé¸æŠž', titleOptional: 'ã‚¿ã‚¤ãƒˆãƒ«ï¼ˆä»»æ„ï¼‰',
+      appointmentBooked: 'äºˆç´„ã‚’ç™»éŒ²ã—ã¾ã—ãŸ', pleaseSelectDateTime: 'äºˆç´„æ—¥æ™‚ã‚’é¸æŠžã—ã¦ãã ã•ã„', pleaseSelectCustomer: 'é¡§å®¢ã‚’é¸æŠžã—ã¦ãã ã•ã„',
+      menu: 'ãƒ¡ãƒ‹ãƒ¥ãƒ¼',
+      month: 'æœˆ', week: 'é€±', day: 'æ—¥', list: 'ãƒªã‚¹ãƒˆ', today: 'ä»Šæ—¥',
+      sun: 'æ—¥', mon: 'æœˆ', tue: 'ç«', wed: 'æ°´', thu: 'æœ¨', fri: 'é‡‘', sat: 'åœŸ',
+      langToggleEn: 'English', langToggleJa: 'æ—¥æœ¬èªž',
+      todaysAppointments: 'ä»Šæ—¥ã®äºˆç´„', noAppointmentsToday: 'äºˆç´„ã¯ã‚ã‚Šã¾ã›ã‚“',
+      loading: 'èª­ã¿è¾¼ã¿ä¸­', nextAppointment: 'æ¬¡ã®äºˆç´„', noUpcomingAppointments: 'äºˆç´„ã¯ã‚ã‚Šã¾ã›ã‚“', errorLoadingAppointment: 'äºˆç´„ã®èª­ã¿è¾¼ã¿ã‚¨ãƒ©ãƒ¼',
+              delete: 'å‰Šé™¤', confirmDelete: 'ã“ã®äºˆç´„ã‚’å‰Šé™¤ã—ã¦ã‚‚ã‚ˆã‚ã—ã„ã§ã™ã‹ï¼Ÿ', appointmentDetails: 'äºˆç´„è©³ç´°', pleaseSelectDateTime: 'æ—¥æ™‚ã‚’é¸æŠžã—ã¦ãã ã•ã„',
+      emergencyBackup: 'ç·Šæ€¥ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—', backupBeforeCacheClear: 'ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¯ãƒªã‚¢å‰ã®ãƒãƒƒã‚¯ã‚¢ãƒƒãƒ—', downloadBackupNow: 'ä»Šã™ããƒãƒƒã‚¯ã‚¢ãƒƒãƒ—ã‚’ãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰', cacheCleared: 'ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¯ãƒªã‚¢å®Œäº† - ã‚¢ãƒ—ãƒªãŒå†èª­ã¿è¾¼ã¿ã•ã‚Œã¾ã™', clearCacheAndReload: 'ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¯ãƒªã‚¢ï¼†ã‚¢ãƒ—ãƒªå†èª­ã¿è¾¼ã¿',
+      followUps: 'ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—', newReminder: 'æ–°è¦ãƒªãƒžã‚¤ãƒ³ãƒ€ãƒ¼', followUpsUnavailableTitle: 'ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ã¯åˆ©ç”¨ã§ãã¾ã›ã‚“',
+      followUpsUnavailableMessage: 'ã“ã®ãƒ—ãƒ­ãƒ€ã‚¯ãƒˆã§ã¯ãƒªãƒžã‚¤ãƒ³ãƒ€ãƒ¼ï¼ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—æ©Ÿèƒ½ã¯ç„¡åŠ¹ã§ã™ã€‚',
+      noFollowUps: 'ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ã¯ã‚ã‚Šã¾ã›ã‚“', followUpsEmptyMessage: 'é¡§å®¢ã¾ãŸã¯äºˆç´„ã‹ã‚‰ãƒªãƒžã‚¤ãƒ³ãƒ€ãƒ¼ã‚’ä½œæˆã—ã¦ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ã‚’ç®¡ç†ã—ã¦ãã ã•ã„ã€‚',
+      errorLoadingFollowUps: 'ãƒ•ã‚©ãƒ­ãƒ¼ã‚¢ãƒƒãƒ—ã®èª­ã¿è¾¼ã¿ã‚¨ãƒ©ãƒ¼', loadingJobs: 'ã‚¸ãƒ§ãƒ–èª­ã¿è¾¼ã¿ä¸­...', errorLoadingJobs: 'ã‚¸ãƒ§ãƒ–ã®èª­ã¿è¾¼ã¿ã‚¨ãƒ©ãƒ¼',
+      pipeline: 'ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³', needsInvoice: 'è«‹æ±‚æ›¸æœªä½œæˆ', unpaid: 'æœªå…¥é‡‘', noResultsFound: 'çµæžœãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“', errorSearching: 'æ¤œç´¢ã‚¨ãƒ©ãƒ¼',
+      paymentTracking: 'æ”¯æ‰•ã„ç®¡ç†', jobPhotos: 'ã‚¸ãƒ§ãƒ–å†™çœŸ', quickAddAppointment: 'ã‚¯ã‚¤ãƒƒã‚¯è¿½åŠ ', all: 'ã™ã¹ã¦'
+      , welcomeMenuMessage: 'ãŠã‹ãˆã‚Šãªã•ã„ {firstName} ã•ã‚“ã€ä»Šæ—¥ã®æº–å‚™ã¯ã„ã„ã§ã™ã‹ï¼Ÿ'
     }
   };
 
@@ -1471,34 +1437,34 @@
             </div>
             <nav class="menu-tiles" aria-label="Main menu">
             <a class="menu-tile" href="#/add" aria-label="Add new record">
-              <div class="tile-icon" aria-hidden="true">➕</div>
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">person_add</span></div>
               <div class="tile-label">${t('add')}</div>
             </a>
             <a class="menu-tile" href="#/find" aria-label="Customers">
-              <div class="tile-icon" aria-hidden="true">🔎</div>
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">search</span></div>
               <div class="tile-label">${t('customers')}</div>
             </a>
             <a class="menu-tile" href="#/calendar" aria-label="Calendar">
-              <div class="tile-icon" aria-hidden="true">🗓️</div>
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">calendar_month</span></div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
             ${usesJobPipeline() ? `
             <a class="menu-tile" href="#/follow-ups" aria-label="Follow-ups">
-              <div class="tile-icon" aria-hidden="true">🔔</div>
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">notifications_active</span></div>
               <div class="tile-label">${t('followUps')}</div>
             </a>
             ` : ''}
             <a class="menu-tile" href="#/backup" aria-label="Options">
-              <div class="tile-icon" aria-hidden="true">⚙️</div>
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">settings</span></div>
               <div class="tile-label">Options</div>
             </a>
             <!-- Emergency Backup tile hidden from main menu but functionality preserved -->
-            <a class="menu-tile" href="#/emergency-backup" aria-label="Emergency Backup" style="display: none; background: linear-gradient(135deg, #ff6b6b, #ee5a52);">
-              <div class="tile-icon" aria-hidden="true">🚨</div>
+            <a class="menu-tile menu-tile--emergency" href="#/emergency-backup" aria-label="Emergency Backup">
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">warning</span></div>
               <div class="tile-label">${t('emergencyBackup')}</div>
             </a>
-            <button class="menu-tile menu-tile--backup" id="daily-backup-btn" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); cursor: pointer;">
-              <div class="tile-icon" aria-hidden="true">📥</div>
+            <button class="menu-tile menu-tile--backup" id="daily-backup-btn" aria-label="1-tap Backup">
+              <div class="tile-icon" aria-hidden="true"><span class="material-symbols-outlined">upload</span></div>
               <div class="tile-label">1-tap Backup</div>
             </button>
             </nav>
@@ -1628,16 +1594,20 @@
     const collapsed = isSidebarCollapsed();
     const path = currentPath().split('?')[0] || '/';
     const isActive = (href) => path === href || (href !== '/' && path.startsWith(href));
-    const productLabel = (productConfig.activeProduct || 'core').replace(/^\w/, (c) => c.toUpperCase());
+    const productLabel = String(productConfig.appName || '')
+      .replace(/^CRMicro\s+/i, '')
+      .trim() || (productConfig.activeProduct || 'core').replace(/^\w/, (c) => c.toUpperCase());
     const userName = escapeHtml(getDisplayUserName());
     const planLabel = escapeHtml(getDisplayPlanLabel());
     const initials = escapeHtml(getDisplayInitialsFromCurrentUser());
     const cachedSidebarTopOffset = getCachedSidebarTopOffset();
-    const toggleLabel = collapsed ? 'Expand sidebar menu' : 'Collapse sidebar menu';
+    const toggleLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
     const toggleIcon = sidebarToggleIconSvg(collapsed);
     const sidebarInlineStyle = cachedSidebarTopOffset != null
       ? ` style="--sidebar-top-offset: ${cachedSidebarTopOffset}px;"`
       : '';
+    const sidebarIcon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
+    const addLabel = lang === 'en' ? 'New' : t('add');
     return `
       <div class="layout ${collapsed ? 'sidebar-collapsed' : ''}">
         <aside class="sidebar"${sidebarInlineStyle}>
@@ -1646,33 +1616,33 @@
           </div>
           <nav class="sidebar-tiles" aria-label="Sidebar menu">
             <a class="menu-tile small ${isActive('/') ? 'active' : ''}" href="#/" aria-label="Menu">
-              <div class="tile-icon" aria-hidden="true">🏠</div>
+              <div class="tile-icon">${sidebarIcon('home')}</div>
               <div class="tile-label">${t('menu')}</div>
             </a>
             <a class="menu-tile small ${isActive('/add') ? 'active' : ''}" href="#/add" aria-label="Add new record">
-              <div class="tile-icon" aria-hidden="true">➕</div>
-              <div class="tile-label">${t('add')}</div>
+              <div class="tile-icon">${sidebarIcon('person_add')}</div>
+              <div class="tile-label">${addLabel}</div>
             </a>
             <a class="menu-tile small ${isActive('/find') || isActive('/customer') ? 'active' : ''}" href="#/find" aria-label="Customers">
-              <div class="tile-icon" aria-hidden="true">🔎</div>
+              <div class="tile-icon">${sidebarIcon('groups')}</div>
               <div class="tile-label">${t('customers')}</div>
             </a>
             <a class="menu-tile small ${isActive('/calendar') ? 'active' : ''}" href="#/calendar" aria-label="Calendar">
-              <div class="tile-icon" aria-hidden="true">🗓️</div>
+              <div class="tile-icon">${sidebarIcon('calendar_month')}</div>
               <div class="tile-label">${t('calendar')}</div>
             </a>
             ${usesJobPipeline() ? `
             <a class="menu-tile small ${isActive('/follow-ups') ? 'active' : ''}" href="#/follow-ups" aria-label="Follow-ups">
-              <div class="tile-icon" aria-hidden="true">🔔</div>
+              <div class="tile-icon">${sidebarIcon('notifications')}</div>
               <div class="tile-label">${t('followUps')}</div>
             </a>
             ` : ''}
             <a class="menu-tile small ${isActive('/backup') ? 'active' : ''}" href="#/backup" aria-label="Options">
-              <div class="tile-icon" aria-hidden="true">⚙️</div>
+              <div class="tile-icon">${sidebarIcon('settings')}</div>
               <div class="tile-label">Options</div>
             </a>
-            <button class="menu-tile small menu-tile--backup" id="daily-backup-btn-vertical" aria-label="1-tap Backup" style="background: linear-gradient(135deg, #4ecdc4, #44a08d); cursor: pointer;">
-              <div class="tile-icon" aria-hidden="true">📥</div>
+            <button class="menu-tile small menu-tile--backup" id="daily-backup-btn-vertical" aria-label="1-tap Backup">
+              <div class="tile-icon">${sidebarIcon('upload')}</div>
               <div class="tile-label">1-tap Backup</div>
             </button>
           </nav>
@@ -1885,146 +1855,146 @@
     clearTempNewCustomerDraft();
     
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between section-header">
+      <div class="space-between section-header add-customer-header">
         <h2>${t('newCustomer')}</h2>
       </div>
-      <div class="customer-directory-layout">
-      <div class="card customer-list-panel">
-        <div class="view-header" style="margin-bottom: 8px;">
-          <div></div>
-          <div class="view-actions" style="display: flex; gap: 8px;">
-            ${renderNoteInputModeToggle({ compact: true, noMargin: true })}
+      <div class="add-customer-layout">
+        <div class="card add-customer-form-panel">
+          <div class="view-header add-customer-form-header">
+            <h3>Customer Details</h3>
+          </div>
+          <div class="form" id="new-form">
+            <div class="grid-2">
+              <div>
+                <label>${t('firstName')}</label>
+                <div class="input-with-button">
+                  <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
+                </div>
+              </div>
+              <div>
+                <label>${t('lastName')}</label>
+                <div class="input-with-button">
+                  <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label>${t('contactNumber')}</label>
+              <div class="input-with-button">
+                <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
+              </div>
+            </div>
+            ${!isTradie() ? `
+            <div>
+              <label>${t('socialMediaName')}</label>
+              <div class="input-with-button">
+                <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
+              </div>
+            </div>
+            ` : ''}
+            ${isTradie() ? `
+            <div class="tradie-address-card">
+              <strong>Address</strong>
+              <div class="tradie-address-block">
+                <label>Street Address</label>
+                <input type="text" name="addressLine1" placeholder="123 Main Street" />
+              </div>
+              <div class="grid-2 tradie-address-grid">
+                <div>
+                  <label>Suburb</label>
+                  <input type="text" name="suburb" placeholder="Suburb" />
+                </div>
+                <div class="grid-2">
+                  <div>
+                    <label>State</label>
+                    <select name="state">
+                      <option value="">-</option>
+                      <option value="NSW">NSW</option>
+                      <option value="VIC">VIC</option>
+                      <option value="QLD">QLD</option>
+                      <option value="WA">WA</option>
+                      <option value="SA">SA</option>
+                      <option value="TAS">TAS</option>
+                      <option value="ACT">ACT</option>
+                      <option value="NT">NT</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Postcode</label>
+                    <input type="text" name="postcode" placeholder="0000" maxlength="4" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            ` : ''}
+            ${usesExtendedAddressForm() ? `
+            <div>
+              <label>${t('address')}</label>
+              <div class="input-with-button">
+                <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
+              </div>
+            </div>
+            <div>
+              <label>${t('addressLine2')}</label>
+              <div class="input-with-button">
+                <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label>${t('suburb')}</label>
+                <div class="input-with-button">
+                  <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
+                </div>
+              </div>
+              <div>
+                <label>${t('state')}</label>
+                <div class="input-with-button">
+                  <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
+                </div>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label>${t('postcode')}</label>
+                <div class="input-with-button">
+                  <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
+                </div>
+              </div>
+              <div>
+                <label>${t('country')}</label>
+                <div class="input-with-button">
+                  <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
+                </div>
+              </div>
+            </div>
+            ` : ''}
+            <div>
+              <label>Referral</label>
+              <div class="input-with-button">
+                <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
+              </div>
+            </div>
+            <div>
+              <label>${t('attachImages')}</label>
+              <input type="file" name="images" accept="image/*" multiple />
+            </div>
+            <div class="row add-customer-actions">
+              <button class="button" id="save-btn">${t('save')}</button>
+            </div>
           </div>
         </div>
-        <div class="form" id="new-form">
-          <div class="grid-2">
-            <div>
-              <label>${t('firstName')}</label>
-              <div class="input-with-button">
-                <input type="text" name="firstName" placeholder="${t('firstName')}" inputmode="text" />
-              </div>
-            </div>
-            <div>
-              <label>${t('lastName')}</label>
-              <div class="input-with-button">
-                <input type="text" name="lastName" placeholder="${t('lastName')}" inputmode="text" />
-              </div>
-            </div>
+        <div class="card add-customer-notes-panel notes-view">
+          <div class="add-customer-notes-header">
+            <h3>Internal Notes</h3>
+            ${renderNoteInputModeToggle({ compact: true, noMargin: true })}
           </div>
-          <div>
-            <label>${t('contactNumber')}</label>
-            <div class="input-with-button">
-              <input type="tel" name="contactNumber" placeholder="${t('contactNumberPlaceholder')}" inputmode="tel" />
-            </div>
-          </div>
-          ${!isTradie() ? `
-          <div>
-            <label>${t('socialMediaName')}</label>
-            <div class="input-with-button">
-              <input type="text" name="socialMediaName" placeholder="${t('socialMediaNamePlaceholder')}" inputmode="text" />
-            </div>
-          </div>
-          ` : ''}
-          ${isTradie() ? `
-          <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-            <strong style="font-size: 14px;">📍 Address</strong>
-            <div style="margin-top: 12px;">
-              <label style="font-size: 12px;">Street Address</label>
-              <input type="text" name="addressLine1" placeholder="123 Main Street" />
-            </div>
-            <div class="grid-2" style="margin-top: 8px;">
-              <div>
-                <label style="font-size: 12px;">Suburb</label>
-                <input type="text" name="suburb" placeholder="Suburb" />
-              </div>
-              <div class="grid-2">
-                <div>
-                  <label style="font-size: 12px;">State</label>
-                  <select name="state">
-                    <option value="">-</option>
-                    <option value="NSW">NSW</option>
-                    <option value="VIC">VIC</option>
-                    <option value="QLD">QLD</option>
-                    <option value="WA">WA</option>
-                    <option value="SA">SA</option>
-                    <option value="TAS">TAS</option>
-                    <option value="ACT">ACT</option>
-                    <option value="NT">NT</option>
-                  </select>
-                </div>
-                <div>
-                  <label style="font-size: 12px;">Postcode</label>
-                  <input type="text" name="postcode" placeholder="0000" maxlength="4" />
-                </div>
-              </div>
-            </div>
-          </div>
-          ` : ''}
-          ${usesExtendedAddressForm() ? `
-          <div>
-            <label>${t('address')}</label>
-            <div class="input-with-button">
-              <input type="text" name="addressLine1" placeholder="${t('addressLine1')}" inputmode="text" />
-            </div>
-          </div>
-          <div>
-            <label>${t('addressLine2')}</label>
-            <div class="input-with-button">
-              <input type="text" name="addressLine2" placeholder="${t('addressLine2')}" inputmode="text" />
-            </div>
-          </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('suburb')}</label>
-              <div class="input-with-button">
-                <input type="text" name="suburb" placeholder="${t('suburb')}" inputmode="text" />
-              </div>
-            </div>
-            <div>
-              <label>${t('state')}</label>
-              <div class="input-with-button">
-                <input type="text" name="state" placeholder="${t('state')}" inputmode="text" />
-              </div>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div>
-              <label>${t('postcode')}</label>
-              <div class="input-with-button">
-                <input type="text" name="postcode" placeholder="${t('postcode')}" inputmode="text" />
-              </div>
-            </div>
-            <div>
-              <label>${t('country')}</label>
-              <div class="input-with-button">
-                <input type="text" name="country" placeholder="${t('country')}" inputmode="text" />
-              </div>
-            </div>
-          </div>
-          ` : ''}
-          <div>
-            <label>Referral</label>
-            <div class="input-with-button">
-              <input type="text" name="referralNotes" placeholder="${t('referralNotesPlaceholder')}" />
-            </div>
-          </div>
-          <div>
-            <label>${t('notes')}</label>
-            ${renderPinnedNotesSection()}
-            <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
-            <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
-          </div>
-          <div>
-            <label>${t('attachImages')}</label>
-            <input type="file" name="images" accept="image/*" multiple />
-          </div>
-          <div class="row">
-            <button class="button" id="save-btn">${t('save')}</button>
-          </div>
+          ${renderPinnedNotesSection()}
+          <button type="button" class="add-note-btn">+ Add Note</button>
+          <div class="notes-list"></div>
         </div>
       </div>
     `);
-
     await attachAddressAutocomplete(document.getElementById('new-form'));
 
     // Initialize add note button functionality
@@ -2120,65 +2090,110 @@
       <div class="space-between section-header">
         <h2>${t('customers')}</h2>
       </div>
-      <div class="card">
-        <div class="form">
-          <input id="search" type="text" placeholder="${t('searchPlaceholder')}" />
-          <div id="suggested-section" class="hidden" style="margin-top:12px;">
-            <h3 style="margin:0 0 6px 0;">${t('suggested')}</h3>
-            <div id="results" class="list"></div>
-          </div>
-          <div id="recents-section" style="margin-top:12px;">
-            <h3 style="margin:0 0 6px 0;">${t('recentlyUpdated')}</h3>
-            <div id="recents" class="list"></div>
-            <button id="show-all-customers-btn" class="text-button" style="margin-top: 12px; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0;">Show all customers ▾</button>
-          </div>
-          
-          <div id="all-customers-section" class="hidden" style="margin-top:12px;">
-            <h3 style="margin:0 0 6px 0;">All Customers</h3>
-            <div class="all-customers-container">
-              <div id="all-customers-list" class="list"></div>
-              <div id="alphabet-scrollbar" class="alphabet-scrollbar">
-                <div class="scrollbar-letter" data-letter="A">A</div>
-                <div class="scrollbar-letter" data-letter="B">B</div>
-                <div class="scrollbar-letter" data-letter="C">C</div>
-                <div class="scrollbar-letter" data-letter="D">D</div>
-                <div class="scrollbar-letter" data-letter="E">E</div>
-                <div class="scrollbar-letter" data-letter="F">F</div>
-                <div class="scrollbar-letter" data-letter="G">G</div>
-                <div class="scrollbar-letter" data-letter="H">H</div>
-                <div class="scrollbar-letter" data-letter="I">I</div>
-                <div class="scrollbar-letter" data-letter="J">J</div>
-                <div class="scrollbar-letter" data-letter="K">K</div>
-                <div class="scrollbar-letter" data-letter="L">L</div>
-                <div class="scrollbar-letter" data-letter="M">M</div>
-                <div class="scrollbar-letter" data-letter="N">N</div>
-                <div class="scrollbar-letter" data-letter="O">O</div>
-                <div class="scrollbar-letter" data-letter="P">P</div>
-                <div class="scrollbar-letter" data-letter="Q">Q</div>
-                <div class="scrollbar-letter" data-letter="R">R</div>
-                <div class="scrollbar-letter" data-letter="S">S</div>
-                <div class="scrollbar-letter" data-letter="T">T</div>
-                <div class="scrollbar-letter" data-letter="U">U</div>
-                <div class="scrollbar-letter" data-letter="V">V</div>
-                <div class="scrollbar-letter" data-letter="W">W</div>
-                <div class="scrollbar-letter" data-letter="X">X</div>
-                <div class="scrollbar-letter" data-letter="Y">Y</div>
-                <div class="scrollbar-letter" data-letter="Z">Z</div>
+      <div class="customer-directory-layout">
+        <div class="card customer-list-panel">
+          <div class="form">
+            <input id="search" type="text" placeholder="${t('searchPlaceholder')}" />
+            <div id="suggested-section" class="hidden" style="margin-top:12px;">
+              <h3 style="margin:0 0 6px 0;">${t('suggested')}</h3>
+              <div id="results" class="list"></div>
+            </div>
+            <div class="directory-mode-toggle" style="margin-top:12px; display:flex; gap:8px;">
+              <button id="directory-mode-recent" class="button secondary is-active" type="button">10 Most Recent</button>
+              <button id="directory-mode-az" class="button secondary" type="button">A-Z</button>
+            </div>
+            <div id="recents-section" style="margin-top:12px;">
+              <h3 style="margin:0 0 6px 0;">${t('recentlyUpdated')}</h3>
+              <div id="recents" class="list"></div>
+            </div>
+            <div id="all-customers-section" class="hidden" style="margin-top:12px;">
+              <h3 style="margin:0 0 6px 0;">All Customers</h3>
+              <div class="all-customers-container">
+                <div id="all-customers-list" class="list"></div>
+                <div id="alphabet-scrollbar" class="alphabet-scrollbar">
+                  <div class="scrollbar-letter" data-letter="A">A</div>
+                  <div class="scrollbar-letter" data-letter="B">B</div>
+                  <div class="scrollbar-letter" data-letter="C">C</div>
+                  <div class="scrollbar-letter" data-letter="D">D</div>
+                  <div class="scrollbar-letter" data-letter="E">E</div>
+                  <div class="scrollbar-letter" data-letter="F">F</div>
+                  <div class="scrollbar-letter" data-letter="G">G</div>
+                  <div class="scrollbar-letter" data-letter="H">H</div>
+                  <div class="scrollbar-letter" data-letter="I">I</div>
+                  <div class="scrollbar-letter" data-letter="J">J</div>
+                  <div class="scrollbar-letter" data-letter="K">K</div>
+                  <div class="scrollbar-letter" data-letter="L">L</div>
+                  <div class="scrollbar-letter" data-letter="M">M</div>
+                  <div class="scrollbar-letter" data-letter="N">N</div>
+                  <div class="scrollbar-letter" data-letter="O">O</div>
+                  <div class="scrollbar-letter" data-letter="P">P</div>
+                  <div class="scrollbar-letter" data-letter="Q">Q</div>
+                  <div class="scrollbar-letter" data-letter="R">R</div>
+                  <div class="scrollbar-letter" data-letter="S">S</div>
+                  <div class="scrollbar-letter" data-letter="T">T</div>
+                  <div class="scrollbar-letter" data-letter="U">U</div>
+                  <div class="scrollbar-letter" data-letter="V">V</div>
+                  <div class="scrollbar-letter" data-letter="W">W</div>
+                  <div class="scrollbar-letter" data-letter="X">X</div>
+                  <div class="scrollbar-letter" data-letter="Y">Y</div>
+                  <div class="scrollbar-letter" data-letter="Z">Z</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
+        <aside class="card customer-quick-view-panel" id="customer-quick-view">
+          <p class="eyebrow">Quick View</p>
+          <h3>Select a customer</h3>
+          <p class="muted">Select a customer to preview contact details, next appointment and pinned notes.</p>
+        </aside>
       </div>
     `);
 
     const searchInput = document.getElementById('search');
     const resultsEl = document.getElementById('results');
     const suggestedSection = document.getElementById('suggested-section');
+    const recentsSection = document.getElementById('recents-section');
     const recentsEl = document.getElementById('recents');
     const allCustomersSection = document.getElementById('all-customers-section');
     const allCustomersList = document.getElementById('all-customers-list');
-    const showAllCustomersBtn = document.getElementById('show-all-customers-btn');
+    const modeRecentBtn = document.getElementById('directory-mode-recent');
+    const modeAzBtn = document.getElementById('directory-mode-az');
     const quickViewEl = document.getElementById('customer-quick-view');
+    let directoryMode = 'recent';
+
+    function bindRowInteractions(rowElements, resolver, nextByCustomer) {
+      rowElements.forEach((rowEl) => {
+        rowEl.setAttribute('tabindex', '0');
+        rowEl.setAttribute('role', 'button');
+        rowEl.setAttribute('aria-pressed', 'false');
+        const preview = () => {
+          const id = Number(rowEl.getAttribute('data-id'));
+          const customer = resolver(id);
+          if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
+        };
+        const select = () => {
+          const id = Number(rowEl.getAttribute('data-id'));
+          const customer = resolver(id);
+          if (!customer) return;
+          rowElements.forEach((el) => {
+            el.classList.remove('is-selected');
+            el.setAttribute('aria-pressed', 'false');
+          });
+          rowEl.classList.add('is-selected');
+          rowEl.setAttribute('aria-pressed', 'true');
+          renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
+        };
+        rowEl.addEventListener('focus', preview);
+        rowEl.addEventListener('click', select);
+        rowEl.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            select();
+          }
+        });
+      });
+    }
 
     async function renderCustomerQuickView(customer, nextAppointment = null) {
       if (!quickViewEl || !customer) return;
@@ -2240,7 +2255,6 @@
       if (customers.length === 0) {
         resultsEl.innerHTML = `<div class="muted">${t('noMatchesFound')}</div>`;
       } else {
-        // Use optimized query to get only future appointments
         const now = new Date().toISOString();
         const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
         const nextByCustomer = new Map();
@@ -2259,26 +2273,23 @@
             const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
             rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
           }
+          const secondary = isTradie()
+            ? ((c.addressLine1 || c.suburb) ? ` - ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '')
+            : (c.socialMediaName ? ` - ${escapeHtml(c.socialMediaName)}` : '');
           return `
           <div class=\"list-item\" data-id=\"${c.id}\"> 
             <div>
               <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
+              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${secondary}</div>
             </div>
             ${rightHtml}
           </div>`;
         }).join('');
-        resultsEl.querySelectorAll('.list-item').forEach((rowEl) => {
-          rowEl.addEventListener('mouseenter', () => {
-            const id = Number(rowEl.getAttribute('data-id'));
-            const customer = customers.find((c) => Number(c.id) === id);
-            if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
-          });
-          rowEl.addEventListener('click', () => {
-            const id = Number(rowEl.getAttribute('data-id'));
-            if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
-          });
-        });
+        bindRowInteractions(
+          resultsEl.querySelectorAll('.list-item'),
+          (id) => customers.find((c) => Number(c.id) === id),
+          nextByCustomer
+        );
       }
       suggestedSection.classList.remove('hidden');
     }
@@ -2287,10 +2298,7 @@
     await refresh();
 
     async function refreshRecents() {
-      // Use the new optimized function for recent customers
       const customers = await CrmDB.getRecentCustomers(10);
-      
-      // Use optimized query to get only future appointments
       const now = new Date().toISOString();
       const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
       const nextByCustomer = new Map();
@@ -2309,133 +2317,109 @@
           const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
           rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
         }
+        const secondary = isTradie()
+          ? ((c.addressLine1 || c.suburb) ? ` - ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '')
+          : (c.socialMediaName ? ` - ${escapeHtml(c.socialMediaName)}` : '');
         return `
         <div class=\"list-item\" data-id=\"${c.id}\"> 
           <div>
             <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
+            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${secondary}</div>
           </div>
           ${rightHtml}
         </div>`;
       }).join('');
       if (customers[0]) await renderCustomerQuickView(customers[0], nextByCustomer.get(customers[0].id) || null);
-      recentsEl.querySelectorAll('.list-item').forEach((rowEl) => {
-        rowEl.addEventListener('mouseenter', () => {
-          const id = Number(rowEl.getAttribute('data-id'));
-          const customer = customers.find((c) => Number(c.id) === id);
-          if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
-        });
-        rowEl.addEventListener('click', () => {
-          const id = Number(rowEl.getAttribute('data-id'));
-          if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
-        });
-      });
+      bindRowInteractions(
+        recentsEl.querySelectorAll('.list-item'),
+        (id) => customers.find((c) => Number(c.id) === id),
+        nextByCustomer
+      );
     }
     await refreshRecents();
 
-    if (showAllCustomersBtn) {
-      showAllCustomersBtn.addEventListener('click', async () => {
-        if (allCustomersSection.classList.contains('hidden')) {
-          // Show all customers section
-          allCustomersSection.classList.remove('hidden');
-          showAllCustomersBtn.textContent = 'Hide all customers ▴';
-          
-          // Load and display all customers
-          await loadAllCustomers();
-        } else {
-          // Hide all customers section
-          allCustomersSection.classList.add('hidden');
-          showAllCustomersBtn.textContent = 'Show all customers ▾';
-        }
-      });
-    }
-
-    // Function to load and display all customers
     async function loadAllCustomers() {
       try {
-        let allCustomers = await CrmDB.getAllCustomers();
-        
-
-        
+        const allCustomers = await CrmDB.getAllCustomers();
         const sortedCustomers = [...allCustomers].sort((a, b) => {
           const aName = `${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase();
           const bName = `${b.firstName || ''} ${b.lastName || ''}`.trim().toLowerCase();
           return aName.localeCompare(bName);
         });
-        
-        {
-          const now = new Date();
-          const allAppts = await CrmDB.getAllAppointments();
-          const nextByCustomer = new Map();
-          allAppts.forEach((a) => {
-            const start = new Date(a.start);
-            if (start <= now) return;
-            const cur = nextByCustomer.get(a.customerId);
-            if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
-          });
-          allCustomersList.innerHTML = sortedCustomers.map((c) => {
-            const next = nextByCustomer.get(c.id);
-            let rightHtml = '';
-            if (next) {
-              const start = new Date(next.start);
-              const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-              const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
-              rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
-            }
-            return `
+
+        const now = new Date();
+        const allAppts = await CrmDB.getAllAppointments();
+        const nextByCustomer = new Map();
+        allAppts.forEach((a) => {
+          const start = new Date(a.start);
+          if (start <= now) return;
+          const cur = nextByCustomer.get(a.customerId);
+          if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
+        });
+
+        allCustomersList.innerHTML = sortedCustomers.map((c) => {
+          const next = nextByCustomer.get(c.id);
+          let rightHtml = '';
+          if (next) {
+            const start = new Date(next.start);
+            const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
+            rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
+          }
+          const secondary = isTradie()
+            ? ((c.addressLine1 || c.suburb) ? ` - ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '')
+            : (c.socialMediaName ? ` - ${escapeHtml(c.socialMediaName)}` : '');
+          return `
             <div class=\"list-item\" data-first-letter=\"${(c.firstName || '').charAt(0).toUpperCase()}\" data-id=\"${c.id}\"> 
               <div>
                 <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${isTradie() ? ((c.addressLine1 || c.suburb) ? ` • ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '') : (c.socialMediaName ? ` • ${escapeHtml(c.socialMediaName)}` : '')}</div>
+                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${secondary}</div>
               </div>
               ${rightHtml}
             </div>`;
-          }).join('');
-          allCustomersList.querySelectorAll('.list-item').forEach((rowEl) => {
-            rowEl.addEventListener('mouseenter', () => {
-              const id = Number(rowEl.getAttribute('data-id'));
-              const customer = sortedCustomers.find((c) => Number(c.id) === id);
-              if (customer) renderCustomerQuickView(customer, nextByCustomer.get(customer.id) || null);
-            });
-            rowEl.addEventListener('click', () => {
-              const id = Number(rowEl.getAttribute('data-id'));
-              if (!Number.isNaN(id)) navigate(`/customer?id=${encodeURIComponent(id)}`);
-            });
-          });
-        }
-        
-        // Set up alphabet scrollbar functionality
+        }).join('');
+
+        bindRowInteractions(
+          allCustomersList.querySelectorAll('.list-item'),
+          (id) => sortedCustomers.find((c) => Number(c.id) === id),
+          nextByCustomer
+        );
+
         setupAlphabetScrollbar();
       } catch (error) {
         allCustomersList.innerHTML = '<div class="muted">Error loading customers</div>';
       }
     }
 
-
-
-    // Function to set up alphabet scrollbar functionality
     function setupAlphabetScrollbar() {
       const scrollbarLetters = document.querySelectorAll('.scrollbar-letter');
       const customerItems = document.querySelectorAll('#all-customers-list .list-item');
-      
-      scrollbarLetters.forEach(letterDiv => {
+
+      scrollbarLetters.forEach((letterDiv) => {
         letterDiv.addEventListener('click', () => {
           const targetLetter = letterDiv.dataset.letter;
-          
-          // Find the first customer starting with this letter
-          const targetCustomer = Array.from(customerItems).find(item => 
-            item.dataset.firstLetter === targetLetter
-          );
-          
-          if (targetCustomer) {
-            // Scroll to the customer
-            targetCustomer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            
-            // Highlight the letter briefly
-          }
+          const targetCustomer = Array.from(customerItems).find((item) => item.dataset.firstLetter === targetLetter);
+          if (targetCustomer) targetCustomer.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
       });
     }
+
+    async function setDirectoryMode(mode) {
+      directoryMode = mode === 'az' ? 'az' : 'recent';
+      const isAz = directoryMode === 'az';
+      modeRecentBtn?.classList.toggle('is-active', !isAz);
+      modeAzBtn?.classList.toggle('is-active', isAz);
+      recentsSection?.classList.toggle('hidden', isAz);
+      allCustomersSection?.classList.toggle('hidden', !isAz);
+      if (isAz && !allCustomersList.dataset.loaded) {
+        await loadAllCustomers();
+        allCustomersList.dataset.loaded = 'true';
+      }
+    }
+
+    modeRecentBtn?.addEventListener('click', () => setDirectoryMode('recent'));
+    modeAzBtn?.addEventListener('click', () => setDirectoryMode('az'));
+    await setDirectoryMode('recent');
   }
 
   async function renderCustomer({ query }) {
@@ -2451,23 +2435,23 @@
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="card customer-view">
         <div class="view-header">
-          <h2 class="customer-title" style="text-align: left; font-size: 24px; margin: 0; padding-left: 16px;">👤 ${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
-          <div class="view-actions" style="display: flex; gap: 8px;">
+          <h2 class="customer-title">${escapeHtml((customer.firstName || '') + ' ' + (customer.lastName || ''))}</h2>
+          <div class="view-actions">
             ${renderNoteInputModeToggle({ compact: true })}
-            <button id="reminder-btn" class="edit-btn-custom" title="Set Follow-up" aria-label="Set Follow-up" style="background: rgba(251,191,36,0.2); border: 2px solid rgba(251,191,36,0.4); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">🔔</button>
-            <button id="edit-btn" class="edit-btn-custom" title="Edit" aria-label="Edit" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer;">✏️</button>
+            <button id="reminder-btn" class="edit-btn-custom" title="Set Follow-up" aria-label="Set Follow-up"></button>
+            <button id="edit-btn" class="edit-btn-custom" title="Edit" aria-label="Edit"></button>
           </div>
         </div>
 
-        <div id="next-appointment-module" class="next-appointment" style="cursor: pointer;">
-          <h3 style="margin:0 0 8px 0;">${t('nextAppointment')}</h3>
+        <div id="next-appointment-module" class="next-appointment clickable-card">
+          <h3>${t('nextAppointment')}</h3>
           <div id="next-appointment-content" class="next-appointment-content">
             <div class="loading">${t('loading')}...</div>
           </div>
         </div>
 
         <details id="appt-collapse" class="collapse">
-          <summary class="summary-button" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 10px 0 0 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal; padding-right: 28px; position: relative;">${t('bookAppointment')}</summary>
+          <summary class="summary-button">${t('bookAppointment')}</summary>
           <div class="collapse-body">
             <div class="grid-3">
               <div>
@@ -2499,60 +2483,60 @@
                 </div>
               </div>
             </div>
-            <div class="row" style="margin-top:8px;">
-              <button class="button" id="book-btn" style="background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.15); color: var(--text); border-radius: 10px; padding: 12px 14px; height: 42px; display: inline-flex; align-items: center; justify-content: center; vertical-align: top; margin: 0; line-height: 1; font-size: 12px; cursor: pointer; font-weight: normal;">${t('book')}</button>
+            <div class="row compact-row">
+              <button class="button" id="book-btn">${t('book')}</button>
             </div>
           </div>
         </details>
 
         <div class="detail-list">
-          <div class="detail-item"><span class="detail-icon">📞</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || '—')}</span></div>
-          ${!isTradie() ? `<div class="detail-item"><span class="detail-icon">📱</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || '—')}</span></div>` : ''}
-          <div class="detail-item"><span class="detail-icon">💬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || '—')}</span></div>
+          <div class="detail-item"><span class="detail-icon">ðŸ“ž</span><span class="detail-label">Contact</span><span class="detail-value">${escapeHtml(customer.contactNumber || 'â€”')}</span></div>
+          ${!isTradie() ? `<div class="detail-item"><span class="detail-icon">ðŸ“±</span><span class="detail-label">${t('socialMediaName')}</span><span class="detail-value">${escapeHtml(customer.socialMediaName || 'â€”')}</span></div>` : ''}
+          <div class="detail-item"><span class="detail-icon">ðŸ’¬</span><span class="detail-label">Referral</span><span class="detail-value">${escapeHtml(customer.referralNotes || 'â€”')}</span></div>
           ${isTradie() && customer.preferredContactMethod ? `
-          <div class="detail-item"><span class="detail-icon">❤️</span><span class="detail-label">Preferred Contact</span><span class="detail-value">${escapeHtml(customer.preferredContactMethod === 'phone' ? 'Phone Call' : customer.preferredContactMethod === 'sms' ? 'SMS' : customer.preferredContactMethod === 'email' ? 'Email' : customer.preferredContactMethod)}</span></div>
+          <div class="detail-item"><span class="detail-icon">â¤ï¸</span><span class="detail-label">Preferred Contact</span><span class="detail-value">${escapeHtml(customer.preferredContactMethod === 'phone' ? 'Phone Call' : customer.preferredContactMethod === 'sms' ? 'SMS' : customer.preferredContactMethod === 'email' ? 'Email' : customer.preferredContactMethod)}</span></div>
           ` : ''}
         </div>
 
         ${renderPinnedNotesSection()}
 
         ${isTradie() && (customer.addressLine1 || customer.suburb) ? `
-        <div class="address-section" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div class="address-section">
+          <div class="address-section-header">
             <div>
-              <h3 style="margin: 0 0 8px 0; font-size: 14px;">📍 Address</h3>
-              <div style="font-size: 14px; line-height: 1.5;">
+              <h3 style="margin: 0 0 8px 0; font-size: 14px;">ðŸ“ Address</h3>
+              <div class="address-text">
                 ${customer.addressLine1 ? escapeHtml(customer.addressLine1) + '<br>' : ''}
                 ${customer.suburb ? escapeHtml(customer.suburb) : ''}${customer.state ? ' ' + escapeHtml(customer.state) : ''}${customer.postcode ? ' ' + escapeHtml(customer.postcode) : ''}
               </div>
             </div>
-            <div style="display: flex; gap: 8px;">
-              <button id="copy-address-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Copy Address">📋 Copy</button>
-              <button id="open-maps-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Open in Maps">🗺️ Maps</button>
+            <div class="address-actions">
+              <button id="copy-address-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Copy Address">ðŸ“‹ Copy</button>
+              <button id="open-maps-btn" class="button secondary" style="font-size: 12px; padding: 6px 10px;" title="Open in Maps">ðŸ—ºï¸ Maps</button>
             </div>
           </div>
         </div>
         ` : ''}
 
         ${isTradie() ? `
-        <div class="recent-activity" style="margin: 16px 0; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-          <h3 style="margin: 0 0 12px 0; font-size: 14px;">📋 Recent Activity</h3>
+        <div class="recent-activity">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px;">ðŸ“‹ Recent Activity</h3>
           <div id="customer-recent-activity">
-            <div class="muted" style="font-size: 12px; text-align: center;">Loading...</div>
+            <div class="muted recent-activity-loading">Loading...</div>
           </div>
         </div>
         ` : ''}
 
         <div class="notes-view">
-          <h3 style="margin:0 0 6px 0;">Notes</h3>
-          <button type="button" class="add-note-btn" style="background: var(--brand); color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 12px;">+ Add Note</button>
-          <div class="notes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          <h3>Notes</h3>
+          <button type="button" class="add-note-btn">+ Add Note</button>
+          <div class="notes-list"></div>
         </div>
 
-        <div class="gallery" style="margin-top: 20px;">
-          <h3 style="margin:0;">Images</h3>
-          <div id="no-images-message" class="muted" style="margin-top:10px; display: none;">No images uploaded</div>
-          <div id="image-grid" class="image-grid" style="margin-top:10px;"></div>
+        <div class="gallery">
+          <h3>Images</h3>
+          <div id="no-images-message" class="muted gallery-empty-message">No images uploaded</div>
+          <div id="image-grid" class="image-grid"></div>
         </div>
       </div>
     `);
@@ -2579,7 +2563,7 @@
         const hasBlob = !!(img.blob && img.blob.size > 0);
         const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
         if (!hasBlob && !hasDataUrl) {
-          return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+          return `<div class="image-error">Error loading image</div>`;
         }
         
         // Use cached URL if available
@@ -2604,19 +2588,19 @@
             if (hasDataUrl) {
               url = img.dataUrl;
             } else {
-              return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Failed to create image URL</div>`;
+              return `<div class="image-error">Failed to create image URL</div>`;
             }
           }
         } else {
         }
         
-        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-          <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
-          <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
+        return `<div class="lazy-image-container" data-image-id="${img.id}">
+          <div class="image-placeholder">Loading...</div>
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" />
+          <div class="image-error image-error-hidden">Failed to load image</div>
         </div>`;
       } catch (error) {
-        return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+        return `<div class="image-error">Error loading image</div>`;
       }
     }
     
@@ -2870,9 +2854,9 @@
           
           if (navigator.clipboard) {
             navigator.clipboard.writeText(fullAddress).then(() => {
-              copyAddressBtn.textContent = '✓ Copied';
+              copyAddressBtn.textContent = 'âœ“ Copied';
               setTimeout(() => {
-                copyAddressBtn.innerHTML = '📋 Copy';
+                copyAddressBtn.innerHTML = 'ðŸ“‹ Copy';
               }, 2000);
             });
           } else {
@@ -2883,9 +2867,9 @@
             textArea.select();
             document.execCommand('copy');
             document.body.removeChild(textArea);
-            copyAddressBtn.textContent = '✓ Copied';
+            copyAddressBtn.textContent = 'âœ“ Copied';
             setTimeout(() => {
-              copyAddressBtn.innerHTML = '📋 Copy';
+              copyAddressBtn.innerHTML = 'ðŸ“‹ Copy';
             }, 2000);
           }
         });
@@ -2965,7 +2949,7 @@
           
           ${isTradie() ? `
           <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-            <strong style="font-size: 14px;">📍 Address</strong>
+            <strong style="font-size: 14px;">ðŸ“ Address</strong>
             <div style="margin-top: 12px;">
               <label style="font-size: 12px;">Street Address</label>
               <input type="text" name="addressLine1" placeholder="123 Main Street" />
@@ -3002,9 +2986,9 @@
             <label style="font-size: 12px;">Preferred Contact Method</label>
             <select name="preferredContactMethod">
               <option value="">No preference</option>
-              <option value="phone">📞 Phone Call</option>
-              <option value="sms">💬 SMS</option>
-              <option value="email">✉️ Email</option>
+              <option value="phone">ðŸ“ž Phone Call</option>
+              <option value="sms">ðŸ’¬ SMS</option>
+              <option value="email">âœ‰ï¸ Email</option>
             </select>
           </div>
           ` : ''}
@@ -3139,7 +3123,7 @@
         const hasBlob = !!(img.blob && img.blob.size > 0);
         const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
         if (!hasBlob && !hasDataUrl) {
-          return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+          return `<div class="image-error">Error loading image</div>`;
         }
         
         // Use cached URL if available
@@ -3149,13 +3133,13 @@
           window.currentEditImageCache.set(img.id, url);
         }
         
-        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-          <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
-          <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
+        return `<div class="lazy-image-container" data-image-id="${img.id}">
+          <div class="image-placeholder">Loading...</div>
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" />
+          <div class="image-error image-error-hidden">Failed to load image</div>
         </div>`;
       } catch (error) {
-        return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
+        return `<div class="image-error">Error loading image</div>`;
       }
     }
     
@@ -3330,17 +3314,18 @@
     const compactNewAppointmentButton = useSidebarMenuOnPortraitMobile();
     const compactCalendarToolbar = useSidebarMenuOnPortraitMobile();
     let calendar = null;
+    let selectedCalendarEventId = null;
+    let selectedCalendarDateYmd = null;
+    let lastCalendarSnapshotMarkup = '';
+    let lastSelectedBookingRenderKey = '';
+    let calendarDefaultSelectionTimer = null;
     const calendarHeaderToolbar = compactCalendarToolbar
       ? {
           left: 'prev',
           center: 'title',
           right: 'next'
         }
-      : {
-          left: 'prev,next today',
-          center: 'title',
-          right: 'dayGridMonth,listWeek'
-        };
+      : false;
 
     function toLocalYmd(dateValue) {
       const d = new Date(dateValue);
@@ -3362,6 +3347,12 @@
       return endText ? `${startText} - ${endText}` : startText;
     }
 
+    function formatAppointmentStatusLabel(statusValue) {
+      const raw = String(statusValue || 'scheduled').replace(/[_-]+/g, ' ').trim();
+      if (!raw) return 'Scheduled';
+      return raw.replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+
     function escapeCssIdentifier(value) {
       const raw = String(value || '');
       if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(raw);
@@ -3375,14 +3366,211 @@
         .sort((a, b) => new Date(a.start) - new Date(b.start));
     }
 
+    function addDays(dateValue, amount) {
+      const next = new Date(dateValue);
+      next.setDate(next.getDate() + amount);
+      return next;
+    }
+
+    function formatCalendarDateLabel(dateValue, options = {}) {
+      const locale = getLang() === 'ja' ? 'ja-JP' : 'en-US';
+      const date = new Date(dateValue);
+      if (!Number.isFinite(date.getTime())) return '';
+      return date.toLocaleDateString(locale, options);
+    }
+
+    function updateCalendarSurfaceMode(viewType) {
+      const calendarMount = document.getElementById('calendar');
+      const customList = document.getElementById('calendar-custom-list');
+      if (!calendarMount || !customList) return;
+      const isList = viewType === 'listWeek';
+      calendarMount.classList.toggle('calendar-surface-hidden', isList);
+      customList.classList.toggle('hidden', !isList);
+      if (!isList) setTimeout(() => calendar?.updateSize(), 0);
+    }
+
+    function renderCustomListView() {
+      if (!calendar) return;
+      const customList = document.getElementById('calendar-custom-list');
+      if (!customList) return;
+      if (calendar.view?.type !== 'listWeek') {
+        customList.innerHTML = '';
+        return;
+      }
+
+      const locale = getLang() === 'ja' ? 'ja-JP' : 'en-US';
+      const start = new Date(calendar.view.currentStart);
+      const endExclusive = new Date(calendar.view.currentEnd);
+      const dayCount = Math.max(0, Math.round((endExclusive - start) / 86400000));
+      const days = Array.from({ length: dayCount }, (_, index) => addDays(start, index));
+
+      const dayGroupsHtml = days.map((dayDate) => {
+        const dateStr = toLocalYmd(dayDate);
+        const dayEvents = getEventsForDate(dateStr);
+        const weekday = dayDate.toLocaleDateString(locale, { weekday: 'short' });
+        const label = dayDate.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+        const dateHeading = `
+          <button class="day-date-trigger" type="button" data-calendar-day="${dateStr}" data-action="open-quick-book">
+            <span>${escapeHtml(weekday)}</span>
+            <strong>${escapeHtml(label)}</strong>
+          </button>
+        `;
+
+        if (dayEvents.length === 0) {
+          return `
+            <article class="day-group">
+              ${dateHeading}
+              <div class="empty-day">
+                <span class="material-symbols-outlined" aria-hidden="true">event_available</span>
+                No bookings scheduled
+              </div>
+            </article>
+          `;
+        }
+
+        const cards = dayEvents.map((event) => {
+          const props = event.extendedProps || {};
+          const isSelected = String(event.id) === String(selectedCalendarEventId);
+          return `
+            <button class="booking-card ${isSelected ? 'active' : ''}" type="button" data-calendar-event-id="${escapeHtml(event.id)}">
+              <time>${escapeHtml(new Date(event.start).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12: getLang() === 'en' }))}</time>
+              <div>
+                <strong>${escapeHtml(props.customerName || 'Unknown Customer')}</strong>
+                <span>${escapeHtml(props.bookingType || event.title || appointmentEntitySingular())}</span>
+              </div>
+              <em>${escapeHtml(formatAppointmentStatusLabel(props.status || 'scheduled'))}</em>
+            </button>
+          `;
+        }).join('');
+
+        return `
+          <article class="day-group">
+            ${dateHeading}
+            <div class="booking-list">${cards}</div>
+          </article>
+        `;
+      }).join('');
+
+      customList.innerHTML = `<div class="calendar-custom-list-body">${dayGroupsHtml}</div>`;
+
+      customList.querySelectorAll('[data-action="open-quick-book"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const dateStr = button.getAttribute('data-calendar-day');
+          if (dateStr) openQuickBookModal(dateStr);
+        });
+      });
+
+      customList.querySelectorAll('[data-calendar-event-id]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const eventId = button.getAttribute('data-calendar-event-id');
+          const nextEvent = calendar?.getEventById(eventId);
+          if (nextEvent) renderSelectedBookingPanel(nextEvent);
+        });
+      });
+    }
+
+    function formatCompactCurrency(amount) {
+      const value = Number(amount || 0);
+      if (!Number.isFinite(value) || value <= 0) return '$0';
+      if (value >= 1000) return `$${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+      return `$${Math.round(value)}`;
+    }
+
+    function scheduleDefaultBookingSelection() {
+      if (calendarDefaultSelectionTimer) clearTimeout(calendarDefaultSelectionTimer);
+      calendarDefaultSelectionTimer = setTimeout(() => {
+        calendarDefaultSelectionTimer = null;
+        selectDefaultBookingForCurrentView();
+      }, 0);
+    }
+
+    function renderCalendarSnapshotPanel() {
+      const panel = document.getElementById('calendar-snapshot-content');
+      if (!panel || !calendar) return;
+
+      const start = new Date(calendar.view.activeStart || calendar.view.currentStart);
+      const end = new Date(calendar.view.activeEnd || calendar.view.currentEnd);
+      const events = calendar.getEvents().filter((event) => {
+        const eventStart = new Date(event.start);
+        return Number.isFinite(eventStart.getTime()) && eventStart >= start && eventStart < end;
+      });
+
+      const bookings = events.length;
+      const totalMinutes = events.reduce((sum, event) => {
+        const eventStart = new Date(event.start);
+        const eventEnd = event.end ? new Date(event.end) : null;
+        if (!eventEnd || !Number.isFinite(eventStart.getTime()) || !Number.isFinite(eventEnd.getTime())) return sum;
+        return sum + Math.max(0, Math.round((eventEnd - eventStart) / 60000));
+      }, 0);
+      const hours = totalMinutes / 60;
+      const open = events.filter((event) => {
+        const status = String(event.extendedProps?.status || '').toLowerCase();
+        return !['completed', 'cancelled', 'paid'].includes(status);
+      }).length;
+      const revenue = events.reduce((sum, event) => {
+        const props = event.extendedProps || {};
+        const amount = Number(props.invoiceAmount ?? props.quotedAmount ?? props.paidAmount ?? 0);
+        return sum + (Number.isFinite(amount) ? amount : 0);
+      }, 0);
+
+      const nextMarkup = `
+        <div class="calendar-snapshot-grid">
+          <div class="calendar-snapshot-card"><span>Bookings</span><strong>${bookings}</strong></div>
+          <div class="calendar-snapshot-card"><span>Hours</span><strong>${hours ? hours.toFixed(hours % 1 ? 1 : 0) : '0'}</strong></div>
+          <div class="calendar-snapshot-card"><span>Open</span><strong>${open}</strong></div>
+          <div class="calendar-snapshot-card"><span>Revenue</span><strong>${formatCompactCurrency(revenue)}</strong></div>
+        </div>
+      `;
+
+      if (nextMarkup === lastCalendarSnapshotMarkup) return;
+      lastCalendarSnapshotMarkup = nextMarkup;
+      panel.innerHTML = nextMarkup;
+    }
+
+    function decorateMonthCells() {
+      if (!calendar || calendar.view?.type !== 'dayGridMonth') return;
+      const selectedDate = selectedCalendarDateYmd;
+      const eventCounts = new Map();
+      calendar.getEvents().forEach((event) => {
+        const ymd = toLocalYmd(event.start);
+        if (!ymd) return;
+        eventCounts.set(ymd, (eventCounts.get(ymd) || 0) + 1);
+      });
+
+      calendarEl.querySelectorAll('.fc-daygrid-day[data-date]').forEach((cell) => {
+        const dateStr = cell.getAttribute('data-date');
+        const frame = cell.querySelector('.fc-daygrid-day-frame');
+        if (!dateStr || !frame) return;
+
+        frame.querySelectorAll('.calendar-month-count').forEach((el) => el.remove());
+        cell.classList.toggle('calendar-month-selected', !!selectedDate && selectedDate === dateStr);
+
+        const count = eventCounts.get(dateStr) || 0;
+        if (count > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'calendar-month-count';
+          badge.textContent = String(count);
+          frame.appendChild(badge);
+          cell.classList.add('calendar-month-has-bookings');
+        } else {
+          cell.classList.remove('calendar-month-has-bookings');
+        }
+      });
+    }
+
     function selectedBookingHeaderHtml(event, expanded = false) {
       const props = event.extendedProps || {};
       const initials = escapeHtml(props.customerInitials || (props.customerName || '??').slice(0, 2).toUpperCase());
       return `
-        <button class="booking-accordion-header" type="button" data-selected-event-id="${escapeHtml(event.id)}" aria-expanded="${expanded ? 'true' : 'false'}">
-          <span class="client-avatar">${initials}</span>
-          <span><strong>${escapeHtml(props.customerName || 'Unknown Customer')}</strong><small>${escapeHtml(props.bookingType || event.title || appointmentEntitySingular())}</small></span>
-          <em>${escapeHtml(formatAppointmentTimeRange(event))}</em>
+        <button class="agenda-client-button" type="button" data-selected-event-id="${escapeHtml(event.id)}" aria-expanded="${expanded ? 'true' : 'false'}">
+          <div class="client-card agenda-client-card ${expanded ? 'expanded' : ''}">
+            <div class="client-avatar">${initials}</div>
+            <div>
+              <strong>${escapeHtml(props.customerName || 'Unknown Customer')}</strong>
+              <span>${escapeHtml(props.bookingType || event.title || appointmentEntitySingular())}</span>
+            </div>
+            <time>${escapeHtml(formatAppointmentTimeRange(event).split(' - ')[0] || formatAppointmentTimeRange(event))}</time>
+          </div>
         </button>
       `;
     }
@@ -3396,7 +3584,7 @@
             <div><dt>Status</dt><dd><span class="status-pill">${escapeHtml(props.status || 'Confirmed')}</span></dd></div>
             <div><dt>Notes</dt><dd>${escapeHtml(props.notes || 'No appointment notes.')}</dd></div>
           </dl>
-          <button class="button outline full-width" type="button" data-action="open-selected-booking" data-selected-event-id="${escapeHtml(event.id)}">
+          <button class="button outline full-width selected-booking-action" type="button" data-action="open-selected-booking" data-selected-event-id="${escapeHtml(event.id)}">
             <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
             Open Details
           </button>
@@ -3404,46 +3592,117 @@
       `;
     }
 
+    function updateDesktopCalendarControls(info) {
+      if (compactCalendarToolbar) return;
+      const rangeLabel = document.getElementById('calendar-range-label');
+      const viewTitle = document.getElementById('calendar-view-title');
+      const monthBtn = document.getElementById('calendar-desktop-month-btn');
+      const listBtn = document.getElementById('calendar-desktop-list-btn');
+      const todayBtn = document.getElementById('calendar-desktop-today-btn');
+      if (!rangeLabel || !viewTitle || !monthBtn || !listBtn) return;
+
+      const isList = info.view.type === 'listWeek';
+      const isMonth = info.view.type === 'dayGridMonth';
+      const start = new Date(info.start);
+      const endExclusive = new Date(info.end);
+      endExclusive.setDate(endExclusive.getDate() - 1);
+      const focusDate = calendar?.getDate?.() || start;
+
+      rangeLabel.textContent = isMonth
+        ? 'Month View'
+        : `${formatCalendarDateLabel(start, { month: 'short', day: 'numeric' })} - ${formatCalendarDateLabel(endExclusive, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      viewTitle.textContent = isMonth
+        ? formatCalendarDateLabel(focusDate, { month: 'long', year: 'numeric' })
+        : 'This Week';
+      monthBtn.classList.toggle('secondary', !isMonth);
+      listBtn.classList.toggle('secondary', !isList);
+      if (isMonth) monthBtn.classList.remove('secondary');
+      if (isList) listBtn.classList.remove('secondary');
+
+      if (todayBtn) {
+        const todayYmd = toLocalYmd(new Date());
+        const inCurrentRange = todayYmd && todayYmd >= toLocalYmd(info.start) && todayYmd < toLocalYmd(info.end);
+        todayBtn.classList.toggle('secondary', !inCurrentRange);
+      }
+    }
+
     function renderSelectedBookingPanel(event, options = {}) {
       const panel = document.getElementById('selected-booking-content');
       const title = document.getElementById('selected-booking-title');
       if (!panel) return;
+      const viewType = calendar?.view?.type || 'listWeek';
       if (!event) {
+        const emptyRenderKey = `${viewType}|empty`;
+        if (lastSelectedBookingRenderKey === emptyRenderKey) {
+          renderCalendarSnapshotPanel();
+          return;
+        }
+        lastSelectedBookingRenderKey = emptyRenderKey;
+        selectedCalendarEventId = null;
+        selectedCalendarDateYmd = null;
         if (title) title.textContent = 'Selected Booking';
         panel.innerHTML = `<div class="selected-booking-empty">Select a booking or choose an empty date to quick book.</div>`;
+        renderCustomListView();
+        decorateMonthCells();
+        renderCalendarSnapshotPanel();
         return;
       }
+      selectedCalendarEventId = String(event.id);
+      selectedCalendarDateYmd = toLocalYmd(event.start);
 
-      const viewType = calendar?.view?.type || 'listWeek';
       const dayEvents = getEventsForDate(toLocalYmd(event.start));
+      const renderKey = `${viewType}|${selectedCalendarDateYmd || ''}|${event.id}|${dayEvents.map((dayEvent) => dayEvent.id).join(',')}`;
+      if (lastSelectedBookingRenderKey === renderKey && !options.force) {
+        renderCalendarSnapshotPanel();
+        return;
+      }
+      lastSelectedBookingRenderKey = renderKey;
       if (title) {
-        const dayText = new Date(event.start).toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        title.textContent = viewType === 'dayGridMonth' ? dayText : 'Selected Booking';
+        title.textContent = 'Selected Booking';
       }
 
-      if (viewType === 'dayGridMonth' && dayEvents.length > 1) {
+      if (viewType === 'dayGridMonth') {
+        const dateHeading = formatCalendarDateLabel(event.start, { weekday: 'short', month: 'short', day: 'numeric' });
         panel.innerHTML = `
-          <div class="calendar-booking-stack">
-            ${dayEvents.map((dayEvent) => `
-              <div class="booking-accordion-card ${String(dayEvent.id) === String(event.id) ? 'expanded' : ''}">
-                ${selectedBookingHeaderHtml(dayEvent, String(dayEvent.id) === String(event.id))}
-                ${selectedBookingDetailHtml(dayEvent)}
-              </div>
-            `).join('')}
+          <div class="agenda-panel-heading">
+            <span>Selected Date</span>
+            <strong>${escapeHtml(dateHeading)}</strong>
+            <small>${dayEvents.length} booking${dayEvents.length === 1 ? '' : 's'}</small>
+          </div>
+          <div class="agenda-list calendar-booking-stack">
+            ${dayEvents.map((dayEvent, index) => {
+              const expanded = String(dayEvent.id) === String(event.id) || (dayEvents.length === 1 && index === 0);
+              return `
+                <article class="agenda-item ${expanded ? 'expanded' : ''}">
+                  ${selectedBookingHeaderHtml(dayEvent, expanded)}
+                  <div class="agenda-details">
+                    <div class="agenda-details-inner">
+                      ${selectedBookingDetailHtml(dayEvent)}
+                    </div>
+                  </div>
+                </article>
+              `;
+            }).join('')}
           </div>
         `;
       } else {
+        const props = event.extendedProps || {};
+        const initials = escapeHtml(props.customerInitials || (props.customerName || '??').slice(0, 2).toUpperCase());
         panel.innerHTML = `
-          <div class="calendar-booking-stack">
-            <div class="booking-accordion-card expanded">
-              ${selectedBookingHeaderHtml(event, true)}
-              ${selectedBookingDetailHtml(event)}
+          <div class="calendar-booking-stack calendar-booking-single">
+            <div class="client-card calendar-selected-client-card">
+              <div class="client-avatar">${initials}</div>
+              <div>
+                <strong>${escapeHtml(props.customerName || 'Unknown Customer')}</strong>
+                <span>${escapeHtml(props.bookingType || event.title || appointmentEntitySingular())}</span>
+              </div>
             </div>
+            ${selectedBookingDetailHtml(event)}
           </div>
         `;
       }
 
-      panel.querySelectorAll('.booking-accordion-header').forEach((button) => {
+      panel.querySelectorAll('[data-selected-event-id]').forEach((button) => {
         button.addEventListener('click', () => {
           const eventId = button.getAttribute('data-selected-event-id');
           const nextEvent = calendar?.getEventById(eventId);
@@ -3463,9 +3722,12 @@
         const eventEl = calendarEl.querySelector(`[data-event-id="${escapeCssIdentifier(event.id)}"]`);
         eventEl?.classList.add('fc-event-selected');
       }
+      renderCustomListView();
+      decorateMonthCells();
+      renderCalendarSnapshotPanel();
     }
 
-    function selectDefaultBookingForCurrentView() {
+    async function selectDefaultBookingForCurrentView() {
       if (!calendar) return;
       const events = calendar.getEvents().filter((event) => event.start).sort((a, b) => new Date(a.start) - new Date(b.start));
       if (events.length === 0) {
@@ -3480,7 +3742,26 @@
         return;
       }
       const now = new Date();
-      renderSelectedBookingPanel(events.find((event) => new Date(event.start) >= now) || events[0]);
+      const upcomingInView = events.find((event) => new Date(event.start) >= now);
+      if (upcomingInView) {
+        renderSelectedBookingPanel(upcomingInView);
+        return;
+      }
+      if (calendar.view?.type === 'listWeek') {
+        try {
+          const future = await CrmDB.getAppointmentsBetween(now.toISOString(), '9999-12-31T23:59:59.999Z');
+          const nextGlobal = (future || [])
+            .filter((apt) => apt?.start)
+            .sort((a, b) => new Date(a.start) - new Date(b.start))[0];
+          if (nextGlobal?.start) {
+            calendar.changeView('listWeek', nextGlobal.start);
+            return;
+          }
+        } catch (error) {
+          console.warn('Unable to anchor list view to next upcoming appointment:', error);
+        }
+      }
+      renderSelectedBookingPanel(events[0] || null);
     }
 
     function decorateMobileMonthDots() {
@@ -3502,33 +3783,35 @@
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="modern-page calendar-modern-page">
         <div class="space-between section-header calendar-modern-header">
-          <h2>${usesJobPipeline() ? appointmentEntityPlural() : t('calendar')}</h2>
-          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <div class="calendar-page-heading">
+            <p class="eyebrow">Bookings</p>
+            <h2>${usesJobPipeline() ? appointmentEntityPlural() : t('calendar')}</h2>
+          </div>
+          <div class="calendar-header-actions">
             ${usesJobPipeline() ? `
-            <div class="view-toggle" style="display: flex; gap: 4px;">
-              <button id="calendar-view-btn" class="button" style="padding: 6px 12px; font-size: 12px;">${t('calendar')}</button>
-              <button id="pipeline-view-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">${t('pipeline')}</button>
+            <div class="view-toggle calendar-mode-controls">
+              <button id="calendar-view-btn" class="button calendar-chip">${t('calendar')}</button>
+              <button id="pipeline-view-btn" class="button secondary calendar-chip">${t('pipeline')}</button>
             </div>
-            <div class="payment-filters" style="display: flex; gap: 4px;">
-              <button id="filter-all-btn" class="button" style="padding: 6px 10px; font-size: 11px;">${t('all')}</button>
-              <button id="filter-needs-invoice-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">📄 ${t('needsInvoice')}</button>
-              <button id="filter-unpaid-btn" class="button secondary" style="padding: 6px 10px; font-size: 11px;">💰 ${t('unpaid')}</button>
+            <div class="payment-filters calendar-filter-controls">
+              <button id="filter-all-btn" class="button calendar-chip">${t('all')}</button>
+              <button id="filter-needs-invoice-btn" class="button secondary calendar-chip">${t('needsInvoice')}</button>
+              <button id="filter-unpaid-btn" class="button secondary calendar-chip">${t('unpaid')}</button>
             </div>
             ` : ''}
-            <button id="new-appointment-btn" style="
-              background: var(--brand);
-              color: white;
-              border: none;
-              border-radius: 8px;
-              padding: 8px 16px;
-              cursor: pointer;
-              font-size: 14px;
-              font-weight: 600;
-              display: flex;
-              align-items: center;
-              gap: 8px;
-              transition: all 0.2s ease;
-            ">
+            ${compactCalendarToolbar ? '' : `
+            <div class="calendar-desktop-view-toggle calendar-header-view-toggle">
+              <button id="calendar-desktop-list-btn" class="button secondary calendar-chip">
+                <span class="material-symbols-outlined" aria-hidden="true">view_agenda</span>
+                <span>${t('list')}</span>
+              </button>
+              <button id="calendar-desktop-month-btn" class="button secondary calendar-chip">
+                <span class="material-symbols-outlined" aria-hidden="true">calendar_view_month</span>
+                <span>${t('month')}</span>
+              </button>
+            </div>
+            `}
+            <button id="new-appointment-btn" class="button primary calendar-new-button">
               ${compactNewAppointmentButton
                 ? `<span>+</span>`
                 : `<span>+</span><span>${usesJobPipeline() ? `New ${appointmentEntitySingular()}` : t('newAppointment')}</span>`}
@@ -3546,15 +3829,41 @@
       ` : ''}
       <div class="calendar-modern-layout">
         <div class="card calendar-modern-panel" id="calendar-container">
+          ${compactCalendarToolbar ? '' : `
+          <div class="calendar-desktop-toolbar" aria-label="Calendar controls">
+            <button id="calendar-desktop-prev-btn" class="icon-btn calendar-nav-btn" aria-label="Previous">
+              <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+            </button>
+            <div class="calendar-desktop-title">
+              <span id="calendar-range-label">Loading Range...</span>
+              <strong id="calendar-view-title">Loading...</strong>
+            </div>
+            <div class="calendar-desktop-toolbar-actions">
+              <button id="calendar-desktop-next-btn" class="icon-btn calendar-nav-btn" aria-label="Next">
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+              </button>
+              <button id="calendar-desktop-today-btn" class="button secondary calendar-today-btn">${t('today')}</button>
+            </div>
+          </div>
+          `}
+          <div id="calendar-custom-list" class="calendar-custom-list hidden"></div>
           <div id="calendar"></div>
         </div>
-        <aside class="card selected-booking-panel" id="selected-booking-panel">
-          <p class="eyebrow">Selected Booking</p>
-          <h3 id="selected-booking-title">Selected Booking</h3>
-          <div id="selected-booking-content">
-            <div class="selected-booking-empty">Loading appointments...</div>
-          </div>
-        </aside>
+        <div class="calendar-side-stack">
+          <aside class="card selected-booking-panel" id="selected-booking-panel">
+            <p class="eyebrow">Selected Booking</p>
+            <h3 id="selected-booking-title">Selected Booking</h3>
+            <div id="selected-booking-content">
+              <div class="selected-booking-empty">Loading appointments...</div>
+            </div>
+          </aside>
+          <aside class="card calendar-snapshot-panel" id="calendar-snapshot-panel">
+            <p class="eyebrow">Week Snapshot</p>
+            <div id="calendar-snapshot-content">
+              <div class="selected-booking-empty">Loading snapshot...</div>
+            </div>
+          </aside>
+        </div>
       </div>
       ${usesJobPipeline() ? `
       <div class="card hidden" id="pipeline-container">
@@ -3598,12 +3907,20 @@
           if (monthBtn && isMonth) monthBtn.classList.remove('secondary');
           todayBtn?.classList.add('secondary');
         }
+        updateDesktopCalendarControls(info);
+        updateCalendarSurfaceMode(info.view.type);
+        renderCustomListView();
+        decorateMonthCells();
+        renderCalendarSnapshotPanel();
         setTimeout(decorateMobileMonthDots, 0);
-        setTimeout(selectDefaultBookingForCurrentView, 0);
+        scheduleDefaultBookingSelection();
       },
       eventsSet: () => {
+        renderCustomListView();
+        decorateMonthCells();
+        renderCalendarSnapshotPanel();
         setTimeout(decorateMobileMonthDots, 0);
-        setTimeout(selectDefaultBookingForCurrentView, 0);
+        scheduleDefaultBookingSelection();
       },
       events: async (info, successCallback, failureCallback) => {
         try {
@@ -3669,7 +3986,7 @@
               <div class="fc-list-event-content">
                 <div class="custom-start-time">${time}</div>
                 ${duration ? `<div class="custom-duration">${duration}</div>` : ''}
-                ${statusBadgeHtml ? `<div style="margin-left: auto;">${statusBadgeHtml}</div>` : ''}
+                ${statusBadgeHtml ? `<div class="fc-list-event-status fc-list-event-status-badge">${statusBadgeHtml}</div>` : `<div class="fc-list-event-status">${escapeHtml(formatAppointmentStatusLabel(status))}</div>`}
                 ${customerName ? `<div class="fc-list-event-customer">${customerName}</div>` : ''}
                 ${bookingType ? `<div class="fc-list-event-type">${bookingType}</div>` : ''}
               </div>
@@ -3682,7 +3999,9 @@
         renderSelectedBookingPanel(info.event);
       },
       dateClick: (info) => {
-        const eventsForDay = calendar.getEvents().filter((event) => toLocalYmd(event.start) === info.dateStr);
+        const eventsForDay = calendar.getEvents()
+          .filter((event) => toLocalYmd(event.start) === info.dateStr)
+          .sort((a, b) => new Date(a.start) - new Date(b.start));
         if (eventsForDay.length > 0) {
           renderSelectedBookingPanel(eventsForDay[0]);
           return;
@@ -3696,6 +4015,19 @@
     
     calendar.render();
     decorateMobileMonthDots();
+    updateCalendarSurfaceMode(calendar.view.type);
+    renderCustomListView();
+    decorateMonthCells();
+    renderCalendarSnapshotPanel();
+
+    if (!compactCalendarToolbar) {
+      document.getElementById('calendar-desktop-prev-btn')?.addEventListener('click', () => calendar.prev());
+      document.getElementById('calendar-desktop-next-btn')?.addEventListener('click', () => calendar.next());
+      document.getElementById('calendar-desktop-today-btn')?.addEventListener('click', () => calendar.today());
+      document.getElementById('calendar-desktop-list-btn')?.addEventListener('click', () => calendar.changeView('listWeek'));
+      document.getElementById('calendar-desktop-month-btn')?.addEventListener('click', () => calendar.changeView('dayGridMonth'));
+      updateDesktopCalendarControls({ start: calendar.view.currentStart, end: calendar.view.currentEnd, view: calendar.view });
+    }
 
     if (compactCalendarToolbar) {
       const todayBtn = document.getElementById('calendar-mobile-today-btn');
@@ -3896,11 +4228,11 @@
             const paid = job.paidAmount || 0;
             let paymentBadge = '';
             if (paid > 0 && paid >= invoiced && invoiced > 0) {
-              paymentBadge = '<span style="color: #22c55e; font-size: 11px;">✓ Paid</span>';
+              paymentBadge = '<span style="color: #22c55e; font-size: 11px;">âœ“ Paid</span>';
             } else if (paid > 0 && paid < invoiced) {
-              paymentBadge = '<span style="color: #f97316; font-size: 11px;">◐ Part Paid</span>';
+              paymentBadge = '<span style="color: #f97316; font-size: 11px;">â— Part Paid</span>';
             } else if (invoiced > 0) {
-              paymentBadge = '<span style="color: #60a5fa; font-size: 11px;">📄 Invoiced</span>';
+              paymentBadge = '<span style="color: #60a5fa; font-size: 11px;">ðŸ“„ Invoiced</span>';
             } else if (quoted > 0) {
               paymentBadge = `<span style="color: #a78bfa; font-size: 11px;">$${quoted.toLocaleString()}</span>`;
             }
@@ -3987,7 +4319,7 @@
               </div>
               <div id="qb-selected-area" class="selected-row hidden" style="margin: 4px 0 6px 0;">
                 <h4 id="qb-selected-name" style="margin:0;">&nbsp;</h4>
-                <button id="qb-clear" class="icon-btn" title="Clear selection" aria-label="Clear">✖</button>
+                <button id="qb-clear" class="icon-btn" title="Clear selection" aria-label="Clear">âœ–</button>
               </div>
             </div>
 
@@ -4264,7 +4596,7 @@
             
             <div class="payment-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <strong style="font-size: 14px;">💰 ${t('paymentTracking')}</strong>
+                <strong style="font-size: 14px;">ðŸ’° ${t('paymentTracking')}</strong>
                 <span id="payment-status-badge" class="job-status-badge" style="font-size: 11px;"></span>
               </div>
               <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
@@ -4285,15 +4617,15 @@
             
             <div class="timeline-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <strong style="font-size: 14px;">📋 Quick Log</strong>
+                <strong style="font-size: 14px;">ðŸ“‹ Quick Log</strong>
               </div>
               <div class="quick-actions" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
-                <button class="quick-action-btn" data-type="call" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">📞 Call</button>
-                <button class="quick-action-btn" data-type="sms" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(96,165,250,0.2); border: 1px solid rgba(96,165,250,0.4); color: #60a5fa; border-radius: 6px; cursor: pointer;">💬 SMS</button>
-                <button class="quick-action-btn" data-type="email" style="padding: 8px 12px; font-size: 12px; background: rgba(167,139,250,0.2); border: 1px solid rgba(167,139,250,0.4); color: #a78bfa; border-radius: 6px; cursor: pointer;">✉️ Email</button>
-                <button class="quick-action-btn" data-type="quote_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.4); color: #fbbf24; border-radius: 6px; cursor: pointer;">📄 Quote Sent</button>
-                <button class="quick-action-btn" data-type="invoice_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(249,115,22,0.2); border: 1px solid rgba(249,115,22,0.4); color: #f97316; border-radius: 6px; cursor: pointer;">🧾 Invoice Sent</button>
-                <button class="quick-action-btn" data-type="payment_received" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">💵 Payment</button>
+                <button class="quick-action-btn" data-type="call" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">ðŸ“ž Call</button>
+                <button class="quick-action-btn" data-type="sms" data-phone="${escapeHtml(customer.contactNumber || '')}" style="padding: 8px 12px; font-size: 12px; background: rgba(96,165,250,0.2); border: 1px solid rgba(96,165,250,0.4); color: #60a5fa; border-radius: 6px; cursor: pointer;">ðŸ’¬ SMS</button>
+                <button class="quick-action-btn" data-type="email" style="padding: 8px 12px; font-size: 12px; background: rgba(167,139,250,0.2); border: 1px solid rgba(167,139,250,0.4); color: #a78bfa; border-radius: 6px; cursor: pointer;">âœ‰ï¸ Email</button>
+                <button class="quick-action-btn" data-type="quote_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.4); color: #fbbf24; border-radius: 6px; cursor: pointer;">ðŸ“„ Quote Sent</button>
+                <button class="quick-action-btn" data-type="invoice_sent" style="padding: 8px 12px; font-size: 12px; background: rgba(249,115,22,0.2); border: 1px solid rgba(249,115,22,0.4); color: #f97316; border-radius: 6px; cursor: pointer;">ðŸ§¾ Invoice Sent</button>
+                <button class="quick-action-btn" data-type="payment_received" style="padding: 8px 12px; font-size: 12px; background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #22c55e; border-radius: 6px; cursor: pointer;">ðŸ’µ Payment</button>
               </div>
               <div id="job-timeline" style="max-height: 200px; overflow-y: auto;">
                 <div class="muted" style="font-size: 12px; text-align: center;">Loading timeline...</div>
@@ -4302,7 +4634,7 @@
             
             <div class="job-photos-section" style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <strong style="font-size: 14px;">📷 ${t('jobPhotos')}</strong>
+                <strong style="font-size: 14px;">ðŸ“· ${t('jobPhotos')}</strong>
                 <label class="button secondary" style="font-size: 12px; padding: 6px 10px; cursor: pointer;">
                   + Add
                   <input type="file" id="job-photo-input" accept="image/*" multiple style="display: none;" />
@@ -4316,7 +4648,7 @@
 
             <div class="row" style="margin-top: 16px; gap: 12px;">
               <button class="button" id="apt-save">${t('saveChanges')}</button>
-              <button class="button secondary" id="apt-reminder" title="Set Reminder">🔔 Reminder</button>
+              <button class="button secondary" id="apt-reminder" title="Set Reminder">ðŸ”” Reminder</button>
               <button class="button secondary" id="apt-delete">${t('delete')}</button>
               <button class="button secondary" id="apt-cancel">${t('cancel')}</button>
             </div>
@@ -4386,8 +4718,8 @@
             }
             
             const eventIcons = {
-              call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
-              quote_sent: '📄', invoice_sent: '🧾', payment_received: '💵', note: '📝', other: '•'
+              call: 'ðŸ“ž', sms: 'ðŸ’¬', email: 'âœ‰ï¸', site_visit: 'ðŸ ',
+              quote_sent: 'ðŸ“„', invoice_sent: 'ðŸ§¾', payment_received: 'ðŸ’µ', note: 'ðŸ“', other: 'â€¢'
             };
             const eventLabels = {
               call: 'Called', sms: 'Sent SMS', email: 'Sent Email', site_visit: 'Site Visit',
@@ -4396,7 +4728,7 @@
             
             let html = '';
             for (const evt of events) {
-              const icon = eventIcons[evt.type] || '•';
+              const icon = eventIcons[evt.type] || 'â€¢';
               const label = eventLabels[evt.type] || evt.type;
               const timeAgo = formatRelativeTime(new Date(evt.createdAt));
               const noteHtml = evt.note ? '<div style="font-size: 11px; color: var(--muted);">' + escapeHtml(evt.note) + '</div>' : '';
@@ -4873,7 +5205,7 @@
       if (!html) {
         html = `
           <div class="card" style="text-align: center; padding: 40px;">
-            <div style="font-size: 48px; margin-bottom: 16px;">🔔</div>
+            <div style="font-size: 48px; margin-bottom: 16px;">ðŸ””</div>
             <h3 style="margin: 0 0 8px 0;">${t('noFollowUps')}</h3>
             <p class="muted" style="margin: 0;">${t('followUpsEmptyMessage')}</p>
           </div>
@@ -4941,11 +5273,11 @@
                 ${escapeHtml(reminder.message || 'Follow-up reminder')}
               </div>
               <div class="muted" style="font-size: 13px;">
-                ${customerName ? `<span>👤 ${escapeHtml(customerName)}</span>` : ''}
-                ${jobTitle ? `<span style="margin-left: 8px;">📋 ${escapeHtml(jobTitle)}</span>` : ''}
+                ${customerName ? `<span>ðŸ‘¤ ${escapeHtml(customerName)}</span>` : ''}
+                ${jobTitle ? `<span style="margin-left: 8px;">ðŸ“‹ ${escapeHtml(jobTitle)}</span>` : ''}
               </div>
               <div class="muted" style="font-size: 12px; margin-top: 4px;">
-                ⏰ ${timeStr}
+                â° ${timeStr}
               </div>
             </div>
             <div class="reminder-actions" style="display: flex; gap: 8px; flex-shrink: 0;">
@@ -4957,7 +5289,7 @@
                 color: white;
                 cursor: pointer;
                 font-size: 14px;
-              ">✓</button>
+              ">âœ“</button>
               <button class="reminder-snooze-btn" data-id="${reminder.id}" title="Snooze" style="
                 background: rgba(255,255,255,0.1);
                 border: 1px solid rgba(255,255,255,0.2);
@@ -4966,7 +5298,7 @@
                 color: white;
                 cursor: pointer;
                 font-size: 14px;
-              ">💤</button>
+              ">ðŸ’¤</button>
               <button class="reminder-delete-btn" data-id="${reminder.id}" title="Delete" style="
                 background: rgba(239, 68, 68, 0.2);
                 border: 1px solid rgba(239, 68, 68, 0.4);
@@ -4975,7 +5307,7 @@
                 color: #ef4444;
                 cursor: pointer;
                 font-size: 14px;
-              ">🗑️</button>
+              ">ðŸ—‘ï¸</button>
             </div>
           </div>
         </div>
@@ -5024,8 +5356,8 @@
       const lastContact = await CrmDB.getLastContactTime(customerId);
       
       const eventIcons = {
-        call: '📞', sms: '💬', email: '✉️', site_visit: '🏠',
-        quote_sent: '📄', invoice_sent: '🧾', payment_received: '💵', note: '📝', other: '•'
+        call: 'ðŸ“ž', sms: 'ðŸ’¬', email: 'âœ‰ï¸', site_visit: 'ðŸ ',
+        quote_sent: 'ðŸ“„', invoice_sent: 'ðŸ§¾', payment_received: 'ðŸ’µ', note: 'ðŸ“', other: 'â€¢'
       };
       const eventLabels = {
         call: 'Called', sms: 'SMS', email: 'Email', site_visit: 'Site Visit',
@@ -5044,7 +5376,7 @@
         html += '<div class="muted" style="font-size: 12px; text-align: center;">No recent activity</div>';
       } else {
         for (const evt of events) {
-          const icon = eventIcons[evt.type] || '•';
+          const icon = eventIcons[evt.type] || 'â€¢';
           const label = eventLabels[evt.type] || evt.type;
           const timeAgo = formatRelativeTime(new Date(evt.createdAt));
           
@@ -5222,10 +5554,10 @@
           <div style="margin-top: 12px;">
             <strong style="font-size: 13px;">Quick Presets:</strong>
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
-              <button class="button secondary preset-btn" data-message="Call back" style="font-size: 12px; padding: 6px 12px;">📞 Call back</button>
-              <button class="button secondary preset-btn" data-message="Send quote" style="font-size: 12px; padding: 6px 12px;">📄 Send quote</button>
-              <button class="button secondary preset-btn" data-message="Chase invoice" style="font-size: 12px; padding: 6px 12px;">💰 Chase invoice</button>
-              <button class="button secondary preset-btn" data-message="Follow up" style="font-size: 12px; padding: 6px 12px;">🔔 Follow up</button>
+              <button class="button secondary preset-btn" data-message="Call back" style="font-size: 12px; padding: 6px 12px;">ðŸ“ž Call back</button>
+              <button class="button secondary preset-btn" data-message="Send quote" style="font-size: 12px; padding: 6px 12px;">ðŸ“„ Send quote</button>
+              <button class="button secondary preset-btn" data-message="Chase invoice" style="font-size: 12px; padding: 6px 12px;">ðŸ’° Chase invoice</button>
+              <button class="button secondary preset-btn" data-message="Follow up" style="font-size: 12px; padding: 6px 12px;">ðŸ”” Follow up</button>
             </div>
           </div>
           
@@ -5362,7 +5694,7 @@
         for (const c of matchingCustomers) {
           const name = ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || 'Unnamed';
           html += '<div class="search-result-item" data-type="customer" data-id="' + c.id + '">';
-          html += '<span class="search-icon">👤</span>';
+          html += '<span class="search-icon">ðŸ‘¤</span>';
           html += '<span class="search-text">' + escapeHtml(name) + '</span>';
           if (c.contactNumber) html += '<span class="search-meta">' + escapeHtml(c.contactNumber) + '</span>';
           html += '</div>';
@@ -5376,7 +5708,7 @@
           const customer = customerMap.get(j.customerId);
           const customerName = customer ? ((customer.firstName || '') + ' ' + (customer.lastName || '')).trim() : '';
           html += '<div class="search-result-item" data-type="job" data-id="' + j.id + '">';
-          html += '<span class="search-icon">📋</span>';
+          html += '<span class="search-icon">ðŸ“‹</span>';
           html += '<span class="search-text">' + escapeHtml(j.title || appointmentEntitySingular()) + '</span>';
           if (customerName) html += '<span class="search-meta">' + escapeHtml(customerName) + '</span>';
           html += '</div>';
@@ -5390,7 +5722,7 @@
           const noteText = getNoteTextValue(n);
           const preview = noteText.substring(0, 50) + (noteText.length > 50 ? '...' : '');
           html += '<div class="search-result-item" data-type="note" data-customer-id="' + n.customerId + '">';
-          html += '<span class="search-icon">📝</span>';
+          html += '<span class="search-icon">ðŸ“</span>';
           html += '<span class="search-text">' + escapeHtml(preview) + '</span>';
           html += '</div>';
         }
@@ -5787,6 +6119,9 @@
     const last = currentUserProfile?.lastName || '';
     const plan = currentUserProfile?.planLabel || 'Standard Plan';
     const language = currentUserProfile?.preferredLanguage || getLang();
+    const supabaseEnabled = !!productConfig.useSupabase;
+    const appLabel = productConfig.appName || APP_NAME;
+    const fallbackName = getDisplayUserName();
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="modern-page">
         <div class="modern-page-header">
@@ -5795,40 +6130,52 @@
             <h2>Profile Settings</h2>
           </div>
         </div>
-        <div class="modern-card profile-settings-card">
-          <div class="client-card compact">
-            <div class="client-avatar">${escapeHtml(getDisplayInitialsFromCurrentUser())}</div>
-            <div>
-              <strong>${escapeHtml(getDisplayUserName())}</strong>
-              <span>${escapeHtml(email || 'Local profile')}</span>
+        <div class="profile-settings-layout">
+          <div class="modern-card profile-settings-card">
+            <div class="client-card compact">
+              <div class="client-avatar">${escapeHtml(getDisplayInitialsFromCurrentUser())}</div>
+              <div>
+                <strong>${escapeHtml(fallbackName)}</strong>
+                <span>${escapeHtml(email || 'Local profile')}</span>
+              </div>
             </div>
+            <form id="profile-settings-form" class="form modern-form">
+              <div class="grid-2">
+                <label>First name<input name="firstName" value="${escapeHtml(first)}" ${supabaseEnabled ? 'required' : 'disabled'} /></label>
+                <label>Last name<input name="lastName" value="${escapeHtml(last)}" ${supabaseEnabled ? '' : 'disabled'} /></label>
+              </div>
+              <div class="grid-2">
+                <label>Plan label<input name="planLabel" value="${escapeHtml(plan)}" ${supabaseEnabled ? '' : 'disabled'} /></label>
+                <label>Preferred language
+                  <select name="preferredLanguage" ${supabaseEnabled ? '' : 'disabled'}>
+                    <option value="en"${language === 'en' ? ' selected' : ''}>English</option>
+                    <option value="ja"${language === 'ja' ? ' selected' : ''}>Japanese</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <button id="save-profile-settings" class="button" type="submit" ${supabaseEnabled ? '' : 'disabled'}>Save Profile</button>
+              </div>
+              <p id="profile-settings-status" class="muted">${supabaseEnabled ? 'These details are stored in your product profile.' : 'Local mode detected. Sign in to Supabase to save profile details across devices.'}</p>
+            </form>
           </div>
-          <form id="profile-settings-form" class="form modern-form">
-            <div class="grid-2">
-              <label>First name<input name="firstName" value="${escapeHtml(first)}" ${productConfig.useSupabase ? 'required' : 'disabled'} /></label>
-              <label>Last name<input name="lastName" value="${escapeHtml(last)}" ${productConfig.useSupabase ? '' : 'disabled'} /></label>
+          <aside class="modern-card profile-settings-sidecard">
+            <h3>Profile Overview</h3>
+            <div class="mini-info-box">
+              <strong>Product</strong>
+              <span>${escapeHtml(appLabel)}</span>
             </div>
-            <div class="grid-2">
-              <label>Plan label<input name="planLabel" value="${escapeHtml(plan)}" ${productConfig.useSupabase ? '' : 'disabled'} /></label>
-              <label>Preferred language
-                <select name="preferredLanguage" ${productConfig.useSupabase ? '' : 'disabled'}>
-                  <option value="en"${language === 'en' ? ' selected' : ''}>English</option>
-                  <option value="ja"${language === 'ja' ? ' selected' : ''}>Japanese</option>
-                </select>
-              </label>
+            <div class="mini-info-box">
+              <strong>Plan</strong>
+              <span>${escapeHtml(plan || 'Standard Plan')}</span>
             </div>
-            <div class="row">
-              <button id="save-profile-settings" class="button" type="submit" ${productConfig.useSupabase ? '' : 'disabled'}>Save Profile</button>
+            <div class="mini-info-box">
+              <strong>Language</strong>
+              <span>${language === 'ja' ? 'Japanese' : 'English'}</span>
             </div>
-            <p id="profile-settings-status" class="muted">${productConfig.useSupabase ? 'These details are stored in your product profile.' : 'Profile settings are available when signed in to Supabase.'}</p>
-          </form>
+            <p class="muted">Billing, plan management, and advanced account controls will be added here in a later phase.</p>
+          </aside>
         </div>
-      </div>
-      <aside class="card customer-quick-view-panel" id="customer-quick-view">
-        <p class="eyebrow">Quick View</p>
-        <h3>Select a customer</h3>
-        <p class="muted">Hover or load recent customers to preview contact details, next appointment and pinned notes.</p>
-      </aside>
       </div>
     `);
 
@@ -5846,6 +6193,8 @@
           planLabel: String(data.get('planLabel') || '').trim() || 'Standard Plan',
           preferredLanguage: String(data.get('preferredLanguage') || '').trim() || getLang()
         });
+        const nextLanguage = String(data.get('preferredLanguage') || '').trim();
+        if (nextLanguage === 'en' || nextLanguage === 'ja') setLang(nextLanguage);
         await refreshCurrentUserProfile();
         if (statusEl) statusEl.textContent = 'Profile saved.';
         render();
@@ -5856,6 +6205,7 @@
   }
 
   async function renderHelp() {
+    const productName = productConfig.appName || APP_NAME;
     appRoot.innerHTML = wrapWithSidebar(`
       <div class="modern-page">
         <div class="modern-page-header">
@@ -5865,11 +6215,21 @@
           </div>
         </div>
         <div class="modern-card help-placeholder">
-          <h3>Contact and FAQ are coming next.</h3>
-          <p class="muted">This placeholder keeps the new account menu wired while the full help page content is built.</p>
+          <h3>${escapeHtml(productName)} Support</h3>
+          <p class="muted">This is the first version of Help. We can add full docs and deeper workflows next.</p>
           <div class="grid-2">
-            <div class="mini-info-box"><strong>Contact</strong><span>Support contact details will live here.</span></div>
-            <div class="mini-info-box"><strong>FAQ</strong><span>Common setup, backup, and account answers will live here.</span></div>
+            <div class="mini-info-box">
+              <strong>Contact</strong>
+              <span>Email support at <a href="mailto:support@crmicro.app">support@crmicro.app</a> for login, sync, and migration help.</span>
+            </div>
+            <div class="mini-info-box">
+              <strong>FAQ</strong>
+              <span>Common answers for backup/import, note modes, and calendar scheduling are being finalized for this screen.</span>
+            </div>
+          </div>
+          <div class="mini-info-box">
+            <strong>Need urgent help?</strong>
+            <span>Include your product (${escapeHtml(productName)}), browser, and a screenshot so we can reproduce quickly.</span>
           </div>
         </div>
       </div>
@@ -6373,7 +6733,7 @@
         
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
         lastExportBlobUrl = URL.createObjectURL(result.blob);
-        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        lastExportFileName = buildBackupFileName('full');
         downloadBtn.disabled = false;
         statusEl.textContent = `Full backup ready: ${lastExportFileName}`;
         
@@ -6404,7 +6764,7 @@
 
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
         lastExportBlobUrl = URL.createObjectURL(result.blob);
-        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-data-only-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        lastExportFileName = buildBackupFileName('data');
         downloadBtn.disabled = false;
         statusEl.textContent = `Data-only backup ready: ${lastExportFileName}`;
 
@@ -6435,7 +6795,7 @@
 
         if (lastExportBlobUrl) URL.revokeObjectURL(lastExportBlobUrl);
         lastExportBlobUrl = URL.createObjectURL(result.blob);
-        lastExportFileName = `${productConfig.appSlug || 'crm'}-backup-images-only-${new Date().toISOString().replace(/[:]/g, '-')}.json`;
+        lastExportFileName = buildBackupFileName('images');
         downloadBtn.disabled = false;
         statusEl.textContent = `Images-only backup ready: ${lastExportFileName}`;
 
@@ -6456,7 +6816,7 @@
       if (!lastExportBlobUrl) return;
       const a = document.createElement('a');
       a.href = lastExportBlobUrl;
-      a.download = lastExportFileName || 'backup.json';
+      a.download = lastExportFileName || buildBackupFileName('full');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -6708,17 +7068,17 @@
         const hasPin = localStorage.getItem(`${STORAGE_PREFIX}app_lock_pin`);
         appLockCheckbox.checked = !!hasPin;
         if (hasPin) {
-          pinStatus.innerHTML = '<span style="color: #22c55e;">✓ PIN is set</span>';
+          setPinStatusMessage(pinStatus, 'PIN is set', 'success');
         }
         
         appLockCheckbox.addEventListener('change', () => {
           if (appLockCheckbox.checked) {
-            pinSetupSection.style.display = 'block';
+            pinSetupSection.classList.add('is-visible');
           } else {
-            pinSetupSection.style.display = 'none';
+            pinSetupSection.classList.remove('is-visible');
             // Clear the PIN
             localStorage.removeItem(`${STORAGE_PREFIX}app_lock_pin`);
-            pinStatus.innerHTML = '<span style="color: #94a3b8;">PIN lock disabled</span>';
+            setPinStatusMessage(pinStatus, 'PIN lock disabled', 'muted');
           }
         });
         
@@ -6736,8 +7096,8 @@
           localStorage.setItem(`${STORAGE_PREFIX}app_lock_pin`, hashedPin);
           
           pinInput.value = '';
-          pinSetupSection.style.display = 'none';
-          pinStatus.innerHTML = '<span style="color: #22c55e;">✓ PIN has been set!</span>';
+          pinSetupSection.classList.remove('is-visible');
+          setPinStatusMessage(pinStatus, 'PIN has been set!', 'success');
         });
       }
     }
@@ -6755,31 +7115,31 @@
       </div>
       <div class="card">
         <div class="form">
-          <div style="background: #ff6b6b; color: white; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-            <h3 style="margin-top: 0; color: white;">⚠️ CRITICAL: Backup Your Data First!</h3>
-            <p style="margin-bottom: 0;">Before clearing Safari's cache, you MUST backup your database or you will lose all customer data!</p>
+          <div class="emergency-panel-alert emergency-panel-alert--danger">
+            <h3>âš ï¸ CRITICAL: Backup Your Data First!</h3>
+            <p>Before clearing Safari's cache, you MUST backup your database or you will lose all customer data!</p>
           </div>
           
           <div class="row">
-            <button id="emergency-export-btn" class="button" style="background: #ff6b6b; color: white; font-weight: bold;">
+            <button id="emergency-export-btn" class="button emergency-panel-cta emergency-panel-cta--danger">
               ${t('downloadBackupNow')}
             </button>
           </div>
           
-          <hr style="border-color: rgba(255,255,255,0.08); width:100%; margin: 16px 0;" />
+          <hr class="emergency-panel-divider" />
           
-          <div style="background: #4ecdc4; color: white; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-            <h3 style="margin-top: 0; color: white;">🔄 Force App Update</h3>
-            <p style="margin-bottom: 0;">After backing up, use this to force the app to update to the latest version:</p>
+          <div class="emergency-panel-alert emergency-panel-alert--info">
+            <h3>ðŸ”„ Force App Update</h3>
+            <p>After backing up, use this to force the app to update to the latest version:</p>
           </div>
           
           <div class="row">
-            <button id="clear-cache-btn" class="button" style="background: #4ecdc4; color: white; font-weight: bold;">
+            <button id="clear-cache-btn" class="button emergency-panel-cta emergency-panel-cta--info">
               ${t('clearCacheAndReload')}
             </button>
           </div>
           
-          <div class="muted" id="emergency-status" style="margin-top: 16px;"></div>
+          <div class="muted emergency-panel-status" id="emergency-status"></div>
         </div>
       </div>
     `);
@@ -6807,13 +7167,13 @@
         const url = URL.createObjectURL(result.blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${productConfig.appSlug || 'crm'}-emergency-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = buildBackupFileName('emergency');
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        statusEl.textContent = `✅ Backup downloaded! ${result.customers.length} customers, ${result.appointments.length} appointments, ${result.imageCount} images`;
+        statusEl.textContent = `âœ… Backup downloaded! ${result.customers.length} customers, ${result.appointments.length} appointments, ${result.imageCount} images`;
         statusEl.style.color = '#4ecdc4';
         
         // Re-enable button
@@ -6821,7 +7181,7 @@
         exportBtn.textContent = t('downloadBackupNow');
         
       } catch (error) {
-        statusEl.textContent = `❌ Backup failed: ${error.message}`;
+        statusEl.textContent = `âŒ Backup failed: ${error.message}`;
         statusEl.style.color = '#ff6b6b';
         
         // Re-enable button
@@ -6856,7 +7216,7 @@
         window.location.href = `${window.location.origin}${window.location.pathname}?v=${timestamp}`;
         
       } catch (error) {
-        statusEl.textContent = `❌ Cache clear failed: ${error.message}`;
+        statusEl.textContent = `âŒ Cache clear failed: ${error.message}`;
         statusEl.style.color = '#ff6b6b';
       }
     });
@@ -6955,17 +7315,17 @@
       <div class="image-viewer-modal" id="${modalId}">
         <div class="image-viewer-header">
           <div class="image-counter">${currentIndex + 1} / ${images.length}</div>
-          <button class="image-viewer-close" id="image-viewer-close">✕</button>
+          <button class="image-viewer-close" id="image-viewer-close">âœ•</button>
         </div>
         <div class="image-viewer-content">
-          ${hasMultiple ? '<button class="image-nav-btn image-nav-prev" id="image-nav-prev">‹</button>' : ''}
+          ${hasMultiple ? '<button class="image-nav-btn image-nav-prev" id="image-nav-prev">â€¹</button>' : ''}
           <div class="image-viewer-main">
             <img src="${URL.createObjectURL(currentImage.blob)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" />
             <div class="image-actions">
-              <button class="image-delete-btn" id="image-delete-btn" data-image-id="${currentImage.id}">🗑️ Delete</button>
+              <button class="image-delete-btn" id="image-delete-btn" data-image-id="${currentImage.id}">ðŸ—‘ï¸ Delete</button>
             </div>
           </div>
-          ${hasMultiple ? '<button class="image-nav-btn image-nav-next" id="image-nav-next">›</button>' : ''}
+          ${hasMultiple ? '<button class="image-nav-btn image-nav-next" id="image-nav-next">â€º</button>' : ''}
         </div>
       </div>
     `;
@@ -8046,6 +8406,10 @@
     }
 
     redrawStrokes() {
+      if (!this.canvas || !this.ctx) {
+        return;
+      }
+
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.ctx.strokeStyle = this.strokeColor;
       this.ctx.lineWidth = this.strokeWidth;
@@ -8091,6 +8455,7 @@
       this.pinCheckbox = null;
       this.pinStatus = null;
       this.canvasContainer = null;
+      this.handleCanvasResize = this.resizeCanvasToContainer.bind(this);
     }
 
 
@@ -8150,14 +8515,14 @@
       title.style.color = 'var(--text)';
 
       const rightControls = document.createElement('div');
-      rightControls.style.cssText = 'display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end;';
+      rightControls.style.cssText = 'display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:flex-end;';
 
       const pinWrap = document.createElement('label');
-      pinWrap.style.cssText = 'display:flex; align-items:center; gap:8px; color:var(--text); font-size:14px; cursor:pointer; user-select:none;';
+      pinWrap.style.cssText = 'display:flex; align-items:center; gap:10px; color:var(--text); font-size:18px; font-weight:600; cursor:pointer; user-select:none;';
       this.pinCheckbox = document.createElement('input');
       this.pinCheckbox.type = 'checkbox';
       this.pinCheckbox.setAttribute('data-testid', 'note-pin-checkbox');
-      this.pinCheckbox.style.cssText = 'width:16px; height:16px; cursor:pointer;';
+      this.pinCheckbox.style.cssText = 'width:20px; height:20px; cursor:pointer;';
       const pinText = document.createElement('span');
       pinText.textContent = 'Pin to profile';
       this.pinStatus = document.createElement('span');
@@ -8168,14 +8533,16 @@
       const doneBtn = document.createElement('button');
       doneBtn.textContent = 'Done';
       doneBtn.style.cssText = `
-        background: var(--brand);
-        border: none;
-        color: white;
-        border-radius: 6px;
-        padding: 10px 20px;
+        background: rgba(2, 16, 46, 0.86);
+        border: 3px solid #2dd4f7;
+        color: #2dd4f7;
+        border-radius: 14px;
+        padding: 14px 32px;
         cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0;
+        box-shadow: 0 0 24px rgba(45, 212, 247, 0.35);
       `;
 
       rightControls.appendChild(pinWrap);
@@ -8187,15 +8554,16 @@
       // Canvas container
       const canvasContainer = document.createElement('div');
       this.canvasContainer = canvasContainer;
+      canvasContainer.className = 'editor-surface';
       canvasContainer.style.cssText = `
         flex: 1;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 12px;
-        padding: 20px;
+        display: block;
+        position: relative;
+        overflow: hidden;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px dashed rgba(51, 65, 85, 0.72);
+        border-radius: 16px;
+        padding: 14px;
         min-height: 0;
       `;
 
@@ -8219,22 +8587,89 @@
         throw new Error('Canvas container not found');
       }
       canvasContainer.appendChild(this.canvas);
+      this.setupCanvasDecorations(canvasContainer);
 
-      // Set canvas size
-      const rect = canvasContainer.getBoundingClientRect();
-      const width = Math.min(1000, window.innerWidth - 100);
-      const height = Math.min(700, window.innerHeight - 200);
-      
-      this.canvas.width = width;
-      this.canvas.height = height;
-      this.canvas.style.width = width + 'px';
-      this.canvas.style.height = height + 'px';
-      this.canvas.style.border = '1px solid rgba(255,255,255,0.2)';
-      this.canvas.style.borderRadius = '4px';
+      // Fill available drawing stage instead of fixed centered canvas
+      this.canvas.style.width = '100%';
+      this.canvas.style.height = '100%';
+      this.canvas.style.border = '0px solid transparent';
+      this.canvas.style.borderRadius = '10px';
       this.canvas.style.cursor = 'crosshair';
-      this.canvas.style.backgroundColor = 'rgba(255,255,255,0.03)';
+      this.canvas.style.backgroundColor = 'rgba(17, 27, 45, 0.32)';
+      this.canvas.style.display = 'block';
 
       // Set drawing properties
+      this.ctx.strokeStyle = this.strokeColor;
+      this.ctx.lineWidth = this.strokeWidth;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+
+      this.resizeCanvasToContainer();
+      this.updateCanvasHintVisibility();
+      window.addEventListener('resize', this.handleCanvasResize);
+    }
+
+    setupCanvasDecorations(container) {
+      container.style.background = '#111b2d';
+      container.style.backgroundImage = 'radial-gradient(circle at 2px 2px, rgba(148,163,184,0.18) 1px, transparent 0)';
+      container.style.backgroundSize = '24px 24px';
+
+      const hint = document.createElement('div');
+      hint.style.cssText = `
+        position:absolute;
+        inset:0;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        gap:14px;
+        color:rgba(148,163,184,0.5);
+        font-weight:600;
+        pointer-events:none;
+        user-select:none;
+      `;
+      hint.innerHTML = `
+        <span class="material-symbols-outlined" style="font-size:64px; opacity:0.45;">draw</span>
+        <p style="margin:0; font-size:40px; line-height:1; opacity:0.42;">Start drawing or writing here...</p>
+      `;
+      this.canvasHint = hint;
+      container.appendChild(hint);
+
+      const cornerPositions = [
+        ['top:16px;left:16px;', 'border-top:3px solid rgba(34,211,238,0.55);border-left:3px solid rgba(34,211,238,0.55);'],
+        ['top:16px;right:16px;', 'border-top:3px solid rgba(34,211,238,0.55);border-right:3px solid rgba(34,211,238,0.55);'],
+        ['bottom:16px;left:16px;', 'border-bottom:3px solid rgba(34,211,238,0.55);border-left:3px solid rgba(34,211,238,0.55);'],
+        ['bottom:16px;right:16px;', 'border-bottom:3px solid rgba(34,211,238,0.55);border-right:3px solid rgba(34,211,238,0.55);']
+      ];
+      cornerPositions.forEach(([pos, border]) => {
+        const marker = document.createElement('span');
+        marker.style.cssText = `
+          position:absolute;
+          width:22px;
+          height:22px;
+          ${pos}
+          ${border}
+          pointer-events:none;
+        `;
+        container.appendChild(marker);
+      });
+    }
+
+    updateCanvasHintVisibility() {
+      if (!this.canvasHint) return;
+      this.canvasHint.style.display = this.strokes.length > 0 ? 'none' : 'flex';
+    }
+
+    resizeCanvasToContainer() {
+      if (!this.canvas || !this.canvasContainer || !this.ctx) return;
+      const bounds = this.canvasContainer.getBoundingClientRect();
+      const nextWidth = Math.max(320, Math.floor(bounds.width - 28));
+      const nextHeight = Math.max(260, Math.floor(bounds.height - 28));
+      if (this.canvas.width === nextWidth && this.canvas.height === nextHeight) return;
+
+      this.canvas.width = nextWidth;
+      this.canvas.height = nextHeight;
+      this.redrawStrokes();
       this.ctx.strokeStyle = this.strokeColor;
       this.ctx.lineWidth = this.strokeWidth;
       this.ctx.lineCap = 'round';
@@ -8244,192 +8679,212 @@
     setupToolbar() {
       const toolbar = document.createElement('div');
       toolbar.style.cssText = `
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        margin-bottom: 20px;
-        padding: 16px;
-        background: rgba(255,255,255,0.05);
-        border-radius: 12px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:20px;
+        row-gap:14px;
+        margin-bottom:16px;
+        padding:14px 20px;
+        border:1px solid rgba(71, 85, 105, 0.65);
+        background: rgba(35, 47, 68, 0.96);
+        border-radius:14px;
+        flex-wrap:wrap;
       `;
 
-      // Top row: Colors and Brush Size
-      const topRow = document.createElement('div');
-      topRow.style.cssText = `
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        justify-content: center;
-        flex-wrap: wrap;
+      const leftGroup = document.createElement('div');
+      leftGroup.style.cssText = `
+        display:flex;
+        align-items:center;
+        gap:18px;
+        flex:1;
+        min-width:280px;
+        flex-wrap:wrap;
       `;
-      
-      // Color presets
-      const colors = ['#ffffff', '#000000', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+
+      const rightGroup = document.createElement('div');
+      rightGroup.style.cssText = `
+        display:flex;
+        align-items:center;
+        gap:12px;
+        flex-shrink:0;
+        margin-left:auto;
+        flex-wrap:wrap;
+        justify-content:flex-end;
+      `;
+
+      const modeToggle = document.createElement('div');
+      modeToggle.style.cssText = `
+        display:flex;
+        align-items:center;
+        gap:6px;
+        padding:4px;
+        border-radius:12px;
+        background:rgba(15, 23, 42, 0.72);
+        border:1px solid rgba(51, 65, 85, 0.78);
+      `;
+
+      this.pencilBtn = document.createElement('button');
+      this.pencilBtn.type = 'button';
+      this.pencilBtn.dataset.mode = 'draw';
+      this.pencilBtn.innerHTML = '<span class="material-icons" aria-hidden="true" style="font-size:20px;line-height:1;margin-right:8px;">edit</span>Pencil';
+      this.pencilBtn.style.cssText = `
+        border:0;
+        border-radius:10px;
+        padding:10px 18px;
+        cursor:pointer;
+        font-size:14px;
+        font-weight:700;
+        letter-spacing:0;
+      `;
+
+      this.eraserBtn = document.createElement('button');
+      this.eraserBtn.type = 'button';
+      this.eraserBtn.dataset.mode = 'erase';
+      this.eraserBtn.innerHTML = '<span class="material-icons" aria-hidden="true" style="font-size:20px;line-height:1;margin-right:8px;">auto_fix_normal</span>Eraser';
+      this.eraserBtn.style.cssText = `
+        border:0;
+        border-radius:10px;
+        padding:10px 18px;
+        cursor:pointer;
+        font-size:14px;
+        font-weight:700;
+        letter-spacing:0;
+      `;
+      modeToggle.appendChild(this.pencilBtn);
+      modeToggle.appendChild(this.eraserBtn);
+
+      const colors = ['#ffffff', '#000000', '#ff4f4f', '#22c55e', '#2f6fec', '#facc15', '#ec4899', '#33c3df'];
       const colorPresets = document.createElement('div');
       colorPresets.style.cssText = `
-        display: flex;
-        gap: 8px;
-        align-items: center;
+        display:flex;
+        gap:10px;
+        align-items:center;
+        flex-wrap:wrap;
       `;
-      
       const colorLabel = document.createElement('span');
-      colorLabel.textContent = 'Colors:';
-      colorLabel.style.color = 'var(--text)';
-      colorLabel.style.fontSize = '14px';
-      colorLabel.style.fontWeight = '600';
-      
+      colorLabel.textContent = 'COLORS:';
+      colorLabel.style.cssText = 'color:#9fb0ca;font-size:12px;font-weight:700;letter-spacing:2px;';
+      colorPresets.appendChild(colorLabel);
+
       colors.forEach(color => {
         const colorBtn = document.createElement('button');
         colorBtn.className = 'color-btn';
+        colorBtn.type = 'button';
         colorBtn.style.cssText = `
-          width: 32px;
-          height: 32px;
-          border: 2px solid ${color === this.strokeColor ? 'var(--brand)' : 'rgba(255,255,255,0.3)'};
-          border-radius: 50%;
-          background: ${color};
-          cursor: pointer;
-          transition: all 0.2s ease;
+          width:36px;
+          height:36px;
+          border:3px solid ${color === this.strokeColor ? '#2dd4f7' : 'rgba(148,163,184,0.5)'};
+          border-radius:50%;
+          background:${color};
+          cursor:pointer;
+          box-shadow:${color === this.strokeColor ? '0 0 0 4px rgba(45,212,247,0.2)' : 'none'};
         `;
         colorBtn.addEventListener('click', () => {
           this.setStrokeColor(color);
-          colorPresets.querySelectorAll('button').forEach(btn => {
-            btn.style.borderColor = btn === colorBtn ? 'var(--brand)' : 'rgba(255,255,255,0.3)';
+          colorPresets.querySelectorAll('.color-btn').forEach(btn => {
+            btn.style.borderColor = btn === colorBtn ? '#2dd4f7' : 'rgba(148,163,184,0.5)';
+            btn.style.boxShadow = btn === colorBtn ? '0 0 0 4px rgba(45,212,247,0.2)' : 'none';
           });
         });
         colorPresets.appendChild(colorBtn);
       });
-      
-      // Brush size
+
       const sizeContainer = document.createElement('div');
       sizeContainer.style.cssText = `
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        gap:6px;
+        min-width:190px;
       `;
-      
       const sizeLabel = document.createElement('span');
-      sizeLabel.textContent = 'Brush Size';
-      sizeLabel.style.color = 'var(--text)';
-      sizeLabel.style.fontSize = '14px';
-      sizeLabel.style.fontWeight = '600';
-      
+      sizeLabel.textContent = 'BRUSH SIZE';
+      sizeLabel.style.cssText = 'color:#9fb0ca;font-size:12px;font-weight:700;letter-spacing:2px;';
+
+      const sliderWrap = document.createElement('div');
+      sliderWrap.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;';
+      const sliderDot = document.createElement('span');
+      sliderDot.style.cssText = 'width:18px;height:18px;border-radius:50%;background:#33c3df;display:inline-block;';
+
       const sizeSlider = document.createElement('input');
       sizeSlider.type = 'range';
       sizeSlider.min = '1';
       sizeSlider.max = '20';
       sizeSlider.value = this.strokeWidth;
       sizeSlider.style.cssText = `
-        width: 120px;
-        height: 6px;
-        background: rgba(255,255,255,0.2);
-        border-radius: 3px;
-        outline: none;
+        width:100%;
+        height:6px;
+        appearance:none;
+        background:rgba(148,163,184,0.55);
+        border-radius:999px;
+        outline:none;
       `;
-      
+
       const sizeValue = document.createElement('span');
       sizeValue.textContent = this.strokeWidth + 'px';
-      sizeValue.style.color = 'var(--muted)';
-      sizeValue.style.fontSize = '12px';
-      
-      // Bottom row: Drawing tools (left) and Action tools (right)
-      const bottomRow = document.createElement('div');
-      bottomRow.style.cssText = `
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      `;
+      sizeValue.style.cssText = 'color:#9fb0ca;font-size:12px;font-weight:600;';
 
-      // Drawing tools (pencil and eraser) - left side
-      const drawingToolsContainer = document.createElement('div');
-      drawingToolsContainer.style.cssText = `
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      `;
-      
-      this.pencilBtn = document.createElement('button');
-      this.pencilBtn.innerHTML = '✏️ Pencil';
-      this.pencilBtn.style.cssText = `
-        background: ${!this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)'};
-        border: 1px solid ${!this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)'};
-        color: ${!this.isErasing ? '#3b82f6' : 'var(--text)'};
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-      `;
-
-      this.eraserBtn = document.createElement('button');
-      this.eraserBtn.innerHTML = '🧽 Eraser';
-      this.eraserBtn.style.cssText = `
-        background: ${this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)'};
-        border: 1px solid ${this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)'};
-        color: ${this.isErasing ? '#3b82f6' : 'var(--text)'};
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-      `;
-
-      // Action tools (undo and clear) - right side
-      const actionToolsContainer = document.createElement('div');
-      actionToolsContainer.style.cssText = `
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      `;
-      
       const undoBtn = document.createElement('button');
-      undoBtn.innerHTML = '↶ Undo';
+      undoBtn.type = 'button';
+      undoBtn.innerHTML = '<span style="margin-right:8px;">â†¶</span>Undo';
       undoBtn.style.cssText = `
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
-        color: var(--text);
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-      `;
-      
-      const clearBtn = document.createElement('button');
-      clearBtn.innerHTML = '🗑️ Clear';
-      clearBtn.style.cssText = `
-        background: rgba(239, 68, 68, 0.2);
-        border: 1px solid rgba(239, 68, 68, 0.4);
-        color: #ef4444;
-        border-radius: 8px;
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 600;
-        transition: all 0.2s ease;
+        background:rgba(15,23,42,0.75);
+        border:none;
+        color:#d7e3f8;
+        border-radius:10px;
+        padding:10px 20px;
+        cursor:pointer;
+        font-size:14px;
+        font-weight:700;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:10px;
+        line-height:1;
       `;
 
-      // Assemble toolbar
-      colorPresets.insertBefore(colorLabel, colorPresets.firstChild);
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.innerHTML = '<span style="margin-right:8px;">ðŸ—‘ï¸</span>Clear';
+      clearBtn.style.cssText = `
+        background:rgba(94, 41, 58, 0.75);
+        border:none;
+        color:#ff6b7f;
+        border-radius:10px;
+        padding:10px 20px;
+        cursor:pointer;
+        font-size:14px;
+        font-weight:700;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:10px;
+        line-height:1;
+      `;
+
+      // Override legacy glyph text/icons with prototype-style symbols and sizing.
+      undoBtn.innerHTML = '<span class="material-icons" aria-hidden="true" style="font-size:25px;line-height:1;display:inline-flex;align-items:center;">undo</span><span style="display:inline-flex;align-items:center;">Undo</span>';
+      undoBtn.style.borderRadius = '14px';
+      undoBtn.style.padding = '14px 24px';
+      clearBtn.innerHTML = '<span class="material-icons" aria-hidden="true" style="font-size:25px;line-height:1;display:inline-flex;align-items:center;">delete_outline</span><span style="display:inline-flex;align-items:center;">Clear</span>';
+      clearBtn.style.borderRadius = '14px';
+      clearBtn.style.padding = '14px 24px';
+
+      sliderWrap.appendChild(sliderDot);
+      sliderWrap.appendChild(sizeSlider);
       sizeContainer.appendChild(sizeLabel);
-      sizeContainer.appendChild(sizeSlider);
+      sizeContainer.appendChild(sliderWrap);
       sizeContainer.appendChild(sizeValue);
-      
-      drawingToolsContainer.appendChild(this.pencilBtn);
-      drawingToolsContainer.appendChild(this.eraserBtn);
-      actionToolsContainer.appendChild(undoBtn);
-      actionToolsContainer.appendChild(clearBtn);
-      
-      topRow.appendChild(colorPresets);
-      topRow.appendChild(sizeContainer);
-      bottomRow.appendChild(drawingToolsContainer);
-      bottomRow.appendChild(actionToolsContainer);
-      
-      toolbar.appendChild(topRow);
-      toolbar.appendChild(bottomRow);
+
+      leftGroup.appendChild(modeToggle);
+      leftGroup.appendChild(colorPresets);
+      leftGroup.appendChild(sizeContainer);
+      rightGroup.appendChild(undoBtn);
+      rightGroup.appendChild(clearBtn);
+
+      toolbar.appendChild(leftGroup);
+      toolbar.appendChild(rightGroup);
 
       // Insert toolbar before canvas container
       const canvasContainer = this.canvasContainer;
@@ -8449,6 +8904,7 @@
       undoBtn.addEventListener('click', () => this.undo());
       this.pencilBtn.addEventListener('click', () => this.setDrawingMode());
       this.eraserBtn.addEventListener('click', () => this.setEraserMode());
+      this.updateToolButtons();
     }
 
     setupEventListeners() {
@@ -8525,6 +8981,7 @@
         if (this.currentStroke.points.length > 0) {
           this.strokes.push({...this.currentStroke});
           this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
+          this.updateCanvasHintVisibility();
         }
       }
     }
@@ -8534,12 +8991,15 @@
       this.strokes = [];
       this.currentStroke = { points: [], color: this.strokeColor, width: this.strokeWidth };
       this.isEditingImageBasedNote = false;
+      this.updateCanvasHintVisibility();
     }
 
     undo() {
       if (this.strokes.length > 0) {
         this.strokes.pop();
         this.redrawStrokes();
+      } else {
+        this.updateCanvasHintVisibility();
       }
     }
 
@@ -8571,6 +9031,7 @@
       
       // Reset to normal drawing mode
       this.ctx.globalCompositeOperation = 'source-over';
+      this.updateCanvasHintVisibility();
     }
 
     setStrokeColor(color) {
@@ -8601,15 +9062,15 @@
     updateToolButtons() {
       // Use stored button references for immediate updates
       if (this.pencilBtn) {
-        this.pencilBtn.style.background = !this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
-        this.pencilBtn.style.borderColor = !this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
-        this.pencilBtn.style.color = !this.isErasing ? '#3b82f6' : 'var(--text)';
+        this.pencilBtn.style.background = !this.isErasing ? 'rgba(34, 211, 238, 0.16)' : 'transparent';
+        this.pencilBtn.style.boxShadow = !this.isErasing ? 'inset 0 0 0 1px rgba(34, 211, 238, 0.45)' : 'none';
+        this.pencilBtn.style.color = !this.isErasing ? '#2dd4f7' : '#b9c6da';
       }
       
       if (this.eraserBtn) {
-        this.eraserBtn.style.background = this.isErasing ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.1)';
-        this.eraserBtn.style.borderColor = this.isErasing ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255,255,255,0.2)';
-        this.eraserBtn.style.color = this.isErasing ? '#3b82f6' : 'var(--text)';
+        this.eraserBtn.style.background = this.isErasing ? 'rgba(34, 211, 238, 0.16)' : 'transparent';
+        this.eraserBtn.style.boxShadow = this.isErasing ? 'inset 0 0 0 1px rgba(34, 211, 238, 0.45)' : 'none';
+        this.eraserBtn.style.color = this.isErasing ? '#2dd4f7' : '#b9c6da';
       }
     }
 
@@ -8933,7 +9394,7 @@
         
         // Optimize SVG if it's too large (iPad localStorage constraint)
         const optimizedSvgData = this.optimizeSVGForStorage(svgData);
-        console.log(`SVG size: ${svgData.length} chars → ${optimizedSvgData.length} chars (${((1 - optimizedSvgData.length / svgData.length) * 100).toFixed(1)}% reduction)`);
+        console.log(`SVG size: ${svgData.length} chars â†’ ${optimizedSvgData.length} chars (${((1 - optimizedSvgData.length / svgData.length) * 100).toFixed(1)}% reduction)`);
         
         // Get customer ID with validation
         const customerId = this.getCurrentCustomerId();
@@ -9015,7 +9476,7 @@
                   note: { ...dbInput, id: editingNoteId }
                 });
               }
-              console.log('⚠️ Offline: queued note update for sync when online.');
+              console.log('âš ï¸ Offline: queued note update for sync when online.');
             }
           } else {
             if (productConfig.useSupabase && !this.editingNote?.queuedSync) {
@@ -9068,7 +9529,7 @@
               }
               console.log('Note updated successfully in localStorage');
             } catch (localStorageError) {
-              console.log('❌ localStorage update failed:', localStorageError.message);
+              console.log('âŒ localStorage update failed:', localStorageError.message);
               throw new Error(`Failed to update existing note in localStorage: ${localStorageError.message}`);
             }
           }
@@ -9692,6 +10153,21 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         createdAt: noteData.createdAt ? (normalizeDateTimeToISO(noteData.createdAt) || noteData.createdAt) : undefined
       };
 
+      // New-customer flow intentionally stores notes under a temporary key until
+      // the customer record exists and has a numeric ID.
+      if (customerId === 'temp-new-customer') {
+        const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
+        if (!existingNotes[customerId]) existingNotes[customerId] = [];
+        existingNotes[customerId].push({
+          ...normalizedNoteData,
+          source: normalizedNoteData.source || 'localStorage'
+        });
+        localStorage.setItem('customerNotes', JSON.stringify(existingNotes));
+        Object.assign(noteData, normalizedNoteData);
+        console.log('âœ… Temp new-customer note saved to local draft storage');
+        return { method: 'temp-localStorage', success: true };
+      }
+
       // Supabase mode: keep notes DB-backed only.
       if (productConfig.useSupabase) {
         const noteForDB = buildDbNoteInputFromAnyNote(normalizedNoteData, customerId);
@@ -9704,7 +10180,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           normalizedNoteData.source = 'supabase';
           normalizedNoteData.queuedSync = false;
           Object.assign(noteData, normalizedNoteData);
-          console.log('✅ Note saved to Supabase successfully, ID:', savedId);
+          console.log('âœ… Note saved to Supabase successfully, ID:', savedId);
           return { method: 'supabase', success: true, id: savedId };
         } catch (error) {
           if (!isOfflineLikeError(error)) throw error;
@@ -9724,7 +10200,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             note: noteForDB
           });
           Object.assign(noteData, queuedLocal);
-          console.log('⚠️ Offline: queued note create for sync when online.');
+          console.log('âš ï¸ Offline: queued note create for sync when online.');
           return { method: 'offline-queued', success: true, id: localId };
         }
       }
@@ -9740,16 +10216,16 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const dataToSave = JSON.stringify(existingNotes);
         localStorage.setItem('customerNotes', dataToSave);
         
-        console.log('✅ Note saved to localStorage successfully');
+        console.log('âœ… Note saved to localStorage successfully');
         return { method: 'localStorage', success: true };
         
       } catch (localStorageError) {
-        console.log('❌ localStorage failed:', localStorageError.message);
-        console.log('🔄 Attempting IndexedDB fallback...');
+        console.log('âŒ localStorage failed:', localStorageError.message);
+        console.log('ðŸ”„ Attempting IndexedDB fallback...');
         
         try {
           // Fallback to IndexedDB
-          console.log('🔄 Initializing IndexedDB for notes fallback...');
+          console.log('ðŸ”„ Initializing IndexedDB for notes fallback...');
           
           // Check if IndexedDB is ready
           const dbStatus = await this.checkIndexedDBReady();
@@ -9771,7 +10247,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           
           console.log('Attempting to save note to IndexedDB...', noteForDB);
           const savedId = await CrmDB.createNote(noteForDB);
-          console.log('✅ Note saved to IndexedDB successfully, ID:', savedId);
+          console.log('âœ… Note saved to IndexedDB successfully, ID:', savedId);
           
           // Update the noteData with the database ID for UI consistency
           normalizedNoteData.id = savedId;
@@ -9784,16 +10260,16 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           return { method: 'indexeddb', success: true, id: savedId };
           
         } catch (indexedDBError) {
-          console.error('❌ IndexedDB fallback also failed:', indexedDBError);
+          console.error('âŒ IndexedDB fallback also failed:', indexedDBError);
           
           // Provide specific guidance based on the error
           let errorDetails = `Both storage methods failed:\nLocalStorage: ${localStorageError.message}\nIndexedDB: ${indexedDBError.message}`;
           
           if (indexedDBError.message.includes('object stores was not found') || 
               indexedDBError.message.includes('IndexedDB not ready')) {
-            errorDetails += '\n\n🔧 Fix: Please refresh the page to update the database schema.';
+            errorDetails += '\n\nðŸ”§ Fix: Please refresh the page to update the database schema.';
           } else if (indexedDBError.message.includes('CrmDB not available')) {
-            errorDetails += '\n\n🔧 Fix: Please refresh the page to initialize the database.';
+            errorDetails += '\n\nðŸ”§ Fix: Please refresh the page to initialize the database.';
           }
           
           throw new Error(errorDetails);
@@ -10036,7 +10512,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             return match.replace(pathData, filteredCommands.join(''));
           });
           
-          console.log(`SVG optimization: ${svgData.length} → ${optimized.length} chars (${((1 - optimized.length / svgData.length) * 100).toFixed(1)}% reduction)`);
+          console.log(`SVG optimization: ${svgData.length} â†’ ${optimized.length} chars (${((1 - optimized.length / svgData.length) * 100).toFixed(1)}% reduction)`);
           return optimized;
         }
         
@@ -10133,46 +10609,16 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const contentContainer = document.createElement('div');
         contentContainer.className = 'text-note-content';
         contentContainer.setAttribute('data-testid', 'text-note-content');
-        contentContainer.style.cssText = `
-          max-width: 100%;
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 4px;
-          padding: 16px;
-          background: rgba(255,255,255,0.03);
-          color: var(--text);
-          font-size: 15px;
-          line-height: 1.6;
-          white-space: normal;
-          word-wrap: break-word;
-        `;
         contentContainer.innerHTML = noteText ? renderFormattedTextNoteHtml(noteText) : '(No text payload)';
-        contentContainer.querySelectorAll('ul, ol').forEach((list) => {
-          list.style.margin = '0 0 0 20px';
-          list.style.padding = '0';
-        });
-        contentContainer.querySelectorAll('li').forEach((item) => {
-          item.style.margin = '4px 0';
-        });
-        contentContainer.querySelectorAll('code').forEach((code) => {
-          code.style.cssText = 'background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:4px; padding:1px 4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.92em;';
-        });
         return contentContainer;
       }
 
       const contentContainer = document.createElement('div');
+      contentContainer.className = 'svg-note-content';
+      if (isMigratedNote) {
+        contentContainer.classList.add('is-migrated');
+      }
       contentContainer.innerHTML = noteData.svg || '';
-      contentContainer.style.cssText = `
-        max-width: 100%;
-        overflow: visible;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 4px;
-        padding: 8px;
-        background: transparent;
-        display: flex;
-        justify-content: ${isMigratedNote ? 'flex-start' : 'center'};
-        align-items: flex-start;
-        min-height: 100px;
-      `;
 
       const svg = contentContainer.querySelector('svg');
       if (svg) {
@@ -10251,12 +10697,8 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         svg.setAttribute('width', svgWidth);
         svg.setAttribute('height', svgHeight);
 
-        svg.style.cssText = `
-          max-width: 100%;
-          width: ${svgWidth}px;
-          height: ${svgHeight}px;
-          background: transparent;
-        `;
+        svg.style.width = `${svgWidth}px`;
+        svg.style.height = `${svgHeight}px`;
       }
 
       return contentContainer;
@@ -10264,19 +10706,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     createNoteEditButton(noteData) {
       const editButton = document.createElement('button');
-      editButton.textContent = '✏️';
+      editButton.textContent = 'âœï¸';
       editButton.title = 'Edit Note';
       editButton.setAttribute('data-testid', 'edit-note-button');
-      editButton.style.cssText = `
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 4px;
-        padding: 4px 8px;
-        cursor: pointer;
-        color: var(--text);
-        font-size: 12px;
-        transition: background 0.2s ease;
-      `;
+      editButton.className = 'note-action-button note-action-button--edit';
       editButton.addEventListener('click', (e) => {
         e.stopPropagation();
         if (shouldRenderAsText(noteData)) {
@@ -10284,12 +10717,6 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         } else {
           this.editNote(noteData);
         }
-      });
-      editButton.addEventListener('mouseenter', () => {
-        editButton.style.background = 'rgba(255,255,255,0.2)';
-      });
-      editButton.addEventListener('mouseleave', () => {
-        editButton.style.background = 'rgba(255,255,255,0.1)';
       });
       return editButton;
     }
@@ -10309,35 +10736,18 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const noteElement = document.createElement('div');
       noteElement.className = 'note-entry';
       noteElement.setAttribute('data-testid', 'note-entry');
-      noteElement.style.cssText = `
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 8px;
-        background: rgba(255,255,255,0.03);
-        overflow: hidden;
-      `;
       if (isPendingSync) {
-        noteElement.style.borderColor = 'rgba(245, 158, 11, 0.45)';
-        noteElement.style.boxShadow = '0 0 0 1px rgba(245, 158, 11, 0.18) inset';
+        noteElement.classList.add('is-pending-sync');
       }
 
       const noteHeader = document.createElement('div');
       noteHeader.className = 'note-header';
-      noteHeader.style.cssText = `
-        padding: 12px 16px;
-        cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: rgba(255,255,255,0.05);
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-      `;
 
       // Check if this is a migrated note (either explicitly flagged or by content analysis)
       const isMigratedNote = noteData.isMigrated || isMigratedNoteByContent(noteData);
 
       const noteTitle = document.createElement('span');
-      noteTitle.style.color = 'var(--text)';
-      noteTitle.style.fontWeight = '600';
+      noteTitle.className = 'note-title';
       
       // Create the main title text
       const titleText = document.createElement('span');
@@ -10364,10 +10774,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       if (isMigratedNote) {
         const migratedIndicator = document.createElement('span');
         migratedIndicator.textContent = ' (migrated)';
-        migratedIndicator.style.fontStyle = 'italic';
-        migratedIndicator.style.fontSize = '0.85em';
-        migratedIndicator.style.color = 'var(--muted)';
-        migratedIndicator.style.fontWeight = '400';
+        migratedIndicator.className = 'note-title-meta';
         titleText.appendChild(migratedIndicator);
       }
       
@@ -10397,55 +10804,28 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         }
         const editedText = document.createElement('span');
         editedText.textContent = ` (edited: ${displayEditedDate})`;
-        editedText.style.fontStyle = 'italic';
-        editedText.style.fontSize = '0.85em';
-        editedText.style.color = 'var(--muted)';
-        editedText.style.fontWeight = '400';
+        editedText.className = 'note-title-meta';
         noteTitle.appendChild(editedText);
       }
 
       const headerRight = document.createElement('div');
-      headerRight.style.cssText = `
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      `;
+      headerRight.className = 'note-header-right';
 
       if (isPendingSync) {
         const pendingBadge = document.createElement('span');
         pendingBadge.textContent = 'Sync pending';
         pendingBadge.title = 'Saved offline. Will sync when connection is restored.';
-        pendingBadge.style.cssText = `
-          font-size: 11px;
-          line-height: 1;
-          padding: 5px 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(245, 158, 11, 0.45);
-          background: rgba(245, 158, 11, 0.2);
-          color: #fcd34d;
-          font-weight: 700;
-          letter-spacing: 0.01em;
-          white-space: nowrap;
-        `;
+        pendingBadge.className = 'note-sync-pending-badge';
         headerRight.appendChild(pendingBadge);
       }
 
       // Only show edit button for non-migrated notes
       if (!isMigratedNote) {
         const editButton = document.createElement('button');
-        editButton.textContent = '✏️';
+        editButton.textContent = 'âœï¸';
         editButton.title = 'Edit Note';
         editButton.setAttribute('data-testid', 'edit-note-button');
-        editButton.style.cssText = `
-          background: rgba(255,255,255,0.1);
-          border: 1px solid rgba(255,255,255,0.2);
-          border-radius: 4px;
-          padding: 4px 8px;
-          cursor: pointer;
-          color: var(--text);
-          font-size: 12px;
-          transition: background 0.2s ease;
-        `;
+        editButton.className = 'note-action-button note-action-button--edit';
         editButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
           // Use text overlay for text-based notes, canvas for SVG notes.
@@ -10458,31 +10838,15 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             this.editNote(noteData);
           }
         });
-        editButton.addEventListener('mouseenter', () => {
-          editButton.style.background = 'rgba(255,255,255,0.2)';
-        });
-        editButton.addEventListener('mouseleave', () => {
-          editButton.style.background = 'rgba(255,255,255,0.1)';
-        });
-        
         headerRight.appendChild(editButton);
       }
 
       if (!isNotePinned(noteData)) {
         const pinButton = document.createElement('button');
-        pinButton.textContent = '📌';
+        pinButton.textContent = 'ðŸ“Œ';
         pinButton.title = 'Pin Note';
         pinButton.setAttribute('data-testid', 'pin-note-button');
-        pinButton.style.cssText = `
-          background: rgba(251,191,36,0.16);
-          border: 1px solid rgba(251,191,36,0.38);
-          border-radius: 4px;
-          padding: 4px 8px;
-          cursor: pointer;
-          color: var(--text);
-          font-size: 12px;
-          transition: background 0.2s ease;
-        `;
+        pinButton.className = 'note-action-button note-action-button--pin';
         pinButton.addEventListener('click', async (e) => {
           e.stopPropagation();
           try {
@@ -10491,19 +10855,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             alert(`Failed to pin note: ${error.message}`);
           }
         });
-        pinButton.addEventListener('mouseenter', () => {
-          pinButton.style.background = 'rgba(251,191,36,0.28)';
-        });
-        pinButton.addEventListener('mouseleave', () => {
-          pinButton.style.background = 'rgba(251,191,36,0.16)';
-        });
         headerRight.appendChild(pinButton);
       }
 
       const expandIcon = document.createElement('span');
-      expandIcon.textContent = '▼';
-      expandIcon.style.color = 'var(--muted)';
-      expandIcon.style.transition = 'transform 0.2s ease';
+      expandIcon.textContent = 'â–¼';
+      expandIcon.className = 'note-expand-icon';
 
       // Add delete button only on edit and new customer screens, for all notes
       const isEditScreen = window.location.hash.includes('#/customer-edit');
@@ -10516,19 +10873,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Add revert button for IndexedDB notes (only they have version history)
         if (isDbBackedNoteSource(noteData.source)) {
           const revertButton = document.createElement('button');
-          revertButton.textContent = '↩️';
+          revertButton.textContent = 'â†©ï¸';
           revertButton.title = 'Revert to Previous Version';
-          revertButton.style.cssText = `
-            background: rgba(59, 130, 246, 0.2);
-            border: 1px solid rgba(59, 130, 246, 0.4);
-            border-radius: 4px;
-            padding: 4px 8px;
-            cursor: pointer;
-            color: #3b82f6;
-            font-size: 12px;
-            transition: background 0.2s ease;
-            margin-right: 6px;
-          `;
+          revertButton.className = 'note-action-button note-action-button--revert';
           revertButton.addEventListener('click', async (e) => {
             e.stopPropagation(); // Prevent header click
             if (confirm('Are you sure you want to revert this note to its previous version? This will replace the current content with the last saved version.')) {
@@ -10539,40 +10886,17 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
               }
             }
           });
-          revertButton.addEventListener('mouseenter', () => {
-            revertButton.style.background = 'rgba(59, 130, 246, 0.3)';
-          });
-          revertButton.addEventListener('mouseleave', () => {
-            revertButton.style.background = 'rgba(59, 130, 246, 0.2)';
-          });
-          
           headerRight.appendChild(revertButton);
         }
         
         const deleteButton = document.createElement('button');
-        deleteButton.textContent = '🗑️';
+        deleteButton.textContent = 'ðŸ—‘ï¸';
         deleteButton.title = 'Delete Note';
-        deleteButton.style.cssText = `
-          background: rgba(255,100,100,0.2);
-          border: 1px solid rgba(255,100,100,0.4);
-          border-radius: 4px;
-          padding: 4px 8px;
-          cursor: pointer;
-          color: #ff6b6b;
-          font-size: 12px;
-          transition: background 0.2s ease;
-        `;
+        deleteButton.className = 'note-action-button note-action-button--delete';
         deleteButton.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent header click
           this.deleteNote(noteData);
         });
-        deleteButton.addEventListener('mouseenter', () => {
-          deleteButton.style.background = 'rgba(255,100,100,0.3)';
-        });
-        deleteButton.addEventListener('mouseleave', () => {
-          deleteButton.style.background = 'rgba(255,100,100,0.2)';
-        });
-        
         headerRight.appendChild(deleteButton);
       }
       headerRight.appendChild(expandIcon);
@@ -10581,13 +10905,6 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       const noteContent = document.createElement('div');
       noteContent.className = 'note-content';
-      noteContent.style.cssText = `
-        padding: 16px;
-        display: none;
-        background: rgba(255,255,255,0.02);
-        max-height: 90vh;
-        overflow-y: auto;
-      `;
 
       const contentContainer = this.createNoteContentContainer(noteData, isMigratedNote);
 
@@ -10597,7 +10914,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
       // Toggle functionality
       noteHeader.addEventListener('click', () => {
-        const isExpanded = noteContent.style.display !== 'none';
+        const isExpanded = window.getComputedStyle(noteContent).display !== 'none';
         noteContent.style.display = isExpanded ? 'none' : 'block';
         expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(180deg)';
       });
@@ -10618,31 +10935,15 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const noteElement = document.createElement('div');
       noteElement.className = 'note-entry pinned-note-entry';
       noteElement.setAttribute('data-testid', 'pinned-note-entry');
-      noteElement.style.cssText = `
-        border: 1px solid rgba(251,191,36,0.38);
-        border-radius: 8px;
-        background: rgba(251,191,36,0.08);
-        overflow: hidden;
-        box-shadow: 0 0 0 1px rgba(251,191,36,0.08) inset;
-      `;
       if (isPendingSync) {
-        noteElement.style.borderColor = 'rgba(245, 158, 11, 0.55)';
+        noteElement.classList.add('is-pending-sync');
       }
 
       const noteHeader = document.createElement('div');
       noteHeader.className = 'pinned-note-actions';
-      noteHeader.style.cssText = `
-        padding: 12px 16px;
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-        background: rgba(251,191,36,0.08);
-        border-bottom: 1px solid rgba(251,191,36,0.22);
-      `;
 
       const noteTitle = document.createElement('span');
-      noteTitle.style.cssText = 'color:var(--text); font-weight:600; min-width:0; overflow-wrap:anywhere;';
+      noteTitle.className = 'pinned-note-title';
       let displayDate = noteData.date;
       if (displayDate && /^\d{4}-\d{2}-\d{2}$/.test(displayDate)) {
         try {
@@ -10661,23 +10962,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       noteTitle.textContent = `Note ${noteData.noteNumber || '?'} - ${displayDate || ''}`;
 
       const headerRight = document.createElement('div');
-      headerRight.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
+      headerRight.className = 'pinned-note-header-right';
 
       if (isPendingSync) {
         const pendingBadge = document.createElement('span');
         pendingBadge.textContent = 'Sync pending';
         pendingBadge.title = 'Saved offline. Will sync when connection is restored.';
-        pendingBadge.style.cssText = `
-          font-size: 11px;
-          line-height: 1;
-          padding: 5px 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(245, 158, 11, 0.45);
-          background: rgba(245, 158, 11, 0.2);
-          color: #fcd34d;
-          font-weight: 700;
-          white-space: nowrap;
-        `;
+        pendingBadge.className = 'note-sync-pending-badge';
         headerRight.appendChild(pendingBadge);
       }
 
@@ -10689,16 +10980,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       unpinButton.title = 'Unpin Note';
       unpinButton.textContent = 'Unpin';
       unpinButton.setAttribute('data-testid', 'unpin-note-button');
-      unpinButton.style.cssText = `
-        background: rgba(251,191,36,0.24);
-        border: 1px solid rgba(251,191,36,0.5);
-        border-radius: 4px;
-        padding: 4px 8px;
-        cursor: pointer;
-        color: var(--text);
-        font-size: 12px;
-        transition: background 0.2s ease;
-      `;
+      unpinButton.className = 'pinned-note-unpin-button';
       unpinButton.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
@@ -10710,14 +10992,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       headerRight.appendChild(unpinButton);
 
       const noteContent = document.createElement('div');
-      noteContent.className = 'note-content';
-      noteContent.style.cssText = `
-        padding: 16px;
-        display: block;
-        background: rgba(255,255,255,0.02);
-        max-height: 90vh;
-        overflow-y: auto;
-      `;
+      noteContent.className = 'note-content pinned-note-content';
       noteContent.appendChild(this.createNoteContentContainer(noteData, isMigratedNote));
 
       if (showPinnedActions) {
@@ -10836,7 +11111,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
               customerId: parseInt(customerId, 10),
               noteId: noteData.id
             });
-            console.log('⚠️ Offline: queued note delete for sync when online.');
+            console.log('âš ï¸ Offline: queued note delete for sync when online.');
           }
           await this.refreshNotesList(customerId);
           return;
@@ -10895,12 +11170,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       // Store the note being edited
       this.editingNote = noteData;
-      
-      // Parse the SVG to extract stroke data
-      this.loadNoteFromSVG(noteData.svg);
-      
+
       // Show the fullscreen canvas
       this.show();
+
+      // Parse the SVG to extract stroke data once the canvas is ready
+      this.loadNoteFromSVG(noteData.svg);
       
       // Update the header to show we're editing
       const headerTitle = document.querySelector('#fullscreen-notes-overlay .header h2');
@@ -10911,6 +11186,11 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
     loadNoteFromSVG(svgString) {
       try {
+        if (!this.canvas || !this.ctx) {
+          console.warn('Skipping SVG note load because the canvas is not ready yet.');
+          return;
+        }
+
         // Parse the SVG string
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
@@ -10929,6 +11209,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             // Create a temporary image to load the data
             const tempImg = new Image();
             tempImg.onload = () => {
+              if (!this.canvas || !this.ctx) {
+                return;
+              }
+
               // Draw the image onto the canvas
               this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
               this.ctx.drawImage(tempImg, 0, 0);
@@ -11007,6 +11291,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     }
 
     hide() {
+      window.removeEventListener('resize', this.handleCanvasResize);
       if (this.overlay) {
         document.body.removeChild(this.overlay);
         this.overlay = null;
@@ -11344,19 +11629,12 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
     createFormattingToolbar() {
       const toolbar = document.createElement('div');
       toolbar.setAttribute('data-testid', 'note-format-toolbar');
-      toolbar.style.cssText = `
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
-        flex-shrink: 0;
-      `;
+      toolbar.className = 'note-format-toolbar';
 
       const buttons = [
         { label: 'B', title: 'Bold', action: 'bold', testId: 'note-format-bold', fontWeight: '700' },
         { label: 'I', title: 'Italic', action: 'italic', testId: 'note-format-italic', fontStyle: 'italic' },
-        { label: '•', title: 'Bullet list', action: 'bullet', testId: 'note-format-bullet' },
+        { label: 'â€¢', title: 'Bullet list', action: 'bullet', testId: 'note-format-bullet' },
         { label: '1.', title: 'Numbered list', action: 'numbered', testId: 'note-format-numbered' }
       ];
 
@@ -11366,26 +11644,10 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         button.textContent = config.label;
         button.title = config.title;
         button.setAttribute('data-testid', config.testId);
-        button.style.cssText = `
-          min-width: 36px;
-          height: 34px;
-          border-radius: 6px;
-          border: 1px solid rgba(255,255,255,0.16);
-          background: rgba(255,255,255,0.08);
-          color: var(--text);
-          cursor: pointer;
-          font-size: 15px;
-          font-weight: ${config.fontWeight || '600'};
-          font-style: ${config.fontStyle || 'normal'};
-          line-height: 1;
-        `;
+        button.className = 'note-format-btn';
+        button.style.fontWeight = config.fontWeight || '600';
+        button.style.fontStyle = config.fontStyle || 'normal';
         button.addEventListener('click', () => this.applyTextFormat(config.action));
-        button.addEventListener('mouseenter', () => {
-          button.style.background = 'rgba(255,255,255,0.14)';
-        });
-        button.addEventListener('mouseleave', () => {
-          button.style.background = 'rgba(255,255,255,0.08)';
-        });
         toolbar.appendChild(button);
       });
 
@@ -11539,7 +11801,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
             note: dbInput
           });
         }
-        console.log('⚠️ Offline: queued text note create for sync when online.');
+        console.log('âš ï¸ Offline: queued text note create for sync when online.');
         return localId;
       }
     }
@@ -11599,7 +11861,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
               note: { ...dbInput, id: editingNoteId }
             });
           }
-          console.log('⚠️ Offline: queued text note update for sync when online.');
+          console.log('âš ï¸ Offline: queued text note update for sync when online.');
         }
         return;
       }
@@ -11678,49 +11940,49 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       // Check if canvas exists
       const canvas = fullscreenNotesCanvas;
       if (!canvas) {
-        console.error('❌ FullscreenNotesCanvas not found');
+        console.error('âŒ FullscreenNotesCanvas not found');
         return;
       }
       
-      console.log('✅ FullscreenNotesCanvas found');
+      console.log('âœ… FullscreenNotesCanvas found');
       
       // Check customer ID detection
       const customerId = canvas.getCurrentCustomerId();
       console.log(`Customer ID: ${customerId}`);
       
       if (customerId === 'default') {
-        console.warn('⚠️ Using default customer ID - this may cause save issues');
+        console.warn('âš ï¸ Using default customer ID - this may cause save issues');
       } else {
-        console.log('✅ Valid customer ID detected');
+        console.log('âœ… Valid customer ID detected');
       }
       
       // Check localStorage availability
       try {
         localStorage.setItem('test', 'test');
         localStorage.removeItem('test');
-        console.log('✅ LocalStorage is available');
+        console.log('âœ… LocalStorage is available');
       } catch (e) {
-        console.error('❌ LocalStorage is not available:', e);
+        console.error('âŒ LocalStorage is not available:', e);
       }
       
       // Check if there are strokes to save
       if (canvas.strokes && canvas.strokes.length > 0) {
-        console.log(`✅ Found ${canvas.strokes.length} strokes to save`);
+        console.log(`âœ… Found ${canvas.strokes.length} strokes to save`);
         
         // Test SVG generation
         try {
           const svgData = canvas.canvasToSVG();
           if (svgData && svgData.trim().length > 0) {
-            console.log('✅ SVG generation successful');
+            console.log('âœ… SVG generation successful');
             console.log(`SVG length: ${svgData.length} characters`);
           } else {
-            console.error('❌ SVG generation failed - empty result');
+            console.error('âŒ SVG generation failed - empty result');
           }
         } catch (error) {
-          console.error('❌ SVG generation failed:', error);
+          console.error('âŒ SVG generation failed:', error);
         }
       } else {
-        console.warn('⚠️ No strokes found - nothing to save');
+        console.warn('âš ï¸ No strokes found - nothing to save');
       }
       
       // Check for existing notes
@@ -11736,15 +11998,15 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       const canvas = fullscreenNotesCanvas;
       if (!canvas || !canvas.strokes || canvas.strokes.length === 0) {
-        console.error('❌ No canvas or strokes available for simulation');
+        console.error('âŒ No canvas or strokes available for simulation');
         return;
       }
       
       try {
         await canvas.saveNote();
-        console.log('✅ Save simulation completed successfully');
+        console.log('âœ… Save simulation completed successfully');
       } catch (error) {
-        console.error('❌ Save simulation failed:', error);
+        console.error('âŒ Save simulation failed:', error);
       }
     },
     
@@ -11753,7 +12015,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       console.log(`Found ${dialogs.length} save dialogs on page`);
       
       if (dialogs.length > 1) {
-        console.warn('⚠️ Multiple save dialogs detected - this could cause issues');
+        console.warn('âš ï¸ Multiple save dialogs detected - this could cause issues');
       }
       
       return dialogs.length;
@@ -11804,7 +12066,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       console.log('=== Storage Information ===');
       console.log(`Total Usage: ${storageInfo.totalSizeMB}MB (${storageInfo.usagePercentage}%)`);
       console.log(`Items: ${storageInfo.itemCount}`);
-      console.log(`Near Limit: ${storageInfo.isNearLimit ? 'YES ⚠️' : 'NO ✅'}`);
+      console.log(`Near Limit: ${storageInfo.isNearLimit ? 'YES âš ï¸' : 'NO âœ…'}`);
       
       if (storageInfo.largestItems && storageInfo.largestItems.length > 0) {
         console.log('\nLargest items:');
@@ -11843,7 +12105,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const customerId = canvas.getCurrentCustomerId();
       
       if (!customerId || customerId === 'default') {
-        console.error('❌ Cannot test - no valid customer ID');
+        console.error('âŒ Cannot test - no valid customer ID');
         return;
       }
       
@@ -11857,16 +12119,16 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       
       try {
         const result = await canvas.saveNoteHybrid(testNote, customerId);
-        console.log(`✅ Hybrid save test successful using ${result.method}`);
+        console.log(`âœ… Hybrid save test successful using ${result.method}`);
         
         // Test loading
         const loadedNotes = await canvas.loadNotesHybrid(customerId);
-        console.log(`✅ Loaded ${loadedNotes.length} notes from hybrid storage`);
+        console.log(`âœ… Loaded ${loadedNotes.length} notes from hybrid storage`);
         
         return { saveResult: result, loadedCount: loadedNotes.length };
         
       } catch (error) {
-        console.error('❌ Hybrid save test failed:', error);
+        console.error('âŒ Hybrid save test failed:', error);
         return { error: error.message };
       }
     },
@@ -11877,7 +12139,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const customerId = canvas.getCurrentCustomerId();
       
       if (!customerId || customerId === 'default') {
-        console.error('❌ Cannot show storage methods - no valid customer ID');
+        console.error('âŒ Cannot show storage methods - no valid customer ID');
         return;
       }
       
@@ -11910,13 +12172,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const canvas = fullscreenNotesCanvas;
       const dbStatus = await canvas.checkIndexedDBReady();
       
-      console.log(`Database Ready: ${dbStatus.ready ? '✅ YES' : '❌ NO'}`);
+      console.log(`Database Ready: ${dbStatus.ready ? 'âœ… YES' : 'âŒ NO'}`);
       if (!dbStatus.ready) {
         console.log(`Error: ${dbStatus.error}`);
       }
       
       // Also check if CrmDB is available
-      console.log(`CrmDB Available: ${window.CrmDB ? '✅ YES' : '❌ NO'}`);
+      console.log(`CrmDB Available: ${window.CrmDB ? 'âœ… YES' : 'âŒ NO'}`);
       
       if (window.CrmDB) {
         // List available functions
@@ -11935,7 +12197,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const customerId = canvas.getCurrentCustomerId();
       
       if (!customerId || customerId === 'default') {
-        console.error('❌ Cannot test - no valid customer ID');
+        console.error('âŒ Cannot test - no valid customer ID');
         return;
       }
       
@@ -11945,7 +12207,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         console.log(`Found ${allNotes.length} notes`);
         
         if (allNotes.length === 0) {
-          console.log('ℹ️ No notes to test editing with');
+          console.log('â„¹ï¸ No notes to test editing with');
           return;
         }
         
@@ -11955,19 +12217,19 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         
         // Simulate editing
         canvas.editingNote = testNote;
-        console.log('✅ Set editing note successfully');
+        console.log('âœ… Set editing note successfully');
         
         // Show which storage method would be used
         if (testNote.source === 'indexeddb-fallback' || testNote.source === 'indexeddb') {
-          console.log('✅ Would use IndexedDB for editing');
+          console.log('âœ… Would use IndexedDB for editing');
         } else {
-          console.log('✅ Would use localStorage for editing');
+          console.log('âœ… Would use localStorage for editing');
         }
         
         return { noteId: testNote.id, source: testNote.source, editingSet: true };
         
       } catch (error) {
-        console.error('❌ Edit test failed:', error);
+        console.error('âŒ Edit test failed:', error);
         return { error: error.message };
       }
     },
@@ -11980,7 +12242,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       const customerId = canvas.getCurrentCustomerId();
       
       if (!customerId || customerId === 'default') {
-        console.error('❌ Cannot debug - no valid customer ID');
+        console.error('âŒ Cannot debug - no valid customer ID');
         return;
       }
       
@@ -11989,7 +12251,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const existingNotes = JSON.parse(localStorage.getItem('customerNotes') || '{}');
         const localStorageNotes = existingNotes[customerId] || [];
         
-        console.log(`📦 LocalStorage notes (${localStorageNotes.length}):`);
+        console.log(`ðŸ“¦ LocalStorage notes (${localStorageNotes.length}):`);
         localStorageNotes.forEach((note, index) => {
           console.log(`  ${index + 1}. ID: ${note.id}, Note #: ${note.noteNumber}, Source: ${note.source || 'localStorage'}`);
         });
@@ -11997,7 +12259,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Check IndexedDB notes
         const indexedDBNotes = await CrmDB.getNotesByCustomerId(customerId);
         
-        console.log(`🗄️ IndexedDB notes (${indexedDBNotes.length}):`);
+        console.log(`ðŸ—„ï¸ IndexedDB notes (${indexedDBNotes.length}):`);
         indexedDBNotes.forEach((note, index) => {
           console.log(`  ${index + 1}. ID: ${note.id}, Note #: ${note.noteNumber}, Source: ${note.source || 'indexeddb'}`);
         });
@@ -12005,7 +12267,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         // Check hybrid loading
         const allNotes = await canvas.loadNotesHybrid(customerId);
         
-        console.log(`🔄 Hybrid loaded notes (${allNotes.length}):`);
+        console.log(`ðŸ”„ Hybrid loaded notes (${allNotes.length}):`);
         allNotes.forEach((note, index) => {
           console.log(`  ${index + 1}. ID: ${note.id}, Note #: ${note.noteNumber}, Source: ${note.source}`);
         });
@@ -12015,9 +12277,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         const duplicateNumbers = noteNumbers.filter((num, index) => noteNumbers.indexOf(num) !== index);
         
         if (duplicateNumbers.length > 0) {
-          console.warn(`⚠️ Duplicate note numbers found: ${duplicateNumbers.join(', ')}`);
+          console.warn(`âš ï¸ Duplicate note numbers found: ${duplicateNumbers.join(', ')}`);
         } else {
-          console.log('✅ No duplicate note numbers found');
+          console.log('âœ… No duplicate note numbers found');
         }
         
         return {
@@ -12028,7 +12290,7 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
         };
         
       } catch (error) {
-        console.error('❌ Debug failed:', error);
+        console.error('âŒ Debug failed:', error);
         return { error: error.message };
       }
     },
@@ -12038,13 +12300,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
       console.log('=== Verify SVG Edit Updates In Place ===');
       const customerId = getCurrentCustomerId();
       if (!customerId || customerId === 'default' || customerId === 'temp-new-customer') {
-        console.error('❌ Open a real customer page first (with ?id=...)');
+        console.error('âŒ Open a real customer page first (with ?id=...)');
         return { ok: false, error: 'invalid-customer-context' };
       }
 
       const cid = parseInt(customerId, 10);
       if (Number.isNaN(cid)) {
-        console.error('❌ Invalid customer ID:', customerId);
+        console.error('âŒ Invalid customer ID:', customerId);
         return { ok: false, error: 'invalid-customer-id' };
       }
 
@@ -12081,9 +12343,9 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
         const ok = sameCount && sameIdExists && svgUpdated;
         if (ok) {
-          console.log('✅ PASS: SVG edit updated existing row in place.');
+          console.log('âœ… PASS: SVG edit updated existing row in place.');
         } else {
-          console.error('❌ FAIL:', { sameCount, sameIdExists, svgUpdated, beforeCount, afterCount, createdId });
+          console.error('âŒ FAIL:', { sameCount, sameIdExists, svgUpdated, beforeCount, afterCount, createdId });
         }
 
         return {
@@ -12096,13 +12358,13 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
           svgUpdated
         };
       } catch (error) {
-        console.error('❌ verifySvgEditUpdatesInPlace failed:', error);
+        console.error('âŒ verifySvgEditUpdatesInPlace failed:', error);
         return { ok: false, error: error.message || String(error), createdId };
       } finally {
         if (createdId != null) {
           try {
             await CrmDB.deleteNote(createdId);
-            console.log('🧹 Cleaned up test note:', createdId);
+            console.log('ðŸ§¹ Cleaned up test note:', createdId);
           } catch (cleanupError) {
             console.warn('Cleanup failed for test note', createdId, cleanupError);
           }
@@ -12407,4 +12669,3 @@ Touch Support: ${navigator.maxTouchPoints || 0} points`;
 
 
 })();
-

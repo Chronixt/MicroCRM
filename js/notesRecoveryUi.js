@@ -25,13 +25,44 @@
 
     let scanResultData = null;
 
+    const setStatusMessage = (el, message, tone = '') => {
+      if (!el) return;
+      el.textContent = message;
+      el.classList.remove(
+        'options-recovery-status-message--success',
+        'options-recovery-status-message--danger',
+        'options-recovery-status-message--warning',
+        'options-recovery-status-message--info'
+      );
+      if (tone) {
+        el.classList.add('options-recovery-status-message', `options-recovery-status-message--${tone}`);
+      } else {
+        el.classList.remove('options-recovery-status-message');
+      }
+    };
+
+    const setStatusHtml = (el, html, tone = '') => {
+      if (!el) return;
+      el.innerHTML = html;
+      el.classList.remove(
+        'options-recovery-status-message--success',
+        'options-recovery-status-message--danger',
+        'options-recovery-status-message--warning',
+        'options-recovery-status-message--info'
+      );
+      if (tone) {
+        el.classList.add('options-recovery-status-message', `options-recovery-status-message--${tone}`);
+      } else {
+        el.classList.remove('options-recovery-status-message');
+      }
+    };
+
     // Scan for corrupted notes
     scanNotesBtn.addEventListener('click', async () => {
       try {
         scanNotesBtn.disabled = true;
         scanNotesBtn.textContent = 'Scanning...';
-        recoveryStatus.textContent = '🔍 Scanning notes... This may take a moment.';
-        recoveryStatus.style.color = '';
+        setStatusMessage(recoveryStatus, '🔍 Scanning notes... This may take a moment.');
 
         const results = await window.CrmDB.scanForCorruptedNotes();
         scanResultData = results;
@@ -445,23 +476,23 @@
           .slice(0, 10);
 
         // Helper to render notes list
-        const renderNotesList = (notes, title, color, icon = '', showRecoverable = false) => {
+        const renderNotesList = (notes, title, tone = 'info', showRecoverable = false) => {
           if (notes.length === 0) return '';
           return `
-            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
-              <strong style="font-size: 13px; color: ${color};">${icon} ${title}:</strong>
-              <div style="margin-top: 8px; max-height: 300px; overflow-y: auto; font-size: 12px;">
+            <div class="options-recovery-block options-recovery-block--${tone}">
+              <strong class="options-recovery-block-title">${title}:</strong>
+              <div class="options-recovery-list options-recovery-list--compact">
                 ${notes.map((note, index) => `
-                  <div style="padding: 8px; margin-bottom: 6px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 3px solid ${color};">
-                    <div style="font-weight: 600; color: ${color};">
+                  <div class="options-recovery-item">
+                    <div class="options-recovery-item-title">
                       ${index + 1}. ${escapeHtml(note.customerName)}
-                      ${showRecoverable && note.canRecover ? '<span style="color: #10b981; font-size: 11px; margin-left: 6px;">✓ Recoverable</span>' : ''}
-                      ${showRecoverable && !note.canRecover ? '<span style="color: #ef4444; font-size: 11px; margin-left: 6px;">⚠ No backup</span>' : ''}
+                      ${showRecoverable && note.canRecover ? '<span class="options-recovery-badge options-recovery-badge--success">Recoverable</span>' : ''}
+                      ${showRecoverable && !note.canRecover ? '<span class="options-recovery-badge options-recovery-badge--danger">No backup</span>' : ''}
                     </div>
-                    <div style="color: rgba(255,255,255,0.7); font-size: 11px; margin-top: 4px;">
+                    <div class="options-recovery-item-meta">
                       Last edited: ${note.editedDate && /^\d{4}-\d{2}-\d{2}$/.test(note.editedDate) ? note.editedDate : (note.editedDate ? formatDate(note.editedDate) : 'Unknown')}
                     </div>
-                    <div style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 2px;">
+                    <div class="options-recovery-item-meta options-recovery-item-meta--small">
                       Note ID: ${note.noteId}
                       ${note.source ? ` | Source: ${note.source}` : ''}
                     </div>
@@ -473,53 +504,51 @@
         };
 
         // Helper to render conflicting notes with both versions
-        const renderConflictingNotes = (notes, title, color, icon = '') => {
+        const renderConflictingNotes = (notes, title, tone = 'warning') => {
           if (notes.length === 0) return '';
           return `
-            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
-              <strong style="font-size: 13px; color: ${color};">${icon} ${title}:</strong>
-              <div style="margin-top: 8px; max-height: 400px; overflow-y: auto; font-size: 12px;">
+            <div class="options-recovery-block options-recovery-block--${tone}">
+              <strong class="options-recovery-block-title">${title}:</strong>
+              <div class="options-recovery-list options-recovery-list--conflicts">
                 ${notes.map((note, index) => {
-                  // Compare normalized dates properly
                   const indexedDBTime = note.indexedDBDate && /^\d{4}-\d{2}-\d{2}$/.test(note.indexedDBDate) ? new Date(note.indexedDBDate + 'T00:00:00').getTime() : 0;
                   const localStorageTime = note.localStorageDate && /^\d{4}-\d{2}-\d{2}$/.test(note.localStorageDate) ? new Date(note.localStorageDate + 'T00:00:00').getTime() : 0;
                   const indexedDBNewer = indexedDBTime > localStorageTime;
-                  
-                  // Format dates for display (show yyyy-mm-dd if normalized, otherwise format)
+
                   const indexedDBDateDisplay = note.indexedDBDate && /^\d{4}-\d{2}-\d{2}$/.test(note.indexedDBDate) ? note.indexedDBDate : (note.indexedDBDate ? formatDate(note.indexedDBDate) : 'Unknown');
                   const localStorageDateDisplay = note.localStorageDate && /^\d{4}-\d{2}-\d{2}$/.test(note.localStorageDate) ? note.localStorageDate : (note.localStorageDate ? formatDate(note.localStorageDate) : 'Unknown');
-                  
+
                   return `
-                    <div style="padding: 8px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 3px solid ${color};">
-                      <div style="font-weight: 600; color: ${color}; margin-bottom: 8px;">
+                    <div class="options-recovery-item options-recovery-item--spacious">
+                      <div class="options-recovery-item-title options-recovery-item-title--spacious">
                         ${index + 1}. ${escapeHtml(note.customerName)}
                       </div>
-                      
-                      <div style="margin-bottom: 8px; padding: 8px; background: rgba(59, 130, 246, 0.1); border-radius: 4px; border-left: 3px solid #3b82f6;">
-                        <div style="font-weight: 600; color: #3b82f6; font-size: 11px; margin-bottom: 4px;">
-                          💾 IndexedDB Version ${indexedDBNewer ? '<span style="color: #10b981; font-size: 10px;">(Newer)</span>' : ''}
+
+                      <div class="options-recovery-version-card options-recovery-version-card--indexeddb">
+                        <div class="options-recovery-version-title options-recovery-version-title--indexeddb">
+                          IndexedDB Version ${indexedDBNewer ? '<span class="options-recovery-badge options-recovery-badge--success">(Newer)</span>' : ''}
                         </div>
-                        <div style="color: rgba(255,255,255,0.7); font-size: 10px;">
+                        <div class="options-recovery-version-meta">
                           Last edited: ${indexedDBDateDisplay}
                         </div>
-                        <div style="color: rgba(255,255,255,0.6); font-size: 10px; margin-top: 2px;">
+                        <div class="options-recovery-version-meta options-recovery-version-meta--subtle">
                           SVG size: ${note.indexedDBSvgSize.toLocaleString()} characters
                         </div>
                       </div>
-                      
-                      <div style="padding: 8px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; border-left: 3px solid #8b5cf6;">
-                        <div style="font-weight: 600; color: #8b5cf6; font-size: 11px; margin-bottom: 4px;">
-                          📱 localStorage Version ${!indexedDBNewer ? '<span style="color: #10b981; font-size: 10px;">(Newer)</span>' : ''}
+
+                      <div class="options-recovery-version-card options-recovery-version-card--localstorage">
+                        <div class="options-recovery-version-title options-recovery-version-title--localstorage">
+                          localStorage Version ${!indexedDBNewer ? '<span class="options-recovery-badge options-recovery-badge--success">(Newer)</span>' : ''}
                         </div>
-                        <div style="color: rgba(255,255,255,0.7); font-size: 10px;">
+                        <div class="options-recovery-version-meta">
                           Last edited: ${localStorageDateDisplay}
                         </div>
-                        <div style="color: rgba(255,255,255,0.6); font-size: 10px; margin-top: 2px;">
+                        <div class="options-recovery-version-meta options-recovery-version-meta--subtle">
                           SVG size: ${note.localStorageSvgSize.toLocaleString()} characters
                         </div>
                       </div>
-                      
-                      <div style="color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 6px;">
+
+                      <div class="options-recovery-item-meta options-recovery-item-meta--footnote">
                         Note ID: ${note.noteId} | Customer ID: ${note.customerId}
                       </div>
                     </div>
@@ -532,21 +561,21 @@
 
         // Build summary HTML
         const summaryHTML = `
-          <div style="margin-bottom: 8px;">
+          <div class="options-recovery-summary">
             <strong>Scan Results:</strong>
           </div>
-          <div style="font-size: 13px; line-height: 1.6;">
-            <div style="color: #10b981;">✓ Healthy notes: ${results.healthy.length}</div>
-            <div style="color: ${results.corrupted.length > 0 ? '#ef4444' : '#10b981'};">${results.corrupted.length > 0 ? '⚠' : '✓'} Corrupted notes: ${results.corrupted.length}</div>
-            <div style="color: #6366f1;">📱 Only in localStorage: ${results.localStorageOnly.length}</div>
-            <div style="color: #6366f1;">💾 Only in IndexedDB: ${results.indexeddbOnly.length}</div>
-            ${results.conflicts.length > 0 ? `<div style="color: #f59e0b;">⚠ Conflicting versions: ${results.conflicts.length}</div>` : ''}
+          <div class="options-recovery-summary-body">
+            <div class="options-recovery-summary-row--success">Healthy notes: ${results.healthy.length}</div>
+            <div class="${results.corrupted.length > 0 ? 'options-recovery-summary-row--danger' : 'options-recovery-summary-row--success'}">Corrupted notes: ${results.corrupted.length}</div>
+            <div class="options-recovery-summary-row--info">Only in localStorage: ${results.localStorageOnly.length}</div>
+            <div class="options-recovery-summary-row--info">Only in IndexedDB: ${results.indexeddbOnly.length}</div>
+            ${results.conflicts.length > 0 ? `<div class="options-recovery-summary-row--warning">Conflicting versions: ${results.conflicts.length}</div>` : ''}
           </div>
-          ${renderNotesList(healthyNotes, 'Last 10 Healthy Notes', '#10b981', '✓')}
-          ${renderNotesList(corruptedNotes, 'Last 10 Corrupted Notes', '#ef4444', '⚠', true)}
-          ${renderConflictingNotes(conflictingNotes, 'Last 10 Conflicting Notes (Different SVG in IndexedDB vs localStorage)', '#f59e0b', '⚠')}
-          ${renderNotesList(localStorageNotes, 'Last 10 localStorage-Only Notes', '#6366f1', '📱')}
-          ${renderNotesList(indexedDBNotes, 'Last 10 IndexedDB-Only Notes', '#6366f1', '💾')}
+          ${renderNotesList(healthyNotes, 'Last 10 Healthy Notes', 'success')}
+          ${renderNotesList(corruptedNotes, 'Last 10 Corrupted Notes', 'danger', true)}
+          ${renderConflictingNotes(conflictingNotes, 'Last 10 Conflicting Notes (Different SVG in IndexedDB vs localStorage)', 'warning')}
+          ${renderNotesList(localStorageNotes, 'Last 10 localStorage-Only Notes', 'info')}
+          ${renderNotesList(indexedDBNotes, 'Last 10 IndexedDB-Only Notes', 'info')}
         `;
         scanSummary.innerHTML = summaryHTML;
 
@@ -555,39 +584,36 @@
         if (canRecover) {
           const recoverableCount = results.corrupted.filter(c => c.healthyVersion).length;
           recoveryActions.classList.remove('hidden');
-          recoveryStatus.innerHTML = `<span style="color: #10b981;">✅ Found ${recoverableCount} note(s) that can be recovered!</span>`;
+          setStatusMessage(recoveryStatus, `Found ${recoverableCount} note(s) that can be recovered.`, 'success');
         } else if (results.corrupted.length > 0) {
           recoveryActions.classList.add('hidden');
-          recoveryStatus.innerHTML = `<span style="color: #ef4444;">⚠ Found ${results.corrupted.length} corrupted note(s), but no healthy version found to recover from.</span><br><span style="font-size: 11px;">Try restoring from a backup file.</span>`;
+          setStatusHtml(recoveryStatus, `Found ${results.corrupted.length} corrupted note(s), but no healthy version was found to recover from.<br><span class="options-recovery-status-note">Try restoring from a backup file.</span>`, 'danger');
         } else {
           recoveryActions.classList.add('hidden');
-          recoveryStatus.innerHTML = `<span style="color: #10b981;">✅ All notes appear healthy!</span>`;
+          setStatusMessage(recoveryStatus, 'All notes appear healthy.', 'success');
         }
 
         scanResults.classList.remove('hidden');
         scanNotesBtn.disabled = false;
-        scanNotesBtn.textContent = '🔍 Scan for Corrupted Notes';
+        scanNotesBtn.textContent = 'Scan for Corrupted Notes';
       } catch (error) {
         console.error('Scan error:', error);
-        recoveryStatus.textContent = `❌ Scan failed: ${error.message}`;
-        recoveryStatus.style.color = '#ef4444';
+        setStatusMessage(recoveryStatus, `Scan failed: ${error.message}`, 'danger');
         scanNotesBtn.disabled = false;
-        scanNotesBtn.textContent = '🔍 Scan for Corrupted Notes';
+        scanNotesBtn.textContent = 'Scan for Corrupted Notes';
       }
     });
 
     // Recover corrupted notes
-    recoverNotesBtn.addEventListener('click', async () => {
-      if (!scanResultData) {
-        recoveryStatus.textContent = 'Please scan for corrupted notes first.';
-        recoveryStatus.style.color = '#ef4444';
+      recoverNotesBtn.addEventListener('click', async () => {
+        if (!scanResultData) {
+        setStatusMessage(recoveryStatus, 'Please scan for corrupted notes first.', 'danger');
         return;
       }
 
       const recoverable = scanResultData.corrupted.filter(c => c.healthyVersion);
       if (recoverable.length === 0) {
-        recoveryStatus.textContent = 'No recoverable notes found.';
-        recoveryStatus.style.color = '#ef4444';
+        setStatusMessage(recoveryStatus, 'No recoverable notes found.', 'danger');
         return;
       }
 
@@ -595,36 +621,33 @@
         return;
       }
 
-      try {
-        recoverNotesBtn.disabled = true;
-        recoverNotesBtn.textContent = 'Recovering...';
-        recoveryStatus.textContent = `🔄 Recovering ${recoverable.length} note(s)...`;
-        recoveryStatus.style.color = '';
+        try {
+          recoverNotesBtn.disabled = true;
+          recoverNotesBtn.textContent = 'Recovering...';
+        setStatusMessage(recoveryStatus, `Recovering ${recoverable.length} note(s)...`);
 
         const result = await window.CrmDB.recoverCorruptedNotes(false); // dryRun = false
 
         if (result.recovered > 0) {
-          recoveryStatus.innerHTML = `
-            <span style="color: #10b981;">✅ Successfully recovered ${result.recovered} note(s)!</span><br>
-            ${result.failed > 0 ? `<span style="color: #ef4444;">⚠ ${result.failed} note(s) failed to recover.</span>` : ''}
-            <br><span style="font-size: 11px;">Please refresh the customer page to see the recovered notes.</span>
-          `;
+          setStatusHtml(
+            recoveryStatus,
+            `Successfully recovered ${result.recovered} note(s).<br>${result.failed > 0 ? `<span class="options-recovery-status-message options-recovery-status-message--danger">${result.failed} note(s) failed to recover.</span><br>` : ''}<span class="options-recovery-status-note">Please refresh the customer page to see the recovered notes.</span>`,
+            'success'
+          );
           
           // Refresh scan results
           scanNotesBtn.click();
         } else {
-          recoveryStatus.textContent = 'Recovery completed, but no notes were recovered.';
-          recoveryStatus.style.color = '#f59e0b';
+          setStatusMessage(recoveryStatus, 'Recovery completed, but no notes were recovered.', 'warning');
         }
 
         recoverNotesBtn.disabled = false;
-        recoverNotesBtn.textContent = '✅ Recover Notes';
+        recoverNotesBtn.textContent = 'Recover Notes';
       } catch (error) {
         console.error('Recovery error:', error);
-        recoveryStatus.textContent = `❌ Recovery failed: ${error.message}`;
-        recoveryStatus.style.color = '#ef4444';
+        setStatusMessage(recoveryStatus, `Recovery failed: ${error.message}`, 'danger');
         recoverNotesBtn.disabled = false;
-        recoverNotesBtn.textContent = '✅ Recover Notes';
+        recoverNotesBtn.textContent = 'Recover Notes';
       }
     });
 
@@ -632,54 +655,50 @@
     restoreNotesBtn.addEventListener('click', async () => {
       const file = restoreNotesFile.files && restoreNotesFile.files[0];
       if (!file) {
-        restoreNotesStatus.textContent = 'Please select a backup file first.';
-        restoreNotesStatus.style.color = '#ef4444';
+        setStatusMessage(restoreNotesStatus, 'Please select a backup file first.', 'danger');
         return;
       }
 
       try {
         restoreNotesBtn.disabled = true;
         restoreNotesBtn.textContent = 'Loading...';
-        restoreNotesStatus.textContent = '📂 Loading backup file...';
-        restoreNotesStatus.style.color = '';
+        setStatusMessage(restoreNotesStatus, 'Loading backup file...');
 
         const text = await file.text();
         const backupData = JSON.parse(text);
 
         if (!backupData.customerNotes && (!backupData.notes || backupData.notes.length === 0)) {
-          restoreNotesStatus.textContent = '⚠ Backup file does not contain any notes.';
-          restoreNotesStatus.style.color = '#f59e0b';
+          setStatusMessage(restoreNotesStatus, 'Backup file does not contain any notes.', 'warning');
           restoreNotesBtn.disabled = false;
           restoreNotesBtn.textContent = 'Load Backup';
           return;
         }
 
-        restoreNotesStatus.textContent = '🔄 Restoring notes from backup...';
+        setStatusMessage(restoreNotesStatus, 'Restoring notes from backup...');
         
         const result = await window.CrmDB.restoreNotesFromBackup(backupData, {
           mode: 'merge' // Smart mode - only replaces corrupted notes
         });
 
         if (result.restored > 0) {
-          restoreNotesStatus.innerHTML = `
-            <span style="color: #10b981;">✅ Successfully restored ${result.restored} note(s) from backup!</span><br>
-            ${result.skipped > 0 ? `<span style="color: #6366f1;">⏭️ Skipped ${result.skipped} note(s) (already healthy or no backup version).</span>` : ''}
-            ${result.failed > 0 ? `<span style="color: #ef4444;">⚠ ${result.failed} note(s) failed to restore.</span>` : ''}
-            <br><span style="font-size: 11px;">Please refresh the customer page to see the restored notes.</span>
-          `;
+          setStatusHtml(
+            restoreNotesStatus,
+            `Successfully restored ${result.restored} note(s) from backup.<br>${result.skipped > 0 ? `<span class="options-recovery-status-message options-recovery-status-message--info">Skipped ${result.skipped} note(s) (already healthy or no backup version).</span><br>` : ''}${result.failed > 0 ? `<span class="options-recovery-status-message options-recovery-status-message--danger">${result.failed} note(s) failed to restore.</span><br>` : ''}<span class="options-recovery-status-note">Please refresh the customer page to see the restored notes.</span>`,
+            'success'
+          );
         } else {
-          restoreNotesStatus.innerHTML = `
-            <span style="color: #6366f1;">ℹ️ No notes were restored. Current notes appear healthier than backup versions.</span><br>
-            ${result.skipped > 0 ? `<span style="font-size: 11px;">Skipped ${result.skipped} note(s).</span>` : ''}
-          `;
+          setStatusHtml(
+            restoreNotesStatus,
+            `No notes were restored. Current notes appear healthier than backup versions.<br>${result.skipped > 0 ? `<span class="options-recovery-status-note">Skipped ${result.skipped} note(s).</span>` : ''}`,
+            'info'
+          );
         }
 
         restoreNotesBtn.disabled = false;
         restoreNotesBtn.textContent = 'Load Backup';
       } catch (error) {
         console.error('Restore error:', error);
-        restoreNotesStatus.textContent = `❌ Restore failed: ${error.message}`;
-        restoreNotesStatus.style.color = '#ef4444';
+        setStatusMessage(restoreNotesStatus, `Restore failed: ${error.message}`, 'danger');
         restoreNotesBtn.disabled = false;
         restoreNotesBtn.textContent = 'Load Backup';
       }

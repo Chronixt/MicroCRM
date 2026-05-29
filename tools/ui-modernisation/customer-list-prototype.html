@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRMicro Beautician - Customer List Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="customer-list-prototype.css" />
+    <link rel="stylesheet" href="account-menu.css" />
+  </head>
+  <body>
+    <div class="customers-shell" data-sidebar="open">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <button class="icon-button sidebar-toggle" type="button" aria-label="Collapse sidebar" data-action="toggle-sidebar">
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+        </button>
+
+        <nav class="nav-stack">
+          <button class="nav-tile" type="button" data-action="home">
+            <span class="material-symbols-outlined" aria-hidden="true">home</span>
+            <span>Menu</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="new-client">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+            <span>New</span>
+          </button>
+          <button class="nav-tile active" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+            <span>Clients</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="calendar">
+            <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+            <span>Calendar</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="options">
+            <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            <span>Options</span>
+          </button>
+        </nav>
+
+        <button class="backup-button" type="button" data-action="backup">
+          <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+          <span>1-Tap<br />Backup</span>
+        </button>
+      </aside>
+
+      <main class="customers-main">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <img src="../../assets/CRMicro_logo_beautician_light.png" alt="CRMicro" />
+            <span>Beautician</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="prototype-link" href="home-prototype.html">Home Prototype</a>
+            <a class="prototype-link" href="new-customer-prototype.html">New Customer Prototype</a>
+            <a class="prototype-link" href="customer-profile-prototype.html">Profile Prototype</a>
+            <a class="prototype-link" href="calendar-prototype.html">Calendar Prototype</a>
+            <a class="prototype-link" href="options-prototype.html">Options Prototype</a>
+            <button class="language-pill" type="button" data-action="language">日本語 <i></i></button>
+            <button class="user-chip" type="button" data-action="account-menu">
+              <div>
+                <strong>Amber Liu</strong>
+                <span>Standard Plan</span>
+              </div>
+              <div class="avatar">AL</div>
+            </button>
+          </div>
+        </header>
+
+        <section class="customers-scroll">
+          <header class="page-header">
+            <div>
+              <span class="eyebrow">Records</span>
+              <h1>Customers</h1>
+            </div>
+            <button class="button primary" type="button" data-action="new-client">
+              <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+              New Customer
+            </button>
+          </header>
+
+          <div class="customers-grid">
+            <section class="customer-list-panel">
+              <div class="list-toolbar">
+                <form class="customer-search" role="search">
+                  <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                  <input id="customer-search" type="search" placeholder="Search customers, notes, or services..." autocomplete="off" />
+                </form>
+                <div class="segmented-control" role="tablist" aria-label="Customer sorting" data-active-sort="recent">
+                  <button class="active" type="button" role="tab" aria-selected="true" data-sort="recent">
+                    <span class="material-symbols-outlined" aria-hidden="true">history</span>
+                    Recent
+                  </button>
+                  <button type="button" role="tab" aria-selected="false" data-sort="az">
+                    <span class="material-symbols-outlined" aria-hidden="true">sort_by_alpha</span>
+                    A-Z
+                  </button>
+                </div>
+              </div>
+
+              <div class="list-meta">
+                <span id="list-mode-label">10 Most Recent</span>
+                <strong id="result-count">10 records</strong>
+              </div>
+
+              <div class="customer-list-body">
+                <div class="customer-list" id="customer-list" aria-label="Customer records"></div>
+                <nav class="alphabet-rail hidden" id="alphabet-rail" aria-label="A-Z customer navigation"></nav>
+              </div>
+            </section>
+
+            <aside class="quick-view-panel">
+              <div class="panel-title with-bar">Selected Customer</div>
+              <div id="customer-quick-view"></div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="account-menu.js"></script>
+    <script src="customer-list-prototype.js"></script>
+  </body>
+</html>

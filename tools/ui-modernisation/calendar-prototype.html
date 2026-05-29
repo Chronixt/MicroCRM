@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRMicro Beautician - Calendar Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="calendar-prototype.css" />
+    <link rel="stylesheet" href="account-menu.css" />
+  </head>
+  <body>
+    <div class="calendar-shell" data-sidebar="open">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <button class="icon-button sidebar-toggle" type="button" aria-label="Collapse sidebar" data-action="toggle-sidebar">
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+        </button>
+
+        <nav class="nav-stack">
+          <button class="nav-tile" type="button" data-action="home">
+            <span class="material-symbols-outlined" aria-hidden="true">home</span>
+            <span>Menu</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="new-client">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+            <span>New</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="clients">
+            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+            <span>Clients</span>
+          </button>
+          <button class="nav-tile active" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+            <span>Calendar</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="options">
+            <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            <span>Options</span>
+          </button>
+        </nav>
+
+        <button class="backup-button" type="button" data-action="backup">
+          <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+          <span>1-Tap<br />Backup</span>
+        </button>
+      </aside>
+
+      <main class="calendar-main">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <img src="../../assets/CRMicro_logo_beautician_light.png" alt="CRMicro" />
+            <span>Beautician</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="prototype-link" href="home-prototype.html">Home Prototype</a>
+            <a class="prototype-link" href="new-customer-prototype.html">New Customer Prototype</a>
+            <a class="prototype-link" href="customer-list-prototype.html">Customers Prototype</a>
+            <a class="prototype-link" href="customer-profile-prototype.html">Profile Prototype</a>
+            <a class="prototype-link" href="options-prototype.html">Options Prototype</a>
+            <button class="language-pill" type="button" data-action="language">日本語 <i></i></button>
+            <button class="user-chip" type="button" data-action="account-menu">
+              <div>
+                <strong>Amber Liu</strong>
+                <span>Standard Plan</span>
+              </div>
+              <div class="avatar">AL</div>
+            </button>
+          </div>
+        </header>
+
+        <section class="calendar-scroll">
+          <header class="page-header">
+            <div>
+              <span class="eyebrow">Bookings</span>
+              <h1>Calendar</h1>
+            </div>
+            <div class="page-actions">
+              <div class="segmented-control" role="tablist" aria-label="Calendar view" data-active-view="list">
+                <button class="active" type="button" role="tab" aria-selected="true" data-view="list">
+                  <span class="material-symbols-outlined" aria-hidden="true">view_agenda</span>
+                  <span class="view-label">List</span>
+                </button>
+                <button type="button" role="tab" aria-selected="false" data-view="month">
+                  <span class="material-symbols-outlined" aria-hidden="true">calendar_view_month</span>
+                  <span class="view-label">Month</span>
+                </button>
+              </div>
+              <button class="button primary" type="button" data-action="new-appointment">
+                <span class="material-symbols-outlined" aria-hidden="true">add</span>
+                New Appointment
+              </button>
+            </div>
+          </header>
+
+          <div class="calendar-grid">
+            <section class="calendar-board">
+              <div class="calendar-toolbar">
+                <button class="icon-button" type="button" data-action="prev" aria-label="Previous week">
+                  <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+                </button>
+                <div>
+                  <span id="calendar-range-label">May 9 - May 15, 2026</span>
+                  <strong id="calendar-title">This Week</strong>
+                </div>
+                <button class="icon-button" type="button" data-action="next" aria-label="Next week">
+                  <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+                </button>
+                <button class="button outline today-button" type="button" data-action="today">Today</button>
+              </div>
+
+              <div class="list-view" id="list-view">
+                <article class="day-group">
+                  <button class="day-date-trigger" type="button" data-action="open-quick-book" data-date="May 9">
+                    <span>Sat</span>
+                    <strong>May 9</strong>
+                  </button>
+                  <div class="booking-list">
+                    <button class="booking-card active" type="button" data-booking="Mia Tanaka">
+                      <time>10:30 AM</time>
+                      <div>
+                        <strong>Mia Tanaka</strong>
+                        <span>Colour refresh · 90m</span>
+                      </div>
+                      <em>Confirmed</em>
+                    </button>
+                    <button class="booking-card" type="button" data-booking="Sophie Chen">
+                      <time>1:00 PM</time>
+                      <div>
+                        <strong>Sophie Chen</strong>
+                        <span>Cut and treatment · 75m</span>
+                      </div>
+                      <em>Scheduled</em>
+                    </button>
+                    <button class="booking-card" type="button" data-booking="Amber Liu">
+                      <time>4:15 PM</time>
+                      <div>
+                        <strong>Amber Liu</strong>
+                        <span>Follow-up consult · 30m</span>
+                      </div>
+                      <em>Follow-up</em>
+                    </button>
+                  </div>
+                </article>
+
+                <article class="day-group">
+                  <button class="day-date-trigger" type="button" data-action="open-quick-book" data-date="May 10">
+                    <span>Sun</span>
+                    <strong>May 10</strong>
+                  </button>
+                  <div class="empty-day">
+                    <span class="material-symbols-outlined" aria-hidden="true">event_available</span>
+                    No bookings scheduled
+                  </div>
+                </article>
+
+                <article class="day-group">
+                  <button class="day-date-trigger" type="button" data-action="open-quick-book" data-date="May 11">
+                    <span>Mon</span>
+                    <strong>May 11</strong>
+                  </button>
+                  <div class="booking-list">
+                    <button class="booking-card" type="button" data-booking="Grace Kim">
+                      <time>11:00 AM</time>
+                      <div>
+                        <strong>Grace Kim</strong>
+                        <span>Styling session · 60m</span>
+                      </div>
+                      <em>Scheduled</em>
+                    </button>
+                  </div>
+                </article>
+              </div>
+
+              <div class="month-view hidden" id="month-view" aria-label="Month calendar">
+                <div class="month-weekdays">
+                  <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                </div>
+                <div class="month-grid">
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Apr 26">26</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Apr 27">27</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Apr 28">28</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Apr 29">29</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Apr 30">30</button>
+                  <button type="button" data-action="select-month-date" data-date="May 1">1</button>
+                  <button type="button" data-action="select-month-date" data-date="May 2">2</button>
+                  <button type="button" data-action="select-month-date" data-date="May 3">3</button>
+                  <button type="button" data-action="select-month-date" data-date="May 4">4</button>
+                  <button type="button" data-action="select-month-date" data-date="May 5">5</button>
+                  <button type="button" data-action="select-month-date" data-date="May 6">6</button>
+                  <button type="button" data-action="select-month-date" data-date="May 7">7</button>
+                  <button type="button" data-action="select-month-date" data-date="May 8">8</button>
+                  <button class="today has-events" type="button" data-action="select-month-date" data-date="May 9">9<span>3</span></button>
+                  <button type="button" data-action="select-month-date" data-date="May 10">10</button>
+                  <button class="has-events" type="button" data-action="select-month-date" data-date="May 11">11<span>1</span></button>
+                  <button type="button" data-action="select-month-date" data-date="May 12">12</button>
+                  <button class="has-events" type="button" data-action="select-month-date" data-date="May 13">13<span>2</span></button>
+                  <button type="button" data-action="select-month-date" data-date="May 14">14</button>
+                  <button type="button" data-action="select-month-date" data-date="May 15">15</button>
+                  <button type="button" data-action="select-month-date" data-date="May 16">16</button>
+                  <button type="button" data-action="select-month-date" data-date="May 17">17</button>
+                  <button type="button" data-action="select-month-date" data-date="May 18">18</button>
+                  <button type="button" data-action="select-month-date" data-date="May 19">19</button>
+                  <button type="button" data-action="select-month-date" data-date="May 20">20</button>
+                  <button type="button" data-action="select-month-date" data-date="May 21">21</button>
+                  <button class="has-events" type="button" data-action="select-month-date" data-date="May 22">22<span>1</span></button>
+                  <button type="button" data-action="select-month-date" data-date="May 23">23</button>
+                  <button type="button" data-action="select-month-date" data-date="May 24">24</button>
+                  <button type="button" data-action="select-month-date" data-date="May 25">25</button>
+                  <button type="button" data-action="select-month-date" data-date="May 26">26</button>
+                  <button type="button" data-action="select-month-date" data-date="May 27">27</button>
+                  <button type="button" data-action="select-month-date" data-date="May 28">28</button>
+                  <button type="button" data-action="select-month-date" data-date="May 29">29</button>
+                  <button type="button" data-action="select-month-date" data-date="May 30">30</button>
+                  <button type="button" data-action="select-month-date" data-date="May 31">31</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Jun 1">1</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Jun 2">2</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Jun 3">3</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Jun 4">4</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Jun 5">5</button>
+                  <button class="muted" type="button" data-action="select-month-date" data-date="Jun 6">6</button>
+                </div>
+              </div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="panel booking-detail">
+                <div class="panel-title with-bar">Selected Booking</div>
+                <div id="booking-detail-content">
+                  <div class="client-card">
+                    <div class="client-avatar">MT</div>
+                    <div>
+                      <strong id="detail-client">Mia Tanaka</strong>
+                      <span id="detail-service">Colour refresh</span>
+                    </div>
+                  </div>
+                  <dl>
+                    <div><dt>Time</dt><dd id="detail-time">10:30 AM - 12:00 PM</dd></div>
+                    <div><dt>Status</dt><dd><span class="status-pill">Confirmed</span></dd></div>
+                    <div><dt>Notes</dt><dd>Prefers cooler toner. Check scalp sensitivity.</dd></div>
+                  </dl>
+                  <button class="button outline full-width" type="button" data-action="open-booking">
+                    <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+                    Open Details
+                  </button>
+                </div>
+              </section>
+
+              <section class="panel stats-panel">
+                <div class="panel-title">Week Snapshot</div>
+                <div class="stat-grid">
+                  <div class="stat-card"><span>Bookings</span><strong>7</strong></div>
+                  <div class="stat-card"><span>Hours</span><strong>8.5</strong></div>
+                  <div class="stat-card"><span>Open</span><strong>4</strong></div>
+                  <div class="stat-card"><span>Revenue</span><strong>$1.9k</strong></div>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="quick-book-overlay" id="quick-book-overlay" aria-hidden="true">
+      <section class="quick-book-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-book-title">
+        <header>
+          <div>
+            <span>Quick Book</span>
+            <h2 id="quick-book-title">New Appointment</h2>
+          </div>
+          <button class="icon-button" type="button" data-action="close-quick-book" aria-label="Close quick book">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </header>
+        <div class="quick-book">
+          <label>
+            Customer
+            <input id="quick-book-customer" type="text" value="Amber Liu" />
+          </label>
+          <label>
+            Service
+            <input id="quick-book-service" type="text" value="Follow-up consult" />
+          </label>
+          <div class="quick-book-row">
+            <label>
+              Date
+              <input id="quick-book-date" type="text" value="May 9" />
+            </label>
+            <label>
+              Time
+              <input id="quick-book-time" type="text" value="4:15 PM" />
+            </label>
+          </div>
+          <button class="button primary full-width" type="button" data-action="quick-book">Book</button>
+        </div>
+      </section>
+    </div>
+    <script src="account-menu.js"></script>
+    <script src="calendar-prototype.js"></script>
+  </body>
+</html>

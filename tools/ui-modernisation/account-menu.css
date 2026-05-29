@@ -1,0 +1,125 @@
+.user-chip {
+  position: relative;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+.user-chip:hover .avatar,
+.user-chip[aria-expanded="true"] .avatar {
+  box-shadow: 0 0 0 2px var(--line-strong), 0 0 22px rgba(34, 211, 238, 0.28);
+}
+
+.account-menu {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  gap: 8px;
+  width: min(280px, calc(100vw - 28px));
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(11, 16, 32, 0.96);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.account-menu.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.account-menu::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 24px;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  background: rgba(11, 16, 32, 0.96);
+  transform: rotate(45deg);
+}
+
+.account-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.account-menu-header .avatar {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+}
+
+.account-menu-header div:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-menu-header strong {
+  color: #fff;
+  line-height: 1;
+}
+
+.account-menu-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  color: #dbeafe;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  font-weight: 800;
+  text-align: left;
+}
+
+.account-menu-item:hover {
+  color: var(--cyan);
+  border-color: var(--cyan-line);
+  background: var(--cyan-soft);
+}
+
+.account-menu-item.sign-out {
+  color: #fb7185;
+}
+
+.account-menu-item.sign-out:hover {
+  color: #fff;
+  border-color: rgba(251, 113, 133, 0.34);
+  background: rgba(251, 113, 133, 0.14);
+}
+
+.account-menu-item .material-symbols-outlined {
+  font-size: 20px;
+}
+
+@media (max-width: 560px) {
+  .account-menu {
+    right: 14px !important;
+    left: auto !important;
+  }
+}

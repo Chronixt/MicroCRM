@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRMicro Beautician - Options Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="options-prototype.css" />
+    <link rel="stylesheet" href="account-menu.css" />
+  </head>
+  <body>
+    <div class="options-shell" data-sidebar="open">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <button class="icon-button sidebar-toggle" type="button" aria-label="Collapse sidebar" data-action="toggle-sidebar">
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+        </button>
+
+        <nav class="nav-stack">
+          <button class="nav-tile" type="button" data-action="home">
+            <span class="material-symbols-outlined" aria-hidden="true">home</span>
+            <span>Menu</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="new-client">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+            <span>New</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="clients">
+            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+            <span>Clients</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="calendar">
+            <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+            <span>Calendar</span>
+          </button>
+          <button class="nav-tile active" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            <span>Options</span>
+          </button>
+        </nav>
+
+        <button class="backup-button" type="button" data-action="backup">
+          <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+          <span>1-Tap<br />Backup</span>
+        </button>
+      </aside>
+
+      <main class="options-main">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <img src="../../assets/CRMicro_logo_beautician_light.png" alt="CRMicro" />
+            <span>Beautician</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="prototype-link" href="home-prototype.html">Home Prototype</a>
+            <a class="prototype-link" href="new-customer-prototype.html">New Customer Prototype</a>
+            <a class="prototype-link" href="customer-list-prototype.html">Customers Prototype</a>
+            <a class="prototype-link" href="calendar-prototype.html">Calendar Prototype</a>
+            <button class="language-pill" type="button" data-action="language">日本語 <i></i></button>
+            <button class="user-chip" type="button" data-action="account-menu">
+              <div>
+                <strong>Amber Liu</strong>
+                <span>Standard Plan</span>
+              </div>
+              <div class="avatar">AL</div>
+            </button>
+          </div>
+        </header>
+
+        <section class="options-scroll">
+          <header class="page-header">
+            <div>
+              <span class="eyebrow">Data Tools</span>
+              <h1>Options</h1>
+            </div>
+          </header>
+
+          <div class="options-grid">
+            <section class="option-panel import-panel">
+              <div class="option-icon">
+                <span class="material-symbols-outlined" aria-hidden="true">file_upload</span>
+              </div>
+              <div>
+                <span class="panel-kicker">Import</span>
+                <h2>Bring Data In</h2>
+                <p>Import customer records, notes, and appointment history from a prepared backup or migration file.</p>
+              </div>
+
+              <div class="drop-zone">
+                <span class="material-symbols-outlined" aria-hidden="true">upload_file</span>
+                <strong>Select import file</strong>
+                <em>CSV, JSON, or CRMicro backup</em>
+              </div>
+
+              <div class="option-actions">
+                <button class="button outline" type="button" data-action="validate-import">
+                  <span class="material-symbols-outlined" aria-hidden="true">rule</span>
+                  Validate
+                </button>
+                <button class="button primary" type="button" data-action="import-data">
+                  <span class="material-symbols-outlined" aria-hidden="true">download_done</span>
+                  Import Data
+                </button>
+              </div>
+            </section>
+
+            <section class="option-panel export-panel">
+              <div class="option-icon">
+                <span class="material-symbols-outlined" aria-hidden="true">file_download</span>
+              </div>
+              <div>
+                <span class="panel-kicker">Export</span>
+                <h2>Download Backup</h2>
+                <p>Create a local copy of your customer records, appointment history, internal notes, and profile metadata.</p>
+              </div>
+
+              <div class="export-options">
+                <label class="check-row">
+                  <input type="checkbox" checked />
+                  <span>Customer records</span>
+                </label>
+                <label class="check-row">
+                  <input type="checkbox" checked />
+                  <span>Appointments</span>
+                </label>
+                <label class="check-row">
+                  <input type="checkbox" checked />
+                  <span>Internal notes</span>
+                </label>
+              </div>
+
+              <div class="option-actions">
+                <button class="button outline" type="button" data-action="preview-export">
+                  <span class="material-symbols-outlined" aria-hidden="true">visibility</span>
+                  Preview
+                </button>
+                <button class="button primary" type="button" data-action="export-data">
+                  <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                  Export Data
+                </button>
+              </div>
+            </section>
+
+            <section class="danger-panel">
+              <div>
+                <span class="panel-kicker danger">Permanent Action</span>
+                <h2>Delete My Data</h2>
+                <p>This clears local customer records, notes, appointments, and backups from this CRM workspace.</p>
+              </div>
+              <div class="danger-confirm">
+                <label>
+                  Confirmation
+                  <input id="delete-confirmation" type="text" placeholder="Type DELETE to enable" autocomplete="off" />
+                </label>
+                <button class="button danger" type="button" data-action="delete-data" disabled>
+                  <span class="material-symbols-outlined" aria-hidden="true">delete_forever</span>
+                  Delete My Data
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="account-menu.js"></script>
+    <script src="options-prototype.js"></script>
+  </body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRMicro Beautician - Home Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="home-prototype.css" />
+    <link rel="stylesheet" href="account-menu.css" />
+  </head>
+  <body>
+    <div class="home-shell" data-sidebar="open">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <button class="icon-button sidebar-toggle" type="button" aria-label="Collapse sidebar" data-action="toggle-sidebar">
+          <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+        </button>
+
+        <nav class="nav-stack">
+          <button class="nav-tile active" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">home</span>
+            <span>Menu</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="new-client">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+            <span>New</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="clients">
+            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+            <span>Clients</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="calendar">
+            <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+            <span>Calendar</span>
+          </button>
+          <button class="nav-tile" type="button" data-action="options">
+            <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            <span>Options</span>
+          </button>
+        </nav>
+
+        <button class="backup-button" type="button" data-action="backup">
+          <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+          <span>1-Tap<br />Backup</span>
+        </button>
+      </aside>
+
+      <main class="home-main">
+        <header class="topbar">
+          <div class="brand-lockup">
+            <img src="../../assets/CRMicro_logo_beautician_light.png" alt="CRMicro" />
+            <span>Beautician</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="prototype-link" href="new-customer-prototype.html">New Customer Prototype</a>
+            <a class="prototype-link" href="customer-list-prototype.html">Customers Prototype</a>
+            <a class="prototype-link" href="customer-profile-prototype.html">Profile Prototype</a>
+            <a class="prototype-link" href="calendar-prototype.html">Calendar Prototype</a>
+            <a class="prototype-link" href="options-prototype.html">Options Prototype</a>
+            <button class="language-pill" type="button" data-action="language">日本語 <i></i></button>
+            <button class="user-chip" type="button" data-action="account-menu">
+              <div>
+                <strong>Amber Liu</strong>
+                <span>Standard Plan</span>
+              </div>
+              <div class="avatar">AL</div>
+            </button>
+          </div>
+        </header>
+
+        <section class="home-scroll">
+          <div class="home-grid">
+            <section class="hero-panel">
+              <div class="welcome-copy">
+                <span class="eyebrow">Good afternoon</span>
+                <h1>Ready for your next client?</h1>
+                <p>Keep appointments, client records, notes, and daily backups close at hand.</p>
+              </div>
+              <form class="global-search" role="search">
+                <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                <input id="home-search" type="search" placeholder="Search clients, appointments, or notes..." autocomplete="off" />
+              </form>
+            </section>
+
+            <section class="quick-actions-panel" aria-label="Main menu">
+              <button class="action-card primary" type="button" data-action="new-client">
+                <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+                <strong>New Customer</strong>
+                <em>Add a client profile</em>
+              </button>
+              <button class="action-card" type="button" data-action="clients">
+                <span class="material-symbols-outlined" aria-hidden="true">manage_search</span>
+                <strong>Customers</strong>
+                <em>Find records fast</em>
+              </button>
+              <button class="action-card" type="button" data-action="calendar">
+                <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+                <strong>Calendar</strong>
+                <em>View bookings</em>
+              </button>
+              <button class="action-card" type="button" data-action="options">
+                <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+                <strong>Options</strong>
+                <em>App settings</em>
+              </button>
+            </section>
+
+            <section class="today-panel">
+              <header class="section-header">
+                <div>
+                  <span>Today</span>
+                  <h2>Appointments</h2>
+                </div>
+                <button class="icon-button" type="button" aria-label="Refresh appointments" data-action="refresh">
+                  <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+                </button>
+              </header>
+
+              <div class="appointment-list" id="appointment-list"></div>
+            </section>
+
+            <aside class="side-stack">
+              <section class="status-panel backup-panel">
+                <div class="panel-title with-bar">Daily Backup</div>
+                <div class="backup-state">
+                  <span class="material-symbols-outlined" aria-hidden="true">cloud_done</span>
+                  <div>
+                    <strong>Ready</strong>
+                    <p>Last backup completed at 9:42 AM.</p>
+                  </div>
+                </div>
+                <button class="button outline full-width" type="button" data-action="backup">
+                  <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+                  Run Backup
+                </button>
+              </section>
+
+              <section class="status-panel">
+                <div class="panel-title">Snapshot</div>
+                <div class="stat-grid">
+                  <div class="stat-card"><span>Clients</span><strong>128</strong></div>
+                  <div class="stat-card"><span>Today</span><strong>3</strong></div>
+                  <div class="stat-card"><span>Notes</span><strong>24</strong></div>
+                  <div class="stat-card"><span>Revenue</span><strong>$860</strong></div>
+                </div>
+              </section>
+
+              <section class="status-panel followup-panel">
+                <div class="panel-title">Follow-ups</div>
+                <article>
+                  <span class="material-symbols-outlined" aria-hidden="true">notifications</span>
+                  <p>Check scalp sensitivity with Amber before her next colour session.</p>
+                </article>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="account-menu.js"></script>
+    <script src="home-prototype.js"></script>
+  </body>
+</html>

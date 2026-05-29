@@ -41,6 +41,9 @@ class CustomerActor {
     const result = this.page.getByTestId('customer-results').locator('.list-item').filter({ hasText: customer.firstName });
     await expect(result).toHaveCount(1);
     await result.click();
+    const openProfile = this.page.locator('#open-quick-view-customer');
+    await expect(openProfile).toBeVisible();
+    await openProfile.click();
     await this.waitForCustomerDetail(customer);
   }
 

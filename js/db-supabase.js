@@ -529,14 +529,26 @@
     const session = await getSession();
     const userId = session?.user?.id || null;
     if (!userId) return null;
-    const res = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('owner_user_id', userId)
-      .maybeSingle();
-    if (res.error && (isMissingColumnError(res.error) || isMissingRelationError(res.error))) return null;
-    throwIfError(res);
-    return res.data ? toCamel(res.data) : null;
+    try {
+      const res = await withTimeout(
+        supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('owner_user_id', userId)
+          .maybeSingle(),
+        AUTH_SESSION_TIMEOUT_MS,
+        'Supabase user profile fetch'
+      );
+      if (res.error && (isMissingColumnError(res.error) || isMissingRelationError(res.error))) return null;
+      throwIfError(res);
+      return res.data ? toCamel(res.data) : null;
+    } catch (error) {
+      if (isRetryableAuthFetchError(error)) {
+        console.warn('[Supabase] User profile fetch timed out; continuing without profile.', error.message || error);
+        return null;
+      }
+      throw error;
+    }
   }
 
   async function upsertCurrentUserProfile(profile) {
@@ -733,7 +745,11 @@
   // --- Customers ---
   async function createCustomer(customer) {
     const supabase = getClient();
+    const session = await getSession();
+    const ownerUserId = session?.user?.id || null;
+    if (!ownerUserId) throw new Error('Not authenticated');
     const row = {
+      owner_user_id: ownerUserId,
       first_name: customer.firstName ?? null,
       last_name: customer.lastName ?? null,
       contact_number: customer.contactNumber ?? null,
@@ -748,8 +764,19 @@
       country: customer.country ?? null,
       updated_at: customer.updatedAt || new Date().toISOString()
     };
-    const res = throwIfError(await supabase.from('customers').insert(row).select('id').single());
-    return res.data.id;
+    try {
+      const res = throwIfError(await supabase.from('customers').insert(row).select('id').single());
+      return res.data.id;
+    } catch (error) {
+      const msg = String(error?.message || '').toLowerCase();
+      const isRlsInsertFailure = msg.includes('row-level security policy') || msg.includes('violates row-level security');
+      if (!isRlsInsertFailure) throw error;
+      // Fallback: let DB-side default (auth.uid()) populate owner_user_id.
+      const fallbackRow = { ...row };
+      delete fallbackRow.owner_user_id;
+      const retryRes = throwIfError(await supabase.from('customers').insert(fallbackRow).select('id').single());
+      return retryRes.data.id;
+    }
   }
 
   async function updateCustomer(updated) {
@@ -821,7 +848,11 @@
   // --- Appointments ---
   async function createAppointment(appointment) {
     const supabase = getClient();
+    const session = await getSession();
+    const ownerUserId = session?.user?.id || null;
+    if (!ownerUserId) throw new Error('Not authenticated');
     const row = buildAppointmentRow(appointment);
+    row.owner_user_id = ownerUserId;
     if (row.customer_id == null) throw new Error('Appointment is missing customerId');
     if (!row.start) throw new Error('Appointment is missing start');
     const res = throwIfError(await supabase.from('appointments').insert(row).select('id').single());
@@ -951,7 +982,10 @@
     const blob = await compressImage(entry.blob, entry.type);
     const dataUrl = await blobToDataURL(blob);
     const supabase = getClient();
-    const row = { customer_id: parseInt(customerId), name: entry.name, type: entry.type || blob.type, data_url: dataUrl };
+    const session = await getSession();
+    const ownerUserId = session?.user?.id || null;
+    if (!ownerUserId) throw new Error('Not authenticated');
+    const row = { customer_id: parseInt(customerId), owner_user_id: ownerUserId, name: entry.name, type: entry.type || blob.type, data_url: dataUrl };
     if (appointmentId != null && appointmentId !== '') {
       const parsedAppointmentId = parseInt(appointmentId, 10);
       if (!Number.isNaN(parsedAppointmentId)) row.appointment_id = parsedAppointmentId;
@@ -1019,12 +1053,16 @@
     const createdAt = normalizeDateTimeToISO(note.createdAt) || new Date().toISOString();
     const editedDate = note.editedDate ? normalizeDateTimeToISO(note.editedDate) : undefined;
     const supabase = getClient();
+    const session = await getSession();
+    const ownerUserId = session?.user?.id || null;
+    if (!ownerUserId) throw new Error('Not authenticated');
     const noteType = inferNoteType(note);
     const textValue = note.text ?? note.textValue ?? note.content ?? null;
     const supportsTypedColumns = await hasTypedNoteColumns();
     const supportsPinnedColumn = await hasPinnedNoteColumn();
     const row = {
       customer_id: parseInt(note.customerId),
+      owner_user_id: ownerUserId,
       date: date,
       created_at: createdAt,
       edited_date: editedDate || null,
