@@ -6532,8 +6532,8 @@
           <div class="image-viewer-main">
             <img src="${getImageViewerSrc(currentImage)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" style="transform:${getRotationStyle(currentImage)}; transition: transform 0.2s ease;" data-testid="viewer-image" />
             <div class="image-actions">
-              <button class="image-rotate-btn" id="image-rotate-left-btn" data-testid="image-rotate-left-button" title="Rotate Left">Rotate Left</button>
-              <button class="image-rotate-btn" id="image-rotate-right-btn" data-testid="image-rotate-right-button" title="Rotate Right">Rotate Right</button>
+              <button class="image-rotate-btn" id="image-rotate-left-btn" data-testid="image-rotate-left-button" title="Rotate Left" aria-label="Rotate Left"><span aria-hidden="true">↶</span></button>
+              <button class="image-rotate-btn" id="image-rotate-right-btn" data-testid="image-rotate-right-button" title="Rotate Right" aria-label="Rotate Right"><span aria-hidden="true">↷</span></button>
               <button class="image-delete-btn" id="image-delete-btn" data-image-id="${currentImage.id}">🗑️ Delete</button>
             </div>
           </div>
