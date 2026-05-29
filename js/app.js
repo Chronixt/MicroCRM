@@ -2374,6 +2374,7 @@
         
         const hasBlob = !!(img.blob && img.blob.size > 0);
         const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        const rotationDegrees = ((Number(img.rotationDegrees) % 360) + 360) % 360;
         if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
@@ -2385,7 +2386,9 @@
             // Check if we're on iPad Safari and use dataURL directly as fallback
             const isIpadSafari = /iPad/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent);
             
-            if (isIpadSafari && hasDataUrl) {
+            if (hasDataUrl) {
+              url = img.dataUrl;
+            } else if (isIpadSafari && hasDataUrl) {
               // Use dataURL directly for iPad Safari (more reliable)
               url = img.dataUrl;
             } else if (hasBlob) {
@@ -2406,9 +2409,9 @@
         } else {
         }
         
-        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
           <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer; transform: rotate(${rotationDegrees}deg); transition: transform 0.2s ease;" />
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
@@ -2934,6 +2937,7 @@
       try {
         const hasBlob = !!(img.blob && img.blob.size > 0);
         const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        const rotationDegrees = ((Number(img.rotationDegrees) % 360) + 360) % 360;
         if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
@@ -2941,13 +2945,13 @@
         // Use cached URL if available
         let url = window.currentEditImageCache.get(img.id);
         if (!url) {
-          url = hasBlob ? URL.createObjectURL(img.blob) : img.dataUrl;
+          url = hasDataUrl ? img.dataUrl : URL.createObjectURL(img.blob);
           window.currentEditImageCache.set(img.id, url);
         }
         
-        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
           <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer; transform: rotate(${rotationDegrees}deg); transition: transform 0.2s ease;" />
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
@@ -6511,6 +6515,25 @@
     const modalId = 'image-viewer-' + Date.now();
     const currentImage = images[currentIndex];
     const hasMultiple = images.length > 1;
+    const normalizeImageRotation = (value) => ((Number(value) % 360) + 360) % 360;
+    const getImageViewerSrc = (image) => {
+      if (image && image.dataUrl) return image.dataUrl;
+      if (image && image.blob) return URL.createObjectURL(image.blob);
+      return '';
+    };
+    const getDisplayRotation = (image) => {
+      if (!image) return 0;
+      if (!Number.isFinite(image.__viewerRotationDegrees)) {
+        image.__viewerRotationDegrees = normalizeImageRotation(image.rotationDegrees || 0);
+      }
+      return image.__viewerRotationDegrees;
+    };
+    const getRotationStyle = (image) => `rotate(${getDisplayRotation(image)}deg)`;
+    const updateImageThumbnailRotation = (imageId, rotationDegrees) => {
+      document.querySelectorAll(`.lazy-image[data-image-id="${imageId}"]`).forEach((thumb) => {
+        thumb.style.transform = `rotate(${normalizeImageRotation(rotationDegrees)}deg)`;
+      });
+    };
     
     const modalHtml = `
       <div class="image-viewer-modal" id="${modalId}">
@@ -6521,8 +6544,10 @@
         <div class="image-viewer-content">
           ${hasMultiple ? '<button class="image-nav-btn image-nav-prev" id="image-nav-prev">‹</button>' : ''}
           <div class="image-viewer-main">
-            <img src="${URL.createObjectURL(currentImage.blob)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" />
+            <img src="${getImageViewerSrc(currentImage)}" alt="${escapeHtml(currentImage.name)}" class="viewer-image" style="transform:${getRotationStyle(currentImage)}; transition: transform 0.2s ease;" data-testid="viewer-image" />
             <div class="image-actions">
+              <button class="image-rotate-btn" id="image-rotate-left-btn" data-testid="image-rotate-left-button" title="Rotate Left" aria-label="Rotate Left"><span aria-hidden="true">↶</span></button>
+              <button class="image-rotate-btn" id="image-rotate-right-btn" data-testid="image-rotate-right-button" title="Rotate Right" aria-label="Rotate Right"><span aria-hidden="true">↷</span></button>
               <button class="image-delete-btn" id="image-delete-btn" data-image-id="${currentImage.id}">🗑️ Delete</button>
             </div>
           </div>
@@ -6535,6 +6560,7 @@
     modalRoot.setAttribute('aria-hidden', 'false');
     
     let currentIdx = currentIndex;
+    let rotationSaveQueue = Promise.resolve();
     
     // Navigation functions
     function showImage(index) {
@@ -6545,8 +6571,9 @@
       const counterEl = document.querySelector('.image-counter');
       const deleteBtn = document.getElementById('image-delete-btn');
       
-      imgEl.src = URL.createObjectURL(img.blob);
+      imgEl.src = getImageViewerSrc(img);
       imgEl.alt = escapeHtml(img.name);
+      imgEl.style.transform = getRotationStyle(img);
       counterEl.textContent = `${currentIdx + 1} / ${images.length}`;
       deleteBtn.dataset.imageId = img.id;
       
@@ -6555,6 +6582,37 @@
       const nextBtn = document.getElementById('image-nav-next');
       if (prevBtn) prevBtn.disabled = currentIdx === 0;
       if (nextBtn) nextBtn.disabled = currentIdx === images.length - 1;
+    }
+
+    async function rotateCurrentImage(delta) {
+      const img = images[currentIdx];
+      if (!img || img.id == null) return;
+      const previousDisplayRotation = getDisplayRotation(img);
+      const previousRotation = normalizeImageRotation(img.rotationDegrees || 0);
+      const nextDisplayRotation = previousDisplayRotation + delta;
+      const nextRotation = normalizeImageRotation(nextDisplayRotation);
+      img.__viewerRotationDegrees = nextDisplayRotation;
+      img.rotationDegrees = nextRotation;
+      const imgEl = document.querySelector('.viewer-image');
+      if (imgEl) imgEl.style.transform = getRotationStyle(img);
+      updateImageThumbnailRotation(img.id, nextRotation);
+      try {
+        const persistRotation = async () => {
+          if (!CrmDB || typeof CrmDB.updateImageRotation !== 'function') {
+            throw new Error('Image rotation persistence is not available');
+          }
+          await CrmDB.updateImageRotation(img.id, nextRotation);
+        };
+        const saveTask = rotationSaveQueue.then(persistRotation, persistRotation);
+        rotationSaveQueue = saveTask.catch(() => {});
+        await saveTask;
+      } catch (error) {
+        img.__viewerRotationDegrees = previousDisplayRotation;
+        img.rotationDegrees = previousRotation;
+        if (imgEl) imgEl.style.transform = getRotationStyle(img);
+        updateImageThumbnailRotation(img.id, previousRotation);
+        alert('Error saving image rotation: ' + error.message);
+      }
     }
     
     // Event handlers
@@ -6568,6 +6626,8 @@
     if (nextBtn) {
       nextBtn.addEventListener('click', () => showImage(currentIdx + 1));
     }
+    document.getElementById('image-rotate-left-btn').addEventListener('click', () => rotateCurrentImage(-90));
+    document.getElementById('image-rotate-right-btn').addEventListener('click', () => rotateCurrentImage(90));
     
     // Delete image
     document.getElementById('image-delete-btn').addEventListener('click', async () => {

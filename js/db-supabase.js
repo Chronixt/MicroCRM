@@ -31,6 +31,7 @@
   var cachedClient = null;
   let cachedTypedNoteColumns = null;
   let cachedPinnedNoteColumn = null;
+  let cachedImageRotationColumn = null;
   let cachedTypedNoteVersionColumns = null;
   let runtimePreflightPromise = null;
 
@@ -100,6 +101,7 @@
       updatedAt: 'updated_at', customerId: 'customer_id', createdAt: 'created_at',
       editedDate: 'edited_date', noteNumber: 'note_number', dataUrl: 'data_url',
       textValue: 'text_value', noteType: 'note_type', isPinned: 'is_pinned',
+      rotationDegrees: 'rotation_degrees',
       noteId: 'note_id', savedAt: 'saved_at',
       appointmentId: 'appointment_id', dueAt: 'due_at',
       quotedAmount: 'quoted_amount', invoiceAmount: 'invoice_amount', paidAmount: 'paid_amount'
@@ -122,6 +124,7 @@
       updated_at: 'updatedAt', customer_id: 'customerId', created_at: 'createdAt',
       edited_date: 'editedDate', note_number: 'noteNumber', data_url: 'dataUrl',
       text_value: 'textValue', note_type: 'noteType', is_pinned: 'isPinned',
+      rotation_degrees: 'rotationDegrees',
       note_id: 'noteId', saved_at: 'savedAt',
       appointment_id: 'appointmentId', due_at: 'dueAt',
       quoted_amount: 'quotedAmount', invoice_amount: 'invoiceAmount', paid_amount: 'paidAmount'
@@ -181,6 +184,19 @@
     }
     if (probe.error) throwIfError(probe);
     cachedPinnedNoteColumn = true;
+    return true;
+  }
+
+  async function hasImageRotationColumn() {
+    if (cachedImageRotationColumn != null) return cachedImageRotationColumn;
+    const supabase = getClient();
+    const probe = await supabase.from('images').select('id,rotation_degrees').limit(1);
+    if (probe.error && isMissingColumnError(probe.error)) {
+      cachedImageRotationColumn = false;
+      return false;
+    }
+    if (probe.error) throwIfError(probe);
+    cachedImageRotationColumn = true;
     return true;
   }
 
@@ -358,11 +374,18 @@
 
       while (true) {
         const to = from + pageSize - 1;
-        const pageRes = await supabase
+        let pageRes = await supabase
           .from('images')
-          .select('id,customer_id,name,type,created_at')
+          .select('id,customer_id,name,type,created_at,rotation_degrees')
           .order('id', { ascending: true })
           .range(from, to);
+        if (pageRes.error && isMissingColumnError(pageRes.error)) {
+          pageRes = await supabase
+            .from('images')
+            .select('id,customer_id,name,type,created_at')
+            .order('id', { ascending: true })
+            .range(from, to);
+        }
         throwIfError(pageRes);
         const page = pageRes.data || [];
         if (page.length === 0) break;
@@ -389,6 +412,7 @@
             name: row.name,
             type: row.type,
             createdAt: row.created_at,
+            rotationDegrees: row.rotation_degrees || 0,
             dataUrl: dataRes.data.data_url
           });
         }
@@ -818,6 +842,7 @@
     const dataUrl = await blobToDataURL(blob);
     const supabase = getClient();
     const row = { customer_id: parseInt(customerId), name: entry.name, type: entry.type || blob.type, data_url: dataUrl };
+    if (await hasImageRotationColumn()) row.rotation_degrees = 0;
     if (appointmentId != null && appointmentId !== '') {
       const parsedAppointmentId = parseInt(appointmentId, 10);
       if (!Number.isNaN(parsedAppointmentId)) row.appointment_id = parsedAppointmentId;
@@ -877,6 +902,19 @@
   async function deleteImage(imageId) {
     const supabase = getClient();
     throwIfError(await supabase.from('images').delete().eq('id', parseInt(imageId)));
+  }
+
+  async function updateImageRotation(imageId, rotationDegrees) {
+    const supportsRotation = await hasImageRotationColumn();
+    if (!supportsRotation) {
+      const err = new Error('Image rotation persistence requires the rotation_degrees database column.');
+      err.code = 'SCHEMA_MISMATCH_IMAGES_ROTATION';
+      throw err;
+    }
+    const normalized = ((Number(rotationDegrees) % 360) + 360) % 360;
+    const supabase = getClient();
+    throwIfError(await supabase.from('images').update({ rotation_degrees: normalized }).eq('id', parseInt(imageId, 10)));
+    return true;
   }
 
   // --- Notes ---
@@ -1801,18 +1839,23 @@
     }
 
     const imageRows = [];
+    const supportsImageRotation = await hasImageRotationColumn();
     for (const img of images || []) {
       const newCustomerId = resolveImportedCustomerId(img.customerId);
       if (newCustomerId == null) {
         throw new Error(`Import failed: image references missing customerId (${img.customerId})`);
       }
-      imageRows.push({
+      const imageRow = {
         customer_id: newCustomerId,
         name: img.name,
         type: img.type,
         data_url: img.dataUrl,
         created_at: img.createdAt
-      });
+      };
+      if (supportsImageRotation) {
+        imageRow.rotation_degrees = ((Number(img.rotationDegrees) % 360) + 360) % 360 || 0;
+      }
+      imageRows.push(imageRow);
     }
     if (imageRows.length > 0) {
       // Image rows can be very large due to data_url payloads.
@@ -1862,6 +1905,7 @@
     getImagesByCustomerId,
     getImagesByAppointmentId,
     deleteImage,
+    updateImageRotation,
     createAppointment,
     updateAppointment,
     deleteAppointment,
