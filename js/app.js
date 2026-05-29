@@ -2374,6 +2374,7 @@
         
         const hasBlob = !!(img.blob && img.blob.size > 0);
         const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        const rotationDegrees = ((Number(img.rotationDegrees) % 360) + 360) % 360;
         if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
@@ -2408,9 +2409,9 @@
         } else {
         }
         
-        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
           <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer; transform: rotate(${rotationDegrees}deg); transition: transform 0.2s ease;" />
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
@@ -2936,6 +2937,7 @@
       try {
         const hasBlob = !!(img.blob && img.blob.size > 0);
         const hasDataUrl = typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/');
+        const rotationDegrees = ((Number(img.rotationDegrees) % 360) + 360) % 360;
         if (!hasBlob && !hasDataUrl) {
           return `<div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center;">Error loading image</div>`;
         }
@@ -2947,9 +2949,9 @@
           window.currentEditImageCache.set(img.id, url);
         }
         
-        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+        return `<div class="lazy-image-container" data-image-id="${img.id}" style="position: relative; min-height: 120px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
           <div class="image-placeholder" style="color: rgba(255,255,255,0.3); font-size: 12px;">Loading...</div>
-          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer;" />
+          <img data-src="${url}" alt="${escapeHtml(img.name)}" data-image-id="${img.id}" class="clickable-image lazy-image" style="display: none; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer; transform: rotate(${rotationDegrees}deg); transition: transform 0.2s ease;" />
           <div class="image-error" style="padding: 10px; border: 1px solid #ff6b6b; color: #ff6b6b; text-align: center; display: none;">Failed to load image</div>
         </div>`;
       } catch (error) {
@@ -6519,7 +6521,19 @@
       if (image && image.blob) return URL.createObjectURL(image.blob);
       return '';
     };
-    const getRotationStyle = (image) => `rotate(${normalizeImageRotation(image && image.rotationDegrees)}deg)`;
+    const getDisplayRotation = (image) => {
+      if (!image) return 0;
+      if (!Number.isFinite(image.__viewerRotationDegrees)) {
+        image.__viewerRotationDegrees = normalizeImageRotation(image.rotationDegrees || 0);
+      }
+      return image.__viewerRotationDegrees;
+    };
+    const getRotationStyle = (image) => `rotate(${getDisplayRotation(image)}deg)`;
+    const updateImageThumbnailRotation = (imageId, rotationDegrees) => {
+      document.querySelectorAll(`.lazy-image[data-image-id="${imageId}"]`).forEach((thumb) => {
+        thumb.style.transform = `rotate(${normalizeImageRotation(rotationDegrees)}deg)`;
+      });
+    };
     
     const modalHtml = `
       <div class="image-viewer-modal" id="${modalId}">
@@ -6546,6 +6560,7 @@
     modalRoot.setAttribute('aria-hidden', 'false');
     
     let currentIdx = currentIndex;
+    let rotationSaveQueue = Promise.resolve();
     
     // Navigation functions
     function showImage(index) {
@@ -6572,19 +6587,30 @@
     async function rotateCurrentImage(delta) {
       const img = images[currentIdx];
       if (!img || img.id == null) return;
+      const previousDisplayRotation = getDisplayRotation(img);
       const previousRotation = normalizeImageRotation(img.rotationDegrees || 0);
-      const nextRotation = normalizeImageRotation(previousRotation + delta);
+      const nextDisplayRotation = previousDisplayRotation + delta;
+      const nextRotation = normalizeImageRotation(nextDisplayRotation);
+      img.__viewerRotationDegrees = nextDisplayRotation;
       img.rotationDegrees = nextRotation;
       const imgEl = document.querySelector('.viewer-image');
       if (imgEl) imgEl.style.transform = getRotationStyle(img);
+      updateImageThumbnailRotation(img.id, nextRotation);
       try {
-        if (!CrmDB || typeof CrmDB.updateImageRotation !== 'function') {
-          throw new Error('Image rotation persistence is not available');
-        }
-        await CrmDB.updateImageRotation(img.id, nextRotation);
+        const persistRotation = async () => {
+          if (!CrmDB || typeof CrmDB.updateImageRotation !== 'function') {
+            throw new Error('Image rotation persistence is not available');
+          }
+          await CrmDB.updateImageRotation(img.id, nextRotation);
+        };
+        const saveTask = rotationSaveQueue.then(persistRotation, persistRotation);
+        rotationSaveQueue = saveTask.catch(() => {});
+        await saveTask;
       } catch (error) {
+        img.__viewerRotationDegrees = previousDisplayRotation;
         img.rotationDegrees = previousRotation;
         if (imgEl) imgEl.style.transform = getRotationStyle(img);
+        updateImageThumbnailRotation(img.id, previousRotation);
         alert('Error saving image rotation: ' + error.message);
       }
     }

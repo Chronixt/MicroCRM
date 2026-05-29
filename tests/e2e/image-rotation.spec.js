@@ -48,6 +48,13 @@ test('image viewer rotation persists per customer image', async ({ page }) => {
   await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(0deg\)/);
   await page.getByTestId('image-rotate-right-button').click();
   await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(90deg\)/);
+  await expect(thumb).toHaveAttribute('style', /rotate\(90deg\)/);
+  await page.getByTestId('image-rotate-right-button').click();
+  await page.getByTestId('image-rotate-right-button').click();
+  await page.getByTestId('image-rotate-right-button').click();
+  await page.getByTestId('image-rotate-right-button').click();
+  await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(450deg\)/);
+  await expect(thumb).toHaveAttribute('style', /rotate\(90deg\)/);
   await page.waitForFunction(async (id) => {
     const images = await window.CrmDB.getImagesByCustomerId(id);
     return images[0] && images[0].rotationDegrees === 90;
@@ -59,6 +66,7 @@ test('image viewer rotation persists per customer image', async ({ page }) => {
   await app.waitForReady();
   await customers.openCustomerBySearch(customer);
   await expect(thumb).toBeVisible();
+  await expect(thumb).toHaveAttribute('style', /rotate\(90deg\)/);
   await thumb.click();
   await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(90deg\)/);
   await app.assertNoFatalErrors();
