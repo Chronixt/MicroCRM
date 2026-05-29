@@ -41,6 +41,13 @@ test('image viewer rotation persists per customer image', async ({ page }) => {
   await page.getByTestId('image-rotate-right-button').click();
   await expect(page.getByTestId('viewer-image')).toHaveCSS('transform', /matrix/);
   await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(90deg\)/);
+  await expect(page.getByTestId('image-rotate-left-button')).toBeVisible();
+  await expect(page.getByTestId('image-rotate-right-button')).toBeVisible();
+  await expect(page.locator('#image-delete-btn')).toBeVisible();
+  await page.getByTestId('image-rotate-left-button').click();
+  await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(0deg\)/);
+  await page.getByTestId('image-rotate-right-button').click();
+  await expect(page.getByTestId('viewer-image')).toHaveAttribute('style', /rotate\(90deg\)/);
   await page.waitForFunction(async (id) => {
     const images = await window.CrmDB.getImagesByCustomerId(id);
     return images[0] && images[0].rotationDegrees === 90;
