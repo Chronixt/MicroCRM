@@ -1292,6 +1292,81 @@
     }
   }
 
+  function isKeyboardTextEntry(el) {
+    if (!el || el.disabled || el.readOnly) return false;
+    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (tag === 'textarea') return true;
+    if (tag !== 'input') return false;
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    return ['date', 'datetime-local', 'email', 'number', 'password', 'search', 'tel', 'text', 'time', 'url'].includes(type);
+  }
+
+  function getKeyboardInset() {
+    const visualViewport = window.visualViewport;
+    if (!visualViewport) return 0;
+    const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    return Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop));
+  }
+
+  function updateKeyboardInset() {
+    document.documentElement.style.setProperty('--keyboard-inset', `${getKeyboardInset()}px`);
+  }
+
+  function scrollFocusedInputIntoView(el) {
+    if (!isKeyboardTextEntry(el)) return;
+    const contentEl = el.closest('.content') || appRoot.querySelector('.content');
+    if (!contentEl) return;
+
+    const keyboardInset = getKeyboardInset();
+    const containerRect = contentEl.getBoundingClientRect();
+    const fieldRect = el.getBoundingClientRect();
+    const safeBottom = containerRect.bottom - keyboardInset - 28;
+    const safeTop = containerRect.top + 24;
+
+    if (fieldRect.bottom <= safeBottom && fieldRect.top >= safeTop) return;
+    const targetTop = contentEl.scrollTop + fieldRect.top - containerRect.top - Math.max(24, (containerRect.height - keyboardInset - fieldRect.height) / 2);
+    contentEl.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+  }
+
+  function initKeyboardViewportAssist() {
+    if (initKeyboardViewportAssist.initialized) return;
+    initKeyboardViewportAssist.initialized = true;
+
+    const scheduleScroll = (el) => {
+      window.setTimeout(() => scrollFocusedInputIntoView(el), 80);
+      window.setTimeout(() => scrollFocusedInputIntoView(el), 360);
+    };
+
+    appRoot.addEventListener('focusin', (event) => {
+      const el = event.target;
+      if (!isKeyboardTextEntry(el)) return;
+      updateKeyboardInset();
+      scheduleScroll(el);
+    });
+
+    appRoot.addEventListener('pointerup', (event) => {
+      const el = event.target;
+      if (!isKeyboardTextEntry(el) || document.activeElement === el) return;
+      window.setTimeout(() => {
+        if (document.body.contains(el)) el.focus();
+      }, 0);
+    });
+
+    const visualViewport = window.visualViewport;
+    if (visualViewport) {
+      visualViewport.addEventListener('resize', () => {
+        updateKeyboardInset();
+        scrollFocusedInputIntoView(document.activeElement);
+      });
+      visualViewport.addEventListener('scroll', () => {
+        updateKeyboardInset();
+        scrollFocusedInputIntoView(document.activeElement);
+      });
+    }
+    window.addEventListener('resize', updateKeyboardInset);
+    updateKeyboardInset();
+  }
+
   async function render() {
     const path = currentPath();
     const [base, queryString] = path.split('?');
@@ -1303,6 +1378,7 @@
     
     appRoot.innerHTML = '';
     await view({ query });
+    initKeyboardViewportAssist();
     applyE2ETestIds(appRoot);
     const contentEl = appRoot.querySelector('.content');
     if (contentEl) {
