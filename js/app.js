@@ -15,6 +15,7 @@
     email: null
   };
   let currentUserProfile = null;
+  let refreshCalendarUiForEvent = null;
   
   console.log(`[App] Starting ${APP_NAME}`);
 
@@ -1095,7 +1096,7 @@
       bookAppointment: 'Book Appointment', bookingDate: 'Booking date', duration: 'Duration', bookingType: 'Booking type',
       selectTypes: 'Select types', noneSelected: 'None selected', book: 'Book',
       suggested: 'Suggested', recentlyUpdated: 'Recently updated', noMatchesFound: 'No matches found',
-      quickBook: 'Quick Book', customer: 'Customer', searchPlaceholder: 'Search by name, phone, or social mediaâ€¦', noCustomerSelected: 'No customer selected', titleOptional: 'Title (optional)',
+      quickBook: 'Quick Book', customer: 'Customer', searchPlaceholder: 'Search by name, phone, or social media...', noCustomerSelected: 'No customer selected', titleOptional: 'Title (optional)',
       appointmentBooked: 'Appointment booked', pleaseSelectDateTime: 'Please select booking date/time', pleaseSelectCustomer: 'Please select a customer',
       menu: 'Menu',
       month: 'Month', week: 'Week', day: 'Day', list: 'List', today: 'Today',
@@ -2087,65 +2088,92 @@
 
   async function renderFind() {
     appRoot.innerHTML = wrapWithSidebar(`
-      <div class="space-between section-header">
-        <h2>${t('customers')}</h2>
+      <div class="space-between section-header customer-directory-header">
+        <div class="customer-directory-heading">
+          <p class="eyebrow">Records</p>
+          <h2>${t('customers')}</h2>
+        </div>
+        <button class="button primary customer-directory-new-button" type="button" id="open-new-customer-from-find">
+          <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+          <span>${t('newCustomer')}</span>
+        </button>
       </div>
-      <div class="customer-directory-layout">
+      <div class="customer-directory-layout customer-directory-modern-layout">
         <div class="card customer-list-panel">
-          <div class="form">
-            <input id="search" type="text" placeholder="${t('searchPlaceholder')}" />
-            <div id="suggested-section" class="hidden" style="margin-top:12px;">
-              <h3 style="margin:0 0 6px 0;">${t('suggested')}</h3>
-              <div id="results" class="list"></div>
+          <div class="customer-list-toolbar">
+            <label class="customer-search" for="search">
+              <span class="material-symbols-outlined" aria-hidden="true">search</span>
+              <input id="search" class="customer-search-input" type="text" placeholder="${t('searchPlaceholder')}" />
+            </label>
+            <div class="directory-mode-toggle customer-directory-toggle" role="tablist" aria-label="Customer sorting">
+              <button id="directory-mode-recent" class="button secondary is-active customer-directory-toggle-button" type="button" role="tab" aria-selected="true">
+                <span class="material-symbols-outlined" aria-hidden="true">history</span>
+                <span>Recent</span>
+              </button>
+              <button id="directory-mode-az" class="button secondary customer-directory-toggle-button" type="button" role="tab" aria-selected="false">
+                <span class="material-symbols-outlined" aria-hidden="true">sort_by_alpha</span>
+                <span>A-Z</span>
+              </button>
             </div>
-            <div class="directory-mode-toggle" style="margin-top:12px; display:flex; gap:8px;">
-              <button id="directory-mode-recent" class="button secondary is-active" type="button">10 Most Recent</button>
-              <button id="directory-mode-az" class="button secondary" type="button">A-Z</button>
-            </div>
-            <div id="recents-section" style="margin-top:12px;">
-              <h3 style="margin:0 0 6px 0;">${t('recentlyUpdated')}</h3>
-              <div id="recents" class="list"></div>
-            </div>
-            <div id="all-customers-section" class="hidden" style="margin-top:12px;">
-              <h3 style="margin:0 0 6px 0;">All Customers</h3>
-              <div class="all-customers-container">
-                <div id="all-customers-list" class="list"></div>
-                <div id="alphabet-scrollbar" class="alphabet-scrollbar">
-                  <div class="scrollbar-letter" data-letter="A">A</div>
-                  <div class="scrollbar-letter" data-letter="B">B</div>
-                  <div class="scrollbar-letter" data-letter="C">C</div>
-                  <div class="scrollbar-letter" data-letter="D">D</div>
-                  <div class="scrollbar-letter" data-letter="E">E</div>
-                  <div class="scrollbar-letter" data-letter="F">F</div>
-                  <div class="scrollbar-letter" data-letter="G">G</div>
-                  <div class="scrollbar-letter" data-letter="H">H</div>
-                  <div class="scrollbar-letter" data-letter="I">I</div>
-                  <div class="scrollbar-letter" data-letter="J">J</div>
-                  <div class="scrollbar-letter" data-letter="K">K</div>
-                  <div class="scrollbar-letter" data-letter="L">L</div>
-                  <div class="scrollbar-letter" data-letter="M">M</div>
-                  <div class="scrollbar-letter" data-letter="N">N</div>
-                  <div class="scrollbar-letter" data-letter="O">O</div>
-                  <div class="scrollbar-letter" data-letter="P">P</div>
-                  <div class="scrollbar-letter" data-letter="Q">Q</div>
-                  <div class="scrollbar-letter" data-letter="R">R</div>
-                  <div class="scrollbar-letter" data-letter="S">S</div>
-                  <div class="scrollbar-letter" data-letter="T">T</div>
-                  <div class="scrollbar-letter" data-letter="U">U</div>
-                  <div class="scrollbar-letter" data-letter="V">V</div>
-                  <div class="scrollbar-letter" data-letter="W">W</div>
-                  <div class="scrollbar-letter" data-letter="X">X</div>
-                  <div class="scrollbar-letter" data-letter="Y">Y</div>
-                  <div class="scrollbar-letter" data-letter="Z">Z</div>
-                </div>
+          </div>
+          <div class="customer-list-meta">
+            <span id="customer-list-mode-label">10 Most Recent</span>
+            <strong id="customer-list-result-count">0 records</strong>
+          </div>
+          <div class="customer-list-body">
+            <div class="customer-list-scroll">
+              <div id="suggested-section" class="customer-list-section hidden">
+                <h3 class="customer-list-section-heading">${t('suggested')}</h3>
+                <div id="results" class="list customer-record-list"></div>
               </div>
+              <div id="recents-section" class="customer-list-section">
+                <h3 class="customer-list-section-heading">${t('recentlyUpdated')}</h3>
+                <div id="recents" class="list customer-record-list"></div>
+              </div>
+              <div id="all-customers-section" class="customer-list-section hidden">
+                <h3 class="customer-list-section-heading">All Customers</h3>
+                <div id="all-customers-list" class="list customer-record-list"></div>
+              </div>
+            </div>
+            <div id="alphabet-scrollbar" class="alphabet-scrollbar hidden" aria-label="A-Z customer navigation">
+              <button type="button" class="scrollbar-letter" data-letter="A">A</button>
+              <button type="button" class="scrollbar-letter" data-letter="B">B</button>
+              <button type="button" class="scrollbar-letter" data-letter="C">C</button>
+              <button type="button" class="scrollbar-letter" data-letter="D">D</button>
+              <button type="button" class="scrollbar-letter" data-letter="E">E</button>
+              <button type="button" class="scrollbar-letter" data-letter="F">F</button>
+              <button type="button" class="scrollbar-letter" data-letter="G">G</button>
+              <button type="button" class="scrollbar-letter" data-letter="H">H</button>
+              <button type="button" class="scrollbar-letter" data-letter="I">I</button>
+              <button type="button" class="scrollbar-letter" data-letter="J">J</button>
+              <button type="button" class="scrollbar-letter" data-letter="K">K</button>
+              <button type="button" class="scrollbar-letter" data-letter="L">L</button>
+              <button type="button" class="scrollbar-letter" data-letter="M">M</button>
+              <button type="button" class="scrollbar-letter" data-letter="N">N</button>
+              <button type="button" class="scrollbar-letter" data-letter="O">O</button>
+              <button type="button" class="scrollbar-letter" data-letter="P">P</button>
+              <button type="button" class="scrollbar-letter" data-letter="Q">Q</button>
+              <button type="button" class="scrollbar-letter" data-letter="R">R</button>
+              <button type="button" class="scrollbar-letter" data-letter="S">S</button>
+              <button type="button" class="scrollbar-letter" data-letter="T">T</button>
+              <button type="button" class="scrollbar-letter" data-letter="U">U</button>
+              <button type="button" class="scrollbar-letter" data-letter="V">V</button>
+              <button type="button" class="scrollbar-letter" data-letter="W">W</button>
+              <button type="button" class="scrollbar-letter" data-letter="X">X</button>
+              <button type="button" class="scrollbar-letter" data-letter="Y">Y</button>
+              <button type="button" class="scrollbar-letter" data-letter="Z">Z</button>
             </div>
           </div>
         </div>
         <aside class="card customer-quick-view-panel" id="customer-quick-view">
-          <p class="eyebrow">Quick View</p>
-          <h3>Select a customer</h3>
-          <p class="muted">Select a customer to preview contact details, next appointment and pinned notes.</p>
+          <div class="panel-title with-bar">Selected Customer</div>
+          <div class="empty-state customer-quick-view-empty">
+            <span class="material-symbols-outlined" aria-hidden="true">person_search</span>
+            <div>
+              <strong>Select a customer</strong>
+              <p>Select a customer to preview contact details, next appointment and pinned notes.</p>
+            </div>
+          </div>
         </aside>
       </div>
     `);
@@ -2157,10 +2185,60 @@
     const recentsEl = document.getElementById('recents');
     const allCustomersSection = document.getElementById('all-customers-section');
     const allCustomersList = document.getElementById('all-customers-list');
+    const alphabetScrollbar = document.getElementById('alphabet-scrollbar');
     const modeRecentBtn = document.getElementById('directory-mode-recent');
     const modeAzBtn = document.getElementById('directory-mode-az');
     const quickViewEl = document.getElementById('customer-quick-view');
+    const modeLabelEl = document.getElementById('customer-list-mode-label');
+    const resultCountEl = document.getElementById('customer-list-result-count');
     let directoryMode = 'recent';
+
+    document.getElementById('open-new-customer-from-find')?.addEventListener('click', () => {
+      navigate('/add');
+    });
+
+    function formatRecordCount(count) {
+      return `${count} record${count === 1 ? '' : 's'}`;
+    }
+
+    function createCustomerListRow(customer, nextAppointment = null, options = {}) {
+      const name = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unnamed customer';
+      const initials = getInitials(customer.firstName, customer.lastName) || name.slice(0, 2).toUpperCase();
+      const phone = customer.contactNumber || 'No phone number';
+      const secondary = isTradie()
+        ? [customer.addressLine1, customer.suburb, customer.state].filter(Boolean).join(', ') || 'No address saved'
+        : customer.socialMediaName || 'No social profile';
+      const nextHtml = nextAppointment
+        ? (() => {
+            const start = new Date(nextAppointment.start);
+            const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
+            return `
+              <div class="customer-row-meta">
+                <span>Next appointment</span>
+                <strong>${escapeHtml(dateStr)}</strong>
+                <small>${escapeHtml(timeStr)}</small>
+              </div>`;
+          })()
+        : '<div class="customer-row-meta is-empty"><span>No upcoming appointment</span></div>';
+      const attrs = [
+        `class="list-item customer-row"`,
+        `data-id="${customer.id}"`,
+      ];
+      if (options.firstLetter) attrs.push(`data-first-letter="${escapeHtml(options.firstLetter)}"`);
+      return `
+        <div ${attrs.join(' ')}>
+          <div class="client-avatar customer-row-avatar">${escapeHtml(initials)}</div>
+          <div class="customer-row-primary">
+            <div class="customer-row-copy">
+              <strong>${escapeHtml(name)}</strong>
+              <span>${escapeHtml(phone)}</span>
+              <em>${escapeHtml(secondary)}</em>
+            </div>
+          </div>
+          ${nextHtml}
+        </div>`;
+    }
 
     function bindRowInteractions(rowElements, resolver, nextByCustomer) {
       rowElements.forEach((rowEl) => {
@@ -2212,30 +2290,50 @@
         : customer.socialMediaName || 'No social profile';
       const appointmentHtml = nextAppointment
         ? `<div class="appointment-card has-appointment">
+            <time>${escapeHtml(new Date(nextAppointment.start).toLocaleString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' }))}</time>
             <strong>${escapeHtml(nextAppointment.title || appointmentEntitySingular())}</strong>
-            <span>${escapeHtml(new Date(nextAppointment.start).toLocaleString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' }))}</span>
+            <span>${escapeHtml(nextAppointment.status || 'Scheduled')}</span>
           </div>`
-        : '<div class="appointment-card"><strong>No upcoming appointment</strong><span>Nothing booked yet.</span></div>';
+        : '<div class="appointment-card empty-state-card"><strong>No upcoming appointment</strong><span>Nothing booked yet.</span></div>';
       quickViewEl.innerHTML = `
-        <p class="eyebrow">Quick View</p>
-        <div class="client-card compact">
+        <div class="panel-title with-bar">Selected Customer</div>
+        <div class="client-card compact customer-quick-view-card">
           <div class="client-avatar">${escapeHtml(initials)}</div>
           <div>
             <strong>${escapeHtml(name)}</strong>
             <span>${escapeHtml(contactValue)}</span>
           </div>
         </div>
-        <div class="detail-box-grid">
-          <div><dt>Contact</dt><dd>${escapeHtml(contactValue)}</dd></div>
-          <div><dt>${isTradie() ? 'Location' : 'Social'}</dt><dd>${escapeHtml(secondaryValue)}</dd></div>
+        <div class="quick-view-section">
+          <div class="section-label">Details</div>
+          <div class="detail-list customer-quick-detail-list">
+            <div class="detail-row">
+              <span class="material-symbols-outlined" aria-hidden="true">call</span>
+              <div>
+                <span>Contact</span>
+                <strong>${escapeHtml(contactValue)}</strong>
+              </div>
+            </div>
+            <div class="detail-row">
+              <span class="material-symbols-outlined" aria-hidden="true">${isTradie() ? 'location_on' : 'alternate_email'}</span>
+              <div>
+                <span>${isTradie() ? 'Location' : 'Social'}</span>
+                <strong>${escapeHtml(secondaryValue)}</strong>
+              </div>
+            </div>
+          </div>
         </div>
-        <h4>Next Appointment</h4>
-        ${appointmentHtml}
-        <h4>Pinned Notes</h4>
-        <div class="quick-note-stack">
-          ${pinnedNotes.length
-            ? pinnedNotes.map((note) => `<div class="note-card pinned">${escapeHtml(getNoteTextValue(note) || 'Pinned note')}</div>`).join('')
-            : '<div class="note-card">No pinned notes.</div>'}
+        <div class="quick-view-section">
+          <div class="section-label">Next Appointment</div>
+          ${appointmentHtml}
+        </div>
+        <div class="quick-view-section">
+          <div class="section-label">Pinned Notes</div>
+          <div class="quick-note-stack">
+            ${pinnedNotes.length
+              ? pinnedNotes.map((note) => `<div class="note-card pinned"><strong>${escapeHtml(note.title || 'Pinned note')}</strong><p>${escapeHtml(getNoteTextValue(note) || 'Pinned note')}</p></div>`).join('')
+              : '<div class="note-card empty-state-card"><strong>No pinned notes</strong><p>Pin a note from the profile to keep it here.</p></div>'}
+          </div>
         </div>
         <button class="button outline full-width" type="button" id="open-quick-view-customer">Open Profile</button>
       `;
@@ -2254,6 +2352,7 @@
       const customers = await CrmDB.searchCustomers(query);
       if (customers.length === 0) {
         resultsEl.innerHTML = `<div class="muted">${t('noMatchesFound')}</div>`;
+        resultCountEl.textContent = formatRecordCount(0);
       } else {
         const now = new Date().toISOString();
         const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
@@ -2264,27 +2363,9 @@
           const cur = nextByCustomer.get(a.customerId);
           if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
         });
-        resultsEl.innerHTML = customers.map((c) => {
-          const next = nextByCustomer.get(c.id);
-          let rightHtml = '';
-          if (next) {
-            const start = new Date(next.start);
-            const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
-            rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
-          }
-          const secondary = isTradie()
-            ? ((c.addressLine1 || c.suburb) ? ` - ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '')
-            : (c.socialMediaName ? ` - ${escapeHtml(c.socialMediaName)}` : '');
-          return `
-          <div class=\"list-item\" data-id=\"${c.id}\"> 
-            <div>
-              <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-              <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${secondary}</div>
-            </div>
-            ${rightHtml}
-          </div>`;
-        }).join('');
+        resultsEl.innerHTML = customers.map((c) => createCustomerListRow(c, nextByCustomer.get(c.id) || null)).join('');
+        modeLabelEl.textContent = t('suggested');
+        resultCountEl.textContent = formatRecordCount(customers.length);
         bindRowInteractions(
           resultsEl.querySelectorAll('.list-item'),
           (id) => customers.find((c) => Number(c.id) === id),
@@ -2308,33 +2389,21 @@
         const cur = nextByCustomer.get(a.customerId);
         if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
       });
-      recentsEl.innerHTML = customers.map((c) => {
-        const next = nextByCustomer.get(c.id);
-        let rightHtml = '';
-        if (next) {
-          const start = new Date(next.start);
-          const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
-          rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
-        }
-        const secondary = isTradie()
-          ? ((c.addressLine1 || c.suburb) ? ` - ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '')
-          : (c.socialMediaName ? ` - ${escapeHtml(c.socialMediaName)}` : '');
-        return `
-        <div class=\"list-item\" data-id=\"${c.id}\"> 
-          <div>
-            <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-            <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${secondary}</div>
-          </div>
-          ${rightHtml}
-        </div>`;
-      }).join('');
+      recentsEl.innerHTML = customers.map((c) => createCustomerListRow(c, nextByCustomer.get(c.id) || null)).join('');
+      modeLabelEl.textContent = '10 Most Recent';
+      resultCountEl.textContent = formatRecordCount(customers.length);
       if (customers[0]) await renderCustomerQuickView(customers[0], nextByCustomer.get(customers[0].id) || null);
+      const recentRows = recentsEl.querySelectorAll('.list-item');
       bindRowInteractions(
-        recentsEl.querySelectorAll('.list-item'),
+        recentRows,
         (id) => customers.find((c) => Number(c.id) === id),
         nextByCustomer
       );
+      const firstRecentRow = recentRows[0];
+      if (firstRecentRow) {
+        firstRecentRow.classList.add('is-selected');
+        firstRecentRow.setAttribute('aria-pressed', 'true');
+      }
     }
     await refreshRecents();
 
@@ -2357,27 +2426,12 @@
           if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
         });
 
-        allCustomersList.innerHTML = sortedCustomers.map((c) => {
-          const next = nextByCustomer.get(c.id);
-          let rightHtml = '';
-          if (next) {
-            const start = new Date(next.start);
-            const dateStr = start.toLocaleDateString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            const timeStr = start.toLocaleTimeString(getLang() === 'ja' ? 'ja-JP' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: getLang() === 'en' });
-            rightHtml = `<div class=\"next-apt-inline\"><div class=\"muted\">Next appointment: ${dateStr}</div><div class=\"brand\">${timeStr}</div></div>`;
-          }
-          const secondary = isTradie()
-            ? ((c.addressLine1 || c.suburb) ? ` - ${escapeHtml((c.addressLine1 || c.suburb).trim())}` : '')
-            : (c.socialMediaName ? ` - ${escapeHtml(c.socialMediaName)}` : '');
-          return `
-            <div class=\"list-item\" data-first-letter=\"${(c.firstName || '').charAt(0).toUpperCase()}\" data-id=\"${c.id}\"> 
-              <div>
-                <div><strong>${escapeHtml(c.firstName || '')} ${escapeHtml(c.lastName || '')}</strong></div>
-                <div class=\"muted\">${escapeHtml(c.contactNumber || '')}${secondary}</div>
-              </div>
-              ${rightHtml}
-            </div>`;
-        }).join('');
+        allCustomersList.innerHTML = sortedCustomers.map((c) =>
+          createCustomerListRow(c, nextByCustomer.get(c.id) || null, {
+            firstLetter: (c.firstName || c.lastName || '').charAt(0).toUpperCase()
+          })
+        ).join('');
+        resultCountEl.textContent = formatRecordCount(sortedCustomers.length);
 
         bindRowInteractions(
           allCustomersList.querySelectorAll('.list-item'),
@@ -2409,8 +2463,12 @@
       const isAz = directoryMode === 'az';
       modeRecentBtn?.classList.toggle('is-active', !isAz);
       modeAzBtn?.classList.toggle('is-active', isAz);
+      modeRecentBtn?.setAttribute('aria-selected', String(!isAz));
+      modeAzBtn?.setAttribute('aria-selected', String(isAz));
       recentsSection?.classList.toggle('hidden', isAz);
       allCustomersSection?.classList.toggle('hidden', !isAz);
+      alphabetScrollbar?.classList.toggle('hidden', !isAz);
+      modeLabelEl.textContent = isAz ? 'A-Z Directory' : '10 Most Recent';
       if (isAz && !allCustomersList.dataset.loaded) {
         await loadAllCustomers();
         allCustomersList.dataset.loaded = 'true';
@@ -3592,6 +3650,34 @@
       `;
     }
 
+    function updateMonthAgendaSelection(event) {
+      const panel = document.getElementById('selected-booking-content');
+      if (!panel || !event) return false;
+      const agendaList = panel.querySelector('.agenda-list');
+      if (!agendaList) return false;
+
+      const eventId = String(event.id);
+      let matched = false;
+      agendaList.querySelectorAll('.agenda-item').forEach((item) => {
+        const button = item.querySelector('[data-selected-event-id]');
+        const card = button?.querySelector('.agenda-client-card');
+        const isExpanded = String(button?.getAttribute('data-selected-event-id') || '') === eventId;
+        if (isExpanded) matched = true;
+        item.classList.toggle('expanded', isExpanded);
+        button?.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        card?.classList.toggle('expanded', isExpanded);
+      });
+
+      if (!matched) return false;
+
+      selectedCalendarEventId = eventId;
+      selectedCalendarDateYmd = toLocalYmd(event.start);
+      const dayEvents = getEventsForDate(selectedCalendarDateYmd);
+      lastSelectedBookingRenderKey = `${calendar?.view?.type || 'dayGridMonth'}|${selectedCalendarDateYmd || ''}|${event.id}|${dayEvents.map((dayEvent) => dayEvent.id).join(',')}`;
+      decorateMonthCells();
+      return true;
+    }
+
     function updateDesktopCalendarControls(info) {
       if (compactCalendarToolbar) return;
       const rangeLabel = document.getElementById('calendar-range-label');
@@ -3706,7 +3792,14 @@
         button.addEventListener('click', () => {
           const eventId = button.getAttribute('data-selected-event-id');
           const nextEvent = calendar?.getEventById(eventId);
-          if (nextEvent) renderSelectedBookingPanel(nextEvent, { preserveView: true });
+          if (!nextEvent) return;
+          const sameMonthDateSelection = (calendar?.view?.type === 'dayGridMonth')
+            && selectedCalendarDateYmd
+            && selectedCalendarDateYmd === toLocalYmd(nextEvent.start);
+          if (sameMonthDateSelection && updateMonthAgendaSelection(nextEvent)) {
+            return;
+          }
+          renderSelectedBookingPanel(nextEvent, { preserveView: true });
         });
       });
       panel.querySelectorAll('[data-action="open-selected-booking"]').forEach((button) => {
@@ -3727,12 +3820,35 @@
       renderCalendarSnapshotPanel();
     }
 
+    refreshCalendarUiForEvent = (event, options = {}) => {
+      if (!globalCalendar || !event) return;
+      renderSelectedBookingPanel(event, { force: true, ...options });
+      renderCustomListView();
+      decorateMonthCells();
+      renderCalendarSnapshotPanel();
+    };
+
     async function selectDefaultBookingForCurrentView() {
       if (!calendar) return;
       const events = calendar.getEvents().filter((event) => event.start).sort((a, b) => new Date(a.start) - new Date(b.start));
       if (events.length === 0) {
         renderSelectedBookingPanel(null);
         return;
+      }
+      const selectedEvent = selectedCalendarEventId ? calendar.getEventById(String(selectedCalendarEventId)) : null;
+      if (selectedEvent && selectedEvent.start) {
+        if (calendar.view?.type === 'dayGridMonth') {
+          const start = calendar.view.activeStart;
+          const end = calendar.view.activeEnd;
+          const selectedStart = new Date(selectedEvent.start);
+          if (selectedStart >= start && selectedStart < end) {
+            renderSelectedBookingPanel(selectedEvent, { preserveView: true });
+            return;
+          }
+        } else if (events.some((event) => String(event.id) === String(selectedCalendarEventId))) {
+          renderSelectedBookingPanel(selectedEvent, { preserveView: true });
+          return;
+        }
       }
       if (calendar.view?.type === 'dayGridMonth') {
         const start = calendar.view.activeStart;
@@ -4319,7 +4435,7 @@
               </div>
               <div id="qb-selected-area" class="selected-row hidden" style="margin: 4px 0 6px 0;">
                 <h4 id="qb-selected-name" style="margin:0;">&nbsp;</h4>
-                <button id="qb-clear" class="icon-btn" title="Clear selection" aria-label="Clear">âœ–</button>
+                <button id="qb-clear" class="icon-btn" title="Clear selection" aria-label="Clear">X</button>
               </div>
             </div>
 
@@ -5045,7 +5161,43 @@
             
             try {
               await CrmDB.updateAppointment(updatedAppointment);
+
+              if (typeof event.setProp === 'function') {
+                event.setProp('title', newTitle);
+              } else {
+                event.title = newTitle;
+              }
+
+              if (typeof event.setDates === 'function') {
+                event.setDates(startISO, endISO);
+              } else {
+                event.start = new Date(startISO);
+                event.end = new Date(endISO);
+              }
+
+              if (typeof event.setExtendedProp === 'function') {
+                event.setExtendedProp('bookingType', newTitle);
+                event.setExtendedProp('status', status);
+                event.setExtendedProp('notes', notes);
+                event.setExtendedProp('quotedAmount', quotedAmount);
+                event.setExtendedProp('invoiceAmount', invoiceAmount);
+                event.setExtendedProp('paidAmount', paidAmount);
+              } else {
+                event.extendedProps = {
+                  ...(event.extendedProps || {}),
+                  bookingType: newTitle,
+                  status,
+                  notes,
+                  quotedAmount,
+                  invoiceAmount,
+                  paidAmount
+                };
+              }
+
               hideModal();
+              if (typeof refreshCalendarUiForEvent === 'function') {
+                refreshCalendarUiForEvent(event, { force: true });
+              }
               if (globalCalendar) {
                 globalCalendar.refetchEvents();
               }
