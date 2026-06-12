@@ -369,7 +369,8 @@
 
   function searchCustomers(query) {
     const q = (query || '').trim().toLowerCase();
-    if (!q) return getAllCustomers();
+    if (!q) return getRecentCustomers(10);
+    if (q.length < 3) return Promise.resolve([]);
     return runTransaction(['customers'], 'readonly', (customers) => (
       new Promise((resolve, reject) => {
         const results = [];
@@ -390,7 +391,10 @@
               value.email,
               value.preferredContactMethod
             ].filter(Boolean).join(' ').toLowerCase();
-            if (hay.includes(q)) results.push(value);
+            const firstName = String(value.firstName || '').toLowerCase();
+            const lastName = String(value.lastName || '').toLowerCase();
+            const matches = firstName.startsWith(q) || lastName.startsWith(q);
+            if (matches) results.push(value);
             cursor.continue();
           } else {
             resolve(results);
@@ -399,6 +403,12 @@
         req.onerror = () => reject(req.error);
       })
     ));
+  }
+
+  async function getCustomersByIds(ids) {
+    const all = await getAllCustomers();
+    const wanted = new Set((ids || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id)));
+    return all.filter((customer) => wanted.has(Number(customer.id)));
   }
 
   function getAllCustomers() {
@@ -438,6 +448,32 @@
     ));
   }
 
+  async function getCustomerDirectoryRows(options = {}) {
+    const { limit = null, mode = 'az', startsWith = '' } = options || {};
+    let customers = mode === 'recent'
+      ? await getRecentCustomers(limit || 100)
+      : await getAllCustomers();
+    if (mode !== 'recent') {
+      customers = [...customers].sort((a, b) => {
+        const aName = `${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase();
+        const bName = `${b.firstName || ''} ${b.lastName || ''}`.trim().toLowerCase();
+        return aName.localeCompare(bName);
+      });
+    }
+    const letter = String(startsWith || '').trim().charAt(0).toLowerCase();
+    if (letter) {
+      customers = customers.filter((customer) => {
+        const firstName = String(customer.firstName || '').toLowerCase();
+        const lastName = String(customer.lastName || '').toLowerCase();
+        return firstName.startsWith(letter) || lastName.startsWith(letter);
+      });
+    }
+    if (limit != null) {
+      return customers.slice(0, Math.max(1, parseInt(limit, 10) || customers.length));
+    }
+    return customers;
+  }
+
   function getAllAppointments() {
     return runTransaction(['appointments'], 'readonly', (appointments) => (
       new Promise((resolve, reject) => {
@@ -451,6 +487,32 @@
         req.onerror = () => reject(req.error);
       })
     ));
+  }
+
+  async function getAppointmentsByIds(ids) {
+    const wanted = new Set((ids || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id)));
+    if (wanted.size === 0) return [];
+    const all = await getAllAppointments();
+    return all.filter((appointment) => wanted.has(Number(appointment.id)));
+  }
+
+  async function getNextAppointmentsByCustomerIds(customerIds, options = {}) {
+    const ids = new Set((customerIds || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id)));
+    if (ids.size === 0) return [];
+    const startAfter = options.startAfter ? new Date(options.startAfter) : new Date();
+    const all = await getAllAppointments();
+    const nextByCustomer = new Map();
+    all.forEach((appointment) => {
+      const customerId = Number(appointment.customerId);
+      if (!ids.has(customerId)) return;
+      const start = new Date(appointment.start);
+      if (start <= startAfter) return;
+      const current = nextByCustomer.get(customerId);
+      if (!current || new Date(current.start) > start) {
+        nextByCustomer.set(customerId, appointment);
+      }
+    });
+    return Array.from(nextByCustomer.values());
   }
 
   function getAllImages() {
@@ -1432,6 +1494,27 @@
         req.onerror = () => reject(req.error);
       })
     ));
+  }
+
+  async function searchAppointments(query, limit = 5) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return [];
+    const all = await getAllAppointments();
+    return all.filter((appointment) => {
+      const title = (appointment.title || '').toLowerCase();
+      const address = (appointment.address || '').toLowerCase();
+      return title.includes(q) || address.includes(q);
+    }).slice(0, limit);
+  }
+
+  async function searchNotes(query, limit = 3) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return [];
+    const all = await getAllNotes();
+    return all.filter((note) => {
+      const text = String(note.textValue || note.text || note.content || '').toLowerCase();
+      return text.includes(q);
+    }).slice(0, limit);
   }
 
   // ============================================================================
@@ -2787,6 +2870,8 @@
     getCustomerById,
     getAllCustomers,
     getRecentCustomers,
+    getCustomersByIds,
+    getCustomerDirectoryRows,
     searchCustomers,
     deleteCustomer,
     
@@ -2795,7 +2880,9 @@
     updateAppointment,
     deleteAppointment,
     getAllAppointments,
+    getAppointmentsByIds,
     getAppointmentsBetween,
+    getNextAppointmentsByCustomerIds,
     getAppointmentsForDate,
     getFutureAppointmentsForCustomer,
     getAppointmentsForCustomer,
@@ -2805,6 +2892,7 @@
     getUnpaidJobs,
     getNeedsInvoiceJobs,
     computePaymentStatus,
+    searchAppointments,
     
     // Image/Photo operations
     addImages,
@@ -2821,6 +2909,7 @@
     updateNote,
     deleteNote,
     getAllNotes,
+    searchNotes,
     
     // Reminders/Follow-ups operations
     createReminder,

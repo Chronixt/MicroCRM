@@ -28,12 +28,83 @@
   const APPOINTMENT_COLUMNS = SUPPORTS_JOB_PIPELINE
     ? APPOINTMENT_BASE_COLUMNS.concat(APPOINTMENT_PIPELINE_COLUMNS)
     : APPOINTMENT_BASE_COLUMNS;
+  const CUSTOMER_LIST_COLUMNS = [
+    'id',
+    'first_name',
+    'last_name',
+    'contact_number',
+    'social_media_name',
+    'address_line1',
+    'address_line2',
+    'suburb',
+    'state',
+    'postcode',
+    'country',
+    'updated_at'
+  ].join(',');
+  const CUSTOMER_LOOKUP_COLUMNS = [
+    'id',
+    'first_name',
+    'last_name',
+    'contact_number',
+    'social_media_name',
+    'address_line1',
+    'suburb',
+    'state'
+  ].join(',');
+  const APPOINTMENT_LIST_COLUMNS = SUPPORTS_JOB_PIPELINE
+    ? 'id,customer_id,title,start,end,status,address,quoted_amount,invoice_amount,paid_amount'
+    : 'id,customer_id,title,start,end,status';
+  const STORAGE_STATS_CACHE_KEY = `${STORAGE_PREFIX}supabase_storage_stats_v1`;
+  const STORAGE_STATS_CACHE_TTL_MS = 15 * 60 * 1000;
   var cachedClient = null;
   let cachedTypedNoteColumns = null;
   let cachedPinnedNoteColumn = null;
   let cachedImageRotationColumn = null;
   let cachedTypedNoteVersionColumns = null;
   let runtimePreflightPromise = null;
+
+  function logIoHotPath(methodName, meta) {
+    try {
+      console.info('[Supabase IO]', methodName, meta || {});
+    } catch (error) {}
+  }
+
+  function readStorageStatsCache() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_STATS_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (!parsed.cachedAt || (Date.now() - parsed.cachedAt) > STORAGE_STATS_CACHE_TTL_MS) return null;
+      return parsed.stats || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeStorageStatsCache(stats) {
+    try {
+      sessionStorage.setItem(STORAGE_STATS_CACHE_KEY, JSON.stringify({
+        cachedAt: Date.now(),
+        stats
+      }));
+    } catch (error) {}
+  }
+
+  function clearStorageStatsCache() {
+    try {
+      sessionStorage.removeItem(STORAGE_STATS_CACHE_KEY);
+    } catch (error) {}
+  }
+
+  function sanitizeIlikeTerm(query) {
+    return String(query || '')
+      .trim()
+      .replace(/[%]/g, '')
+      .replace(/[(),]/g, ' ')
+      .replace(/\s+/g, ' ');
+  }
 
   function getClient() {
     if (cachedClient) return cachedClient;
@@ -671,24 +742,148 @@
 
   async function getAllCustomers() {
     const supabase = getClient();
+    logIoHotPath('getAllCustomers', { mode: 'broad', table: 'customers' });
     const res = throwIfError(await supabase.from('customers').select('*').order('id'));
     return (res.data || []).map(toCamel);
   }
 
   async function getRecentCustomers(limit = 10) {
     const supabase = getClient();
-    const res = throwIfError(await supabase.from('customers').select('*').order('updated_at', { ascending: false }).limit(limit));
+    const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+    const res = throwIfError(
+      await supabase
+        .from('customers')
+        .select(CUSTOMER_LIST_COLUMNS)
+        .order('updated_at', { ascending: false })
+        .limit(safeLimit)
+    );
+    logIoHotPath('getRecentCustomers', { mode: 'targeted', resultCount: (res.data || []).length, limit: safeLimit });
     return (res.data || []).map(toCamel);
   }
 
-  async function searchCustomers(query) {
-    const q = (query || '').trim().toLowerCase();
-    if (!q) return getAllCustomers();
-    const all = await getAllCustomers();
-    return all.filter((c) => {
-      const hay = [c.firstName, c.lastName, c.contactNumber, c.socialMediaName, c.addressLine1, c.addressLine2, c.suburb, c.state, c.postcode, c.country].filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
+  async function getCustomersByIds(ids) {
+    const uniqueIds = Array.from(new Set((ids || []).map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id))));
+    if (uniqueIds.length === 0) return [];
+    const supabase = getClient();
+    const res = throwIfError(
+      await supabase
+        .from('customers')
+        .select(CUSTOMER_LOOKUP_COLUMNS)
+        .in('id', uniqueIds)
+    );
+    const rows = (res.data || []).map(toCamel);
+    const rowMap = new Map(rows.map((row) => [row.id, row]));
+    const ordered = uniqueIds.map((id) => rowMap.get(id)).filter(Boolean);
+    logIoHotPath('getCustomersByIds', { mode: 'targeted', requested: uniqueIds.length, resultCount: ordered.length });
+    return ordered;
+  }
+
+  async function getCustomerDirectoryRows(options = {}) {
+    const {
+      limit = null,
+      mode = 'az',
+      startsWith = ''
+    } = options || {};
+    const supabase = getClient();
+    let query = supabase
+      .from('customers')
+      .select(CUSTOMER_LIST_COLUMNS);
+
+    if (mode === 'recent') {
+      query = query.order('updated_at', { ascending: false });
+    } else {
+      query = query
+        .order('first_name', { ascending: true })
+        .order('last_name', { ascending: true })
+        .order('id', { ascending: true });
+    }
+
+    const startsWithTerm = String(startsWith || '').trim();
+    if (startsWithTerm) {
+      const letter = startsWithTerm.charAt(0);
+      const pattern = `${letter}%`;
+      query = query.or([
+        `first_name.ilike.${pattern}`,
+        `last_name.ilike.${pattern}`
+      ].join(','));
+    }
+
+    const safeLimit = limit == null ? null : Math.max(1, Math.min(500, parseInt(limit, 10) || 0));
+    if (safeLimit) {
+      query = query.limit(safeLimit);
+    }
+
+    const res = throwIfError(await query);
+    logIoHotPath('getCustomerDirectoryRows', {
+      mode: 'targeted',
+      sort: mode,
+      startsWith: startsWithTerm || null,
+      limit: safeLimit,
+      resultCount: (res.data || []).length
     });
+    return (res.data || []).map(toCamel);
+  }
+
+  async function searchCustomers(query, limit = 20) {
+    const term = sanitizeIlikeTerm(query);
+    const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+    if (!term) return getRecentCustomers(Math.min(safeLimit, 10));
+    if (term.length < 3) {
+      logIoHotPath('searchCustomers', { mode: 'short-circuit', query: term, reason: 'min-length-3' });
+      return [];
+    }
+    const pattern = `${term}%`;
+    const supabase = getClient();
+    const res = throwIfError(
+      await supabase
+        .from('customers')
+        .select(CUSTOMER_LIST_COLUMNS)
+        .or([
+          `first_name.ilike.${pattern}`,
+          `last_name.ilike.${pattern}`
+        ].join(','))
+        .order('updated_at', { ascending: false })
+        .limit(safeLimit)
+    );
+    logIoHotPath('searchCustomers', {
+      mode: 'targeted',
+      query: term,
+      limit: safeLimit,
+      resultCount: (res.data || []).length
+    });
+    return (res.data || []).map(toCamel);
+  }
+
+  async function getNextAppointmentsByCustomerIds(customerIds, options = {}) {
+    const ids = Array.from(new Set((customerIds || []).map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id))));
+    if (ids.length === 0) return [];
+    const supabase = getClient();
+    const nowISO = normalizeDateTimeToISO(options.startAfter) || new Date().toISOString();
+    const limit = Math.max(ids.length * 3, 50);
+    const res = throwIfError(
+      await supabase
+        .from('appointments')
+        .select(APPOINTMENT_LIST_COLUMNS)
+        .in('customer_id', ids)
+        .gte('start', nowISO)
+        .order('start', { ascending: true })
+        .limit(limit)
+    );
+    const nextByCustomer = new Map();
+    for (const row of (res.data || [])) {
+      const appointment = toCamel(row);
+      if (!nextByCustomer.has(appointment.customerId)) {
+        nextByCustomer.set(appointment.customerId, appointment);
+      }
+      if (nextByCustomer.size === ids.length) break;
+    }
+    const ordered = ids.map((id) => nextByCustomer.get(id)).filter(Boolean);
+    logIoHotPath('getNextAppointmentsByCustomerIds', {
+      mode: 'targeted',
+      requested: ids.length,
+      resultCount: ordered.length
+    });
+    return ordered;
   }
 
   async function deleteCustomer(id) {
@@ -721,6 +916,7 @@
   async function getAppointmentsBetween(startISO, endISO) {
     const supabase = getClient();
     const res = throwIfError(await supabase.from('appointments').select('*').gte('start', startISO).lte('start', endISO).order('start'));
+    logIoHotPath('getAppointmentsBetween', { mode: 'range', startISO, endISO, resultCount: (res.data || []).length });
     return (res.data || []).map(toCamel);
   }
 
@@ -755,6 +951,7 @@
 
   async function getAllAppointments() {
     const supabase = getClient();
+    logIoHotPath('getAllAppointments', { mode: 'broad', table: 'appointments' });
     const res = throwIfError(await supabase.from('appointments').select('*').order('start'));
     return (res.data || []).map(toCamel);
   }
@@ -766,7 +963,10 @@
   }
 
   async function getAppointmentsGroupedByStatus() {
-    const all = await getAllAppointments();
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('appointments').select(APPOINTMENT_LIST_COLUMNS).order('start'));
+    const all = (res.data || []).map(toCamel);
+    logIoHotPath('getAppointmentsGroupedByStatus', { mode: 'targeted', resultCount: all.length });
     const grouped = {};
     all.forEach((apt) => {
       const key = apt.status || 'scheduled';
@@ -780,7 +980,10 @@
   }
 
   async function getUnpaidJobs() {
-    const all = await getAllAppointments();
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('appointments').select(APPOINTMENT_LIST_COLUMNS).order('start'));
+    const all = (res.data || []).map(toCamel);
+    logIoHotPath('getUnpaidJobs', { mode: 'targeted', resultCount: all.length });
     return all.filter((apt) => {
       const invoiceAmount = apt.invoiceAmount || 0;
       const paidAmount = apt.paidAmount || 0;
@@ -789,7 +992,10 @@
   }
 
   async function getNeedsInvoiceJobs() {
-    const all = await getAllAppointments();
+    const supabase = getClient();
+    const res = throwIfError(await supabase.from('appointments').select(APPOINTMENT_LIST_COLUMNS).order('start'));
+    const all = (res.data || []).map(toCamel);
+    logIoHotPath('getNeedsInvoiceJobs', { mode: 'targeted', resultCount: all.length });
     const completedStatuses = ['completed', 'invoiced', 'paid'];
     return all.filter((apt) => {
       const status = apt.status || 'scheduled';
@@ -813,6 +1019,23 @@
     const supabase = getClient();
     const res = throwIfError(await supabase.from('appointments').select('*').eq('id', parseInt(id)).maybeSingle());
     return res.data ? toCamel(res.data) : null;
+  }
+
+  async function getAppointmentsByIds(ids) {
+    const uniqueIds = Array.from(new Set((ids || []).map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id))));
+    if (uniqueIds.length === 0) return [];
+    const supabase = getClient();
+    const res = throwIfError(
+      await supabase
+        .from('appointments')
+        .select(APPOINTMENT_LIST_COLUMNS)
+        .in('id', uniqueIds)
+    );
+    const rows = (res.data || []).map(toCamel);
+    const rowMap = new Map(rows.map((row) => [row.id, row]));
+    const ordered = uniqueIds.map((id) => rowMap.get(id)).filter(Boolean);
+    logIoHotPath('getAppointmentsByIds', { mode: 'targeted', requested: uniqueIds.length, resultCount: ordered.length });
+    return ordered;
   }
 
   async function updateAppointment(updated) {
@@ -848,6 +1071,7 @@
       if (!Number.isNaN(parsedAppointmentId)) row.appointment_id = parsedAppointmentId;
     }
     const res = throwIfError(await supabase.from('images').insert(row).select('id').single());
+    clearStorageStatsCache();
     return res.data.id;
   }
 
@@ -867,6 +1091,7 @@
     const supabase = getClient();
     const res = throwIfError(await supabase.from('images').select('*').eq('customer_id', numId).order('created_at'));
     const list = res.data || [];
+    logIoHotPath('getImagesByCustomerId', { mode: 'targeted', customerId: numId, resultCount: list.length, payload: 'full-image-bytes' });
     return list.map((row) => {
       const c = toCamel(row);
       if (c.dataUrl) {
@@ -877,6 +1102,23 @@
       }
       return c;
     }).filter((c) => c.blob || c.dataUrl);
+  }
+
+  async function getImageMetadataByCustomerId(customerId) {
+    const numId = typeof customerId === 'number' ? customerId : parseInt(customerId, 10);
+    if (customerId == null || customerId === '' || customerId === 'temp-new-customer' || Number.isNaN(numId)) {
+      return [];
+    }
+    const supabase = getClient();
+    const res = throwIfError(
+      await supabase
+        .from('images')
+        .select('id,customer_id,appointment_id,name,type,rotation_degrees,created_at')
+        .eq('customer_id', numId)
+        .order('created_at')
+    );
+    logIoHotPath('getImageMetadataByCustomerId', { mode: 'targeted', customerId: numId, resultCount: (res.data || []).length, payload: 'metadata-only' });
+    return (res.data || []).map(toCamel);
   }
 
   async function getImagesByAppointmentId(appointmentId) {
@@ -887,6 +1129,7 @@
     if (res.error && isMissingColumnError(res.error)) return [];
     throwIfError(res);
     const list = res.data || [];
+    logIoHotPath('getImagesByAppointmentId', { mode: 'targeted', appointmentId: numId, resultCount: list.length, payload: 'full-image-bytes' });
     return list.map((row) => {
       const c = toCamel(row);
       if (c.dataUrl) {
@@ -899,9 +1142,21 @@
     }).filter((c) => c.blob || c.dataUrl);
   }
 
+  async function getImageMetadataByAppointmentId(appointmentId) {
+    const numId = typeof appointmentId === 'number' ? appointmentId : parseInt(appointmentId, 10);
+    if (appointmentId == null || appointmentId === '' || Number.isNaN(numId)) return [];
+    const supabase = getClient();
+    const res = await supabase.from('images').select('id,customer_id,appointment_id,name,type,rotation_degrees,created_at').eq('appointment_id', numId).order('created_at');
+    if (res.error && isMissingColumnError(res.error)) return [];
+    throwIfError(res);
+    logIoHotPath('getImageMetadataByAppointmentId', { mode: 'targeted', appointmentId: numId, resultCount: (res.data || []).length, payload: 'metadata-only' });
+    return (res.data || []).map(toCamel);
+  }
+
   async function deleteImage(imageId) {
     const supabase = getClient();
     throwIfError(await supabase.from('images').delete().eq('id', parseInt(imageId)));
+    clearStorageStatsCache();
   }
 
   async function updateImageRotation(imageId, rotationDegrees) {
@@ -1077,7 +1332,58 @@
 
   async function getAllNotes() {
     const supabase = getClient();
+    logIoHotPath('getAllNotes', { mode: 'broad', table: 'notes' });
     const res = throwIfError(await supabase.from('notes').select('*').order('id'));
+    return (res.data || []).map(toCamel);
+  }
+
+  async function searchAppointments(query, limit = 5) {
+    const term = sanitizeIlikeTerm(query);
+    const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 5));
+    if (!term) return [];
+    const pattern = `%${term}%`;
+    const filters = [`title.ilike.${pattern}`];
+    if (SUPPORTS_JOB_PIPELINE) {
+      filters.push(`address.ilike.${pattern}`);
+    }
+    const supabase = getClient();
+    const res = throwIfError(
+      await supabase
+        .from('appointments')
+        .select(APPOINTMENT_LIST_COLUMNS)
+        .or(filters.join(','))
+        .order('start', { ascending: true })
+        .limit(safeLimit)
+    );
+    logIoHotPath('searchAppointments', { mode: 'targeted', query: term, limit: safeLimit, resultCount: (res.data || []).length });
+    return (res.data || []).map(toCamel);
+  }
+
+  async function searchNotes(query, limit = 3) {
+    const term = sanitizeIlikeTerm(query);
+    const safeLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 3));
+    if (!term) return [];
+    const supportsTypedColumns = await hasTypedNoteColumns();
+    if (!supportsTypedColumns) {
+      logIoHotPath('searchNotes', { mode: 'fallback-broad', query: term });
+      const allNotes = await getAllNotes();
+      return allNotes.filter((note) => {
+        const haystack = String(note.textValue || note.text || note.content || '').toLowerCase();
+        return haystack.includes(term.toLowerCase());
+      }).slice(0, safeLimit);
+    }
+    const pattern = `%${term}%`;
+    const supabase = getClient();
+    const res = throwIfError(
+      await supabase
+        .from('notes')
+        .select('id,customer_id,text_value,note_type,date,created_at')
+        .eq('note_type', 'text')
+        .ilike('text_value', pattern)
+        .order('created_at', { ascending: false })
+        .limit(safeLimit)
+    );
+    logIoHotPath('searchNotes', { mode: 'targeted', query: term, limit: safeLimit, resultCount: (res.data || []).length });
     return (res.data || []).map(toCamel);
   }
 
@@ -1233,7 +1539,15 @@
     return contact.length > 0 ? new Date(contact[0].createdAt) : null;
   }
 
-  async function getStorageStats() {
+  async function getStorageStats(options = {}) {
+    const forceRefresh = options && options.forceRefresh === true;
+    if (!forceRefresh) {
+      const cached = readStorageStatsCache();
+      if (cached) {
+        logIoHotPath('getStorageStats', { mode: 'cache-hit', payload: 'cached-detailed-stats' });
+        return cached;
+      }
+    }
     const supabase = getClient();
     const res = await supabase.from('images').select('id, data_url');
     if (res.error) return { imageCount: 0, totalBytes: 0, totalMB: '0.00', usagePercent: '0', isWarning: false, isCritical: false };
@@ -1246,7 +1560,7 @@
     });
     const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
     const usagePercent = Math.min(100, (totalBytes / (50 * 1024 * 1024)) * 100).toFixed(1);
-    return {
+    const stats = {
       imageCount: items.length,
       totalBytes,
       totalMB,
@@ -1254,6 +1568,9 @@
       isWarning: totalBytes > 40 * 1024 * 1024,
       isCritical: totalBytes > 45 * 1024 * 1024
     };
+    writeStorageStatsCache(stats);
+    logIoHotPath('getStorageStats', { mode: 'targeted', resultCount: items.length, payload: 'full-image-bytes' });
+    return stats;
   }
 
   // --- Recovery (Supabase-only: no localStorage) ---
@@ -1508,6 +1825,7 @@
       await deleteByIdBatches('reminders', 'id');
       await deleteByIdBatches('job_events', 'id');
     }
+    clearStorageStatsCache();
   }
 
   async function importAllData(payload, options = {}) {
@@ -1876,6 +2194,7 @@
         throwIfError(await supabase.from('reminders').insert(row));
       }
     }
+    clearStorageStatsCache();
   }
 
   const dbAPI = {
@@ -1893,6 +2212,8 @@
     getCustomerById,
     getAllCustomers,
     getRecentCustomers,
+    getCustomersByIds,
+    getCustomerDirectoryRows,
     getAllAppointments,
     getAppointmentsByStatus,
     getAppointmentsGroupedByStatus,
@@ -1900,10 +2221,14 @@
     getNeedsInvoiceJobs,
     computePaymentStatus,
     searchCustomers,
+    searchAppointments,
+    searchNotes,
     addImages,
     addImage,
     getImagesByCustomerId,
+    getImageMetadataByCustomerId,
     getImagesByAppointmentId,
+    getImageMetadataByAppointmentId,
     deleteImage,
     updateImageRotation,
     createAppointment,
@@ -1911,10 +2236,12 @@
     deleteAppointment,
     deleteCustomer,
     getAppointmentsBetween,
+    getNextAppointmentsByCustomerIds,
     getAppointmentsForDate,
     getFutureAppointmentsForCustomer,
     getAppointmentsForCustomer,
     getAppointmentById,
+    getAppointmentsByIds,
     fileListToEntries,
     exportAllData,
     safeExportAllData,

@@ -2313,6 +2313,11 @@ select option { color: black; }
   color: var(--brand);
 }
 
+.scrollbar-letter.active {
+  background: rgba(34, 211, 238, 0.2);
+  color: var(--brand);
+}
+
 .scrollbar-letter:active {
   background: rgba(34, 211, 238, 0.3);
   transform: scale(0.95);
