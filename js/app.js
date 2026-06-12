@@ -619,7 +619,7 @@
       const db = getDataApi();
       if (!db || typeof db.getStorageStats !== 'function') return true;
 
-      const stats = await db.getStorageStats();
+      const stats = await db.getStorageStats({ forceRefresh: true });
       const storageLimitBytes = 50 * 1024 * 1024;
       // Rough estimate: compressed image footprint + storage overhead.
       const estimatedIncomingBytes = files.reduce((sum, file) => sum + (file.size || 0), 0) * 0.55;
@@ -2116,6 +2116,27 @@
     const allCustomersSection = document.getElementById('all-customers-section');
     const allCustomersList = document.getElementById('all-customers-list');
     const showAllCustomersBtn = document.getElementById('show-all-customers-btn');
+    let activeCustomerLetter = 'A';
+
+    async function loadNextAppointmentsMap(customerIds) {
+      const ids = Array.from(new Set((customerIds || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id))));
+      if (ids.length === 0) return new Map();
+      if (typeof CrmDB.getNextAppointmentsByCustomerIds === 'function') {
+        const appointments = await CrmDB.getNextAppointmentsByCustomerIds(ids, { startAfter: new Date().toISOString() });
+        return new Map((appointments || []).map((appointment) => [appointment.customerId, appointment]));
+      }
+      const now = new Date().toISOString();
+      const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
+      const nextByCustomer = new Map();
+      futureAppts.forEach((a) => {
+        if (!ids.includes(Number(a.customerId))) return;
+        const start = new Date(a.start);
+        if (start <= new Date(now)) return;
+        const cur = nextByCustomer.get(a.customerId);
+        if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
+      });
+      return nextByCustomer;
+    }
 
     async function refresh() {
       const query = (searchInput.value || '').trim();
@@ -2124,20 +2145,16 @@
         suggestedSection.classList.add('hidden');
         return;
       }
-      const customers = await CrmDB.searchCustomers(query);
+      if (query.length < 3) {
+        resultsEl.innerHTML = `<div class="muted">Please enter 3 or more characters to search</div>`;
+        suggestedSection.classList.remove('hidden');
+        return;
+      }
+      const customers = await CrmDB.searchCustomers(query, 20);
       if (customers.length === 0) {
         resultsEl.innerHTML = `<div class="muted">${t('noMatchesFound')}</div>`;
       } else {
-        // Use optimized query to get only future appointments
-        const now = new Date().toISOString();
-        const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
-        const nextByCustomer = new Map();
-        futureAppts.forEach((a) => {
-          const start = new Date(a.start);
-          if (start <= new Date(now)) return;
-          const cur = nextByCustomer.get(a.customerId);
-          if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
-        });
+        const nextByCustomer = await loadNextAppointmentsMap(customers.map((customer) => customer.id));
         resultsEl.innerHTML = customers.map((c) => {
           const next = nextByCustomer.get(c.id);
           let rightHtml = '';
@@ -2172,17 +2189,7 @@
     async function refreshRecents() {
       // Use the new optimized function for recent customers
       const customers = await CrmDB.getRecentCustomers(10);
-      
-      // Use optimized query to get only future appointments
-      const now = new Date().toISOString();
-      const futureAppts = await CrmDB.getAppointmentsBetween(now, '9999-12-31T23:59:59.999Z');
-      const nextByCustomer = new Map();
-      futureAppts.forEach((a) => {
-        const start = new Date(a.start);
-        if (start <= new Date(now)) return;
-        const cur = nextByCustomer.get(a.customerId);
-        if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
-      });
+      const nextByCustomer = await loadNextAppointmentsMap(customers.map((customer) => customer.id));
       recentsEl.innerHTML = customers.map((c) => {
         const next = nextByCustomer.get(c.id);
         let rightHtml = '';
@@ -2217,8 +2224,8 @@
           allCustomersSection.classList.remove('hidden');
           showAllCustomersBtn.textContent = 'Hide all customers ▴';
           
-          // Load and display all customers
-          await loadAllCustomers();
+          // Load and display the selected letter bucket.
+          await loadAllCustomers(activeCustomerLetter);
         } else {
           // Hide all customers section
           allCustomersSection.classList.add('hidden');
@@ -2228,12 +2235,20 @@
     }
 
     // Function to load and display all customers
-    async function loadAllCustomers() {
-      try {
-        let allCustomers = await CrmDB.getAllCustomers();
-        
+    function updateAlphabetScrollbarActiveState(selectedLetter) {
+      document.querySelectorAll('.scrollbar-letter').forEach((letterDiv) => {
+        const isActive = letterDiv.dataset.letter === selectedLetter;
+        letterDiv.classList.toggle('active', isActive);
+      });
+    }
 
-        
+    async function loadAllCustomers(letter = 'A') {
+      try {
+        activeCustomerLetter = String(letter || 'A').charAt(0).toUpperCase();
+        let allCustomers = typeof CrmDB.getCustomerDirectoryRows === 'function'
+          ? await CrmDB.getCustomerDirectoryRows({ mode: 'az', startsWith: activeCustomerLetter })
+          : await CrmDB.getAllCustomers();
+
         const sortedCustomers = [...allCustomers].sort((a, b) => {
           const aName = `${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase();
           const bName = `${b.firstName || ''} ${b.lastName || ''}`.trim().toLowerCase();
@@ -2241,15 +2256,12 @@
         });
         
         {
-          const now = new Date();
-          const allAppts = await CrmDB.getAllAppointments();
-          const nextByCustomer = new Map();
-          allAppts.forEach((a) => {
-            const start = new Date(a.start);
-            if (start <= now) return;
-            const cur = nextByCustomer.get(a.customerId);
-            if (!cur || new Date(cur.start) > start) nextByCustomer.set(a.customerId, a);
-          });
+          updateAlphabetScrollbarActiveState(activeCustomerLetter);
+          if (sortedCustomers.length === 0) {
+            allCustomersList.innerHTML = `<div class="muted">No customers found for ${escapeHtml(activeCustomerLetter)}</div>`;
+            return;
+          }
+          const nextByCustomer = await loadNextAppointmentsMap(sortedCustomers.map((customer) => customer.id));
           allCustomersList.innerHTML = sortedCustomers.map((c) => {
             const next = nextByCustomer.get(c.id);
             let rightHtml = '';
@@ -2288,23 +2300,14 @@
     // Function to set up alphabet scrollbar functionality
     function setupAlphabetScrollbar() {
       const scrollbarLetters = document.querySelectorAll('.scrollbar-letter');
-      const customerItems = document.querySelectorAll('#all-customers-list .list-item');
       
       scrollbarLetters.forEach(letterDiv => {
+        if (letterDiv.dataset.bound === 'true') return;
+        letterDiv.dataset.bound = 'true';
         letterDiv.addEventListener('click', () => {
           const targetLetter = letterDiv.dataset.letter;
-          
-          // Find the first customer starting with this letter
-          const targetCustomer = Array.from(customerItems).find(item => 
-            item.dataset.firstLetter === targetLetter
-          );
-          
-          if (targetCustomer) {
-            // Scroll to the customer
-            targetCustomer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            
-            // Highlight the letter briefly
-          }
+          if (!targetLetter || targetLetter === activeCustomerLetter) return;
+          loadAllCustomers(targetLetter);
         });
       });
     }
@@ -3339,7 +3342,10 @@
       events: async (info, successCallback, failureCallback) => {
         try {
           const events = await CrmDB.getAppointmentsBetween(info.start.toISOString(), info.end.toISOString());
-          const customers = await CrmDB.getAllCustomers();
+          const customerIds = Array.from(new Set(events.map((event) => event.customerId).filter((id) => id != null)));
+          const customers = typeof CrmDB.getCustomersByIds === 'function'
+            ? await CrmDB.getCustomersByIds(customerIds)
+            : await CrmDB.getAllCustomers();
           const idToCustomer = new Map(customers.map(c => [c.id, c]));
           const mapped = events.map((e) => {
             const customer = idToCustomer.get(e.customerId);
@@ -3554,7 +3560,11 @@
       try {
         const statuses = productConfig.statuses || [];
         const grouped = await CrmDB.getAppointmentsGroupedByStatus();
-        const customers = await CrmDB.getAllCustomers();
+        const allJobs = Object.values(grouped).flat();
+        const customerIds = Array.from(new Set(allJobs.map((job) => job.customerId).filter((id) => id != null)));
+        const customers = typeof CrmDB.getCustomersByIds === 'function'
+          ? await CrmDB.getCustomersByIds(customerIds)
+          : await CrmDB.getAllCustomers();
         const idToCustomer = new Map(customers.map(c => [c.id, c]));
         
         // Apply payment filter
@@ -3774,6 +3784,10 @@
       async function doSearch() {
         const query = (searchEl.value || '').trim();
         if (query.length < 1) { resultsEl.innerHTML = ''; return; }
+        if (query.length < 3) {
+          resultsEl.innerHTML = '<div class="muted">Please enter 3 or more characters to search</div>';
+          return;
+        }
         const people = await CrmDB.searchCustomers(query);
         resultsEl.innerHTML = people.slice(0, 8).map((c) => `
           <button type="button" class="list-item" data-id="${c.id}">
@@ -4552,9 +4566,15 @@
       const sevenDaysFromNow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 8);
       const later = allPending.filter(r => new Date(r.dueAt) >= sevenDaysFromNow);
 
-      // Get all customers and appointments for linking
-      const customers = await CrmDB.getAllCustomers();
-      const appointments = await CrmDB.getAllAppointments();
+      // Get only linked customers and appointments for this reminders set.
+      const reminderCustomerIds = Array.from(new Set([...overdue, ...today, ...upcoming, ...later].map((r) => r.customerId).filter((id) => id != null)));
+      const reminderAppointmentIds = Array.from(new Set([...overdue, ...today, ...upcoming, ...later].map((r) => r.appointmentId).filter((id) => id != null)));
+      const customers = typeof CrmDB.getCustomersByIds === 'function'
+        ? await CrmDB.getCustomersByIds(reminderCustomerIds)
+        : await CrmDB.getAllCustomers();
+      const appointments = typeof CrmDB.getAppointmentsByIds === 'function'
+        ? await CrmDB.getAppointmentsByIds(reminderAppointmentIds)
+        : await CrmDB.getAllAppointments();
       const customerMap = new Map(customers.map(c => [c.id, c]));
       const appointmentMap = new Map(appointments.map(a => [a.id, a]));
 
@@ -5034,36 +5054,18 @@
     const lowerQuery = query.toLowerCase();
     
     try {
-      // Search in parallel
-      const [customers, appointments, notes] = await Promise.all([
-        CrmDB.getAllCustomers(),
-        CrmDB.getAllAppointments(),
-        CrmDB.getAllNotes()
+      // Search in parallel using targeted backend queries where available.
+      const [matchingCustomers, matchingJobs, matchingNotes] = await Promise.all([
+        typeof CrmDB.searchCustomers === 'function' ? CrmDB.searchCustomers(query, 5) : CrmDB.getAllCustomers(),
+        typeof CrmDB.searchAppointments === 'function' ? CrmDB.searchAppointments(query, 5) : CrmDB.getAllAppointments(),
+        typeof CrmDB.searchNotes === 'function' ? CrmDB.searchNotes(query, 3) : CrmDB.getAllNotes()
       ]);
-      
-      // Filter customers
-      const matchingCustomers = customers.filter(c => {
-        const name = ((c.firstName || '') + ' ' + (c.lastName || '')).toLowerCase();
-        const phone = (c.contactNumber || '').toLowerCase();
-        const social = (c.socialMediaName || '').toLowerCase();
-        return name.includes(lowerQuery) || phone.includes(lowerQuery) || social.includes(lowerQuery);
-      }).slice(0, 5);
-      
-      // Filter jobs
-      const matchingJobs = appointments.filter(a => {
-        const title = (a.title || '').toLowerCase();
-        const address = (a.address || '').toLowerCase();
-        return title.includes(lowerQuery) || address.includes(lowerQuery);
-      }).slice(0, 5);
-      
-      // Filter notes
-      const matchingNotes = notes.filter(n => {
-        const content = getNoteTextValue(n).toLowerCase();
-        return content.includes(lowerQuery);
-      }).slice(0, 3);
-      
-      // Build customer map for job display
-      const customerMap = new Map(customers.map(c => [c.id, c]));
+
+      const customerIdsForJobs = Array.from(new Set((matchingJobs || []).map((job) => job.customerId).filter((id) => id != null)));
+      const jobCustomers = customerIdsForJobs.length > 0
+        ? (typeof CrmDB.getCustomersByIds === 'function' ? await CrmDB.getCustomersByIds(customerIdsForJobs) : await CrmDB.getAllCustomers())
+        : [];
+      const customerMap = new Map(jobCustomers.map(c => [c.id, c]));
       
       // Build results HTML
       let html = '';
@@ -5200,7 +5202,9 @@
 
   async function openQuickAddJobModal(prefilledCustomerId = null) {
     // Load customers for the dropdown
-    const customers = await CrmDB.getAllCustomers();
+    const customers = typeof CrmDB.getCustomerDirectoryRows === 'function'
+      ? await CrmDB.getCustomerDirectoryRows({ mode: 'az' })
+      : await CrmDB.getAllCustomers();
     customers.sort((a, b) => {
       const nameA = (a.firstName + ' ' + a.lastName).trim().toLowerCase();
       const nameB = (b.firstName + ' ' + b.lastName).trim().toLowerCase();
