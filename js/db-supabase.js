@@ -102,8 +102,30 @@
     return String(query || '')
       .trim()
       .replace(/[%]/g, '')
+      .replace(/["\\]/g, '')
       .replace(/[(),]/g, ' ')
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function quotePostgrestFilterValue(value) {
+    return `"${String(value).replace(/"/g, '\\"')}"`;
+  }
+
+  function buildCustomerNameSearchFilters(term) {
+    const prefixPattern = `${term}%`;
+    const parenthesizedPrefixPattern = quotePostgrestFilterValue(`%(${term}%`);
+    return [
+      `first_name.ilike.${prefixPattern}`,
+      `last_name.ilike.${prefixPattern}`,
+      `first_name.ilike.${parenthesizedPrefixPattern}`,
+      `last_name.ilike.${parenthesizedPrefixPattern}`
+    ];
+  }
+
+  function getCustomerSearchLength(query, term) {
+    const raw = String(query || '').trim();
+    return term.length + (raw.startsWith('(') ? 1 : 0);
   }
 
   function getClient() {
@@ -826,22 +848,19 @@
 
   async function searchCustomers(query, limit = 20) {
     const term = sanitizeIlikeTerm(query);
+    const searchLength = getCustomerSearchLength(query, term);
     const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
     if (!term) return getRecentCustomers(Math.min(safeLimit, 10));
-    if (term.length < 3) {
+    if (searchLength < 3) {
       logIoHotPath('searchCustomers', { mode: 'short-circuit', query: term, reason: 'min-length-3' });
       return [];
     }
-    const pattern = `${term}%`;
     const supabase = getClient();
     const res = throwIfError(
       await supabase
         .from('customers')
         .select(CUSTOMER_LIST_COLUMNS)
-        .or([
-          `first_name.ilike.${pattern}`,
-          `last_name.ilike.${pattern}`
-        ].join(','))
+        .or(buildCustomerNameSearchFilters(term).join(','))
         .order('updated_at', { ascending: false })
         .limit(safeLimit)
     );
