@@ -367,10 +367,31 @@
     ));
   }
 
+  function normalizeCustomerNameSearchTerm(query) {
+    return String(query || '')
+      .trim()
+      .replace(/["\\]/g, '')
+      .replace(/[(),]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function nameFieldStartsWithSearchTerm(value, term) {
+    const name = String(value || '').trim().toLowerCase();
+    return name.startsWith(term) || name.includes(`(${term}`);
+  }
+
+  function getCustomerSearchLength(query, term) {
+    const raw = String(query || '').trim();
+    return term.length + (raw.startsWith('(') ? 1 : 0);
+  }
+
   function searchCustomers(query) {
-    const q = (query || '').trim().toLowerCase();
+    const q = normalizeCustomerNameSearchTerm(query);
+    const searchLength = getCustomerSearchLength(query, q);
     if (!q) return getRecentCustomers(10);
-    if (q.length < 3) return Promise.resolve([]);
+    if (searchLength < 3) return Promise.resolve([]);
     return runTransaction(['customers'], 'readonly', (customers) => (
       new Promise((resolve, reject) => {
         const results = [];
@@ -379,21 +400,8 @@
           const cursor = /** @type {IDBCursorWithValue|null} */ (e.target.result);
           if (cursor) {
             const value = cursor.value;
-            const hay = [
-              value.firstName,
-              value.lastName,
-              value.contactNumber,
-              value.socialMediaName,
-              value.addressLine1,
-              value.suburb,
-              value.state,
-              value.postcode,
-              value.email,
-              value.preferredContactMethod
-            ].filter(Boolean).join(' ').toLowerCase();
-            const firstName = String(value.firstName || '').toLowerCase();
-            const lastName = String(value.lastName || '').toLowerCase();
-            const matches = firstName.startsWith(q) || lastName.startsWith(q);
+            const matches = nameFieldStartsWithSearchTerm(value.firstName, q)
+              || nameFieldStartsWithSearchTerm(value.lastName, q);
             if (matches) results.push(value);
             cursor.continue();
           } else {
