@@ -122,6 +122,11 @@
     ];
   }
 
+  function getCustomerSearchLength(query, term) {
+    const raw = String(query || '').trim();
+    return term.length + (raw.startsWith('(') ? 1 : 0);
+  }
+
   function getClient() {
     if (cachedClient) return cachedClient;
     if (window.SupabaseClient) {
@@ -842,9 +847,10 @@
 
   async function searchCustomers(query, limit = 20) {
     const term = sanitizeIlikeTerm(query);
+    const searchLength = getCustomerSearchLength(query, term);
     const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
     if (!term) return getRecentCustomers(Math.min(safeLimit, 10));
-    if (term.length < 3) {
+    if (searchLength < 3) {
       logIoHotPath('searchCustomers', { mode: 'short-circuit', query: term, reason: 'min-length-3' });
       return [];
     }

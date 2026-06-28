@@ -381,10 +381,16 @@
     return name.startsWith(term) || name.includes(`(${term}`);
   }
 
+  function getCustomerSearchLength(query, term) {
+    const raw = String(query || '').trim();
+    return term.length + (raw.startsWith('(') ? 1 : 0);
+  }
+
   function searchCustomers(query) {
     const q = normalizeCustomerNameSearchTerm(query);
+    const searchLength = getCustomerSearchLength(query, q);
     if (!q) return getRecentCustomers(10);
-    if (q.length < 3) return Promise.resolve([]);
+    if (searchLength < 3) return Promise.resolve([]);
     return runTransaction(['customers'], 'readonly', (customers) => (
       new Promise((resolve, reject) => {
         const results = [];
