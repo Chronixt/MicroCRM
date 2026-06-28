@@ -102,8 +102,24 @@
     return String(query || '')
       .trim()
       .replace(/[%]/g, '')
+      .replace(/["\\]/g, '')
       .replace(/[(),]/g, ' ')
       .replace(/\s+/g, ' ');
+  }
+
+  function quotePostgrestFilterValue(value) {
+    return `"${String(value).replace(/"/g, '\\"')}"`;
+  }
+
+  function buildCustomerNameSearchFilters(term) {
+    const prefixPattern = `${term}%`;
+    const parenthesizedPrefixPattern = quotePostgrestFilterValue(`%(${term}%`);
+    return [
+      `first_name.ilike.${prefixPattern}`,
+      `last_name.ilike.${prefixPattern}`,
+      `first_name.ilike.${parenthesizedPrefixPattern}`,
+      `last_name.ilike.${parenthesizedPrefixPattern}`
+    ];
   }
 
   function getClient() {
@@ -832,16 +848,12 @@
       logIoHotPath('searchCustomers', { mode: 'short-circuit', query: term, reason: 'min-length-3' });
       return [];
     }
-    const pattern = `${term}%`;
     const supabase = getClient();
     const res = throwIfError(
       await supabase
         .from('customers')
         .select(CUSTOMER_LIST_COLUMNS)
-        .or([
-          `first_name.ilike.${pattern}`,
-          `last_name.ilike.${pattern}`
-        ].join(','))
+        .or(buildCustomerNameSearchFilters(term).join(','))
         .order('updated_at', { ascending: false })
         .limit(safeLimit)
     );
